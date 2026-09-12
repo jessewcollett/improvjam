@@ -50,7 +50,7 @@ export default function App() {
               className="absolute inset-0"
             >
               {activeRoute === 'tools' ? (
-                <ToolsView onOpenSettings={() => setActiveRoute('settings')} />
+                <ToolsView />
               ) : (
                 <View />
               )}

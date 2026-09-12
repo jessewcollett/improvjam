@@ -21,14 +21,14 @@ export function ItemSource({ item, sources, className = '' }) {
               href={src.href}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-[10px] text-blue-300 bg-blue-900/20 border border-blue-800/40 px-1.5 py-0.5 rounded-full truncate max-w-full"
+              className="text-2xs text-blue-300 bg-blue-900/20 border border-blue-800/40 px-1.5 py-0.5 rounded-full break-words max-w-full"
             >
               {src.name}
             </a>
           ) : (
             <span
               key={src.id}
-              className="text-[10px] text-gray-400 bg-gray-800 border border-gray-700 px-1.5 py-0.5 rounded-full truncate max-w-full"
+              className="text-2xs text-gray-400 bg-gray-800 border border-gray-700 px-1.5 py-0.5 rounded-full break-words max-w-full"
             >
               {src.name}
             </span>
@@ -47,7 +47,7 @@ export function ItemSource({ item, sources, className = '' }) {
         href={href}
         target="_blank"
         rel="noopener noreferrer"
-        className={`text-[10px] text-blue-400/90 italic truncate hover:text-blue-300 ${className}`}
+        className={`text-2xs text-blue-400/90 italic break-words hover:text-blue-300 ${className}`}
         title={label}
       >
         {label}
@@ -55,7 +55,7 @@ export function ItemSource({ item, sources, className = '' }) {
     );
   }
   return (
-    <span className={`text-[10px] text-gray-500 italic truncate ${className}`} title={label}>
+    <span className={`text-2xs text-gray-500 italic break-words ${className}`} title={label}>
       {label}
     </span>
   );

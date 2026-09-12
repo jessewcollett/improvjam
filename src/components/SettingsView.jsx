@@ -1,17 +1,12 @@
 import { useState } from 'react';
 import {
-  Bell,
   BookOpen,
   ChevronDown,
   Info,
   Monitor,
   Palette,
-  Play,
   RefreshCw,
-  Volume2,
 } from 'lucide-react';
-import { BELL_STYLES, playCountIn, playDing } from '../lib/audio.js';
-import { useHoldDing } from '../lib/useHoldDing.js';
 import { canWakeLock } from '../lib/useWakeLock.js';
 import { useAppStore } from '../store/useAppStore.js';
 import SyncButton from './SyncButton.jsx';
@@ -23,17 +18,17 @@ function SettingsSection({ title, icon: Icon, summary, defaultOpen = false, acce
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="w-full min-h-12 px-4 py-3 flex items-center gap-3 text-left"
+        className="w-full min-h-12 px-4 py-3 flex items-start gap-3 text-left"
         aria-expanded={open}
       >
-        {Icon ? <Icon className={`w-5 h-5 shrink-0 ${accent || 'text-gray-400'}`} /> : null}
+        {Icon ? <Icon className={`w-5 h-5 shrink-0 mt-0.5 ${accent || 'text-gray-400'}`} /> : null}
         <span className="flex-1 min-w-0">
           <span className="block text-base font-black font-display text-white leading-tight">{title}</span>
           {summary && !open ? (
-            <span className="block text-[11px] text-gray-500 truncate mt-0.5">{summary}</span>
+            <span className="block text-xs text-gray-500 leading-snug mt-0.5">{summary}</span>
           ) : null}
         </span>
-        <ChevronDown className={`w-5 h-5 text-gray-500 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`w-5 h-5 text-gray-500 shrink-0 mt-0.5 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open ? <div className="px-4 pb-4">{children}</div> : null}
     </section>
@@ -56,10 +51,10 @@ function ChoiceButton({ active, onClick, children }) {
 
 function ToggleRow({ label, hint, checked, onChange, disabled }) {
   return (
-    <div className="flex items-center gap-3 min-h-12 py-1">
+    <div className="flex items-start gap-3 min-h-12 py-1">
       <span className="flex-1 min-w-0">
         <span className="block text-sm font-bold text-gray-100">{label}</span>
-        {hint ? <span className="block text-[11px] text-gray-500 leading-snug">{hint}</span> : null}
+        {hint ? <span className="block text-xs text-gray-500 leading-snug">{hint}</span> : null}
       </span>
       <button
         type="button"
@@ -88,8 +83,6 @@ export default function SettingsView() {
   const lastSynced = useAppStore((s) => s.lastSynced);
   const syncError = useAppStore((s) => s.syncError);
   const sources = useAppStore((s) => s.data.sources) || [];
-  const holdPreview = useHoldDing(settings.bellStyle, settings.bellVolume);
-  const bellLabel = BELL_STYLES.find((style) => style.id === settings.bellStyle)?.label || 'Bell';
   const canHaptic = typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function';
 
   return (
@@ -131,10 +124,16 @@ export default function SettingsView() {
         accent="text-blue-400"
       >
         <p className="text-sm text-gray-400 mb-3">
-          Edit the Google Sheet, then tap Sync Data. Games, glossary, and generator banks refresh here. To Play,
-          Favorites, Played, and custom sets stay on this device.
+          Edit the Google Sheet, then tap Sync Data. Games, glossary, generator banks, and Audio (SFX / Track)
+          refresh here. To Play, Favorites, Played, custom sets, and hidden SFX pads stay on this device.
         </p>
-        <p className="text-[11px] text-gray-500 mb-3">
+        <p className="text-xs text-gray-500 mb-3">
+          Audio credits live on the Audio tab (credit, creditUrl). Track genres use the tags column
+          (Pop, 80s, Underscore — comma or pipe separated), and you can also tag on this device in Music.
+          Game and glossary photos use the image column (Drive share link, Anyone with the link). Drive
+          files must be Anyone with the link.
+        </p>
+        <p className="text-xs text-gray-500 mb-3">
           {lastSynced ? `Last synced ${new Date(lastSynced).toLocaleString()}` : 'Not synced yet'}
           {` · ${sources.length} source${sources.length === 1 ? '' : 's'}`}
         </p>
@@ -142,7 +141,7 @@ export default function SettingsView() {
           <BookOpen className="w-3.5 h-3.5" />
           Sources
         </h3>
-        <p className="text-[11px] text-gray-500 mb-2">Edit URLs in the Google Sheet Sources tab, then sync.</p>
+        <p className="text-xs text-gray-500 mb-2">Edit URLs in the Google Sheet Sources tab, then sync.</p>
         {sources.length ? (
           <ul className="space-y-2">
             {sources.map((source) => (
@@ -202,91 +201,6 @@ export default function SettingsView() {
           checked={Boolean(settings.reducedMotion)}
           onChange={(reducedMotion) => updateSettings({ reducedMotion })}
         />
-      </SettingsSection>
-
-      <SettingsSection
-        title="Bell sound"
-        icon={Bell}
-        summary={bellLabel}
-        accent="text-yellow-300"
-      >
-        <div className="grid grid-cols-2 gap-2 mb-4">
-          {BELL_STYLES.map((style) => {
-            const active = settings.bellStyle === style.id;
-            return (
-              <button
-                key={style.id}
-                type="button"
-                onClick={() => {
-                  updateSettings({ bellStyle: style.id });
-                  playDing(style.id, settings.bellVolume);
-                }}
-                className={`w-full text-left rounded-xl border px-3 py-2.5 min-h-12 ${
-                  active ? 'bg-yellow-600 text-black border-yellow-400' : 'bg-[#1A1A1A] text-gray-200 border-gray-800'
-                }`}
-              >
-                <span className="block text-sm font-bold leading-tight">{style.label}</span>
-                <span className={`block text-[10px] leading-snug mt-0.5 ${active ? 'text-black/70' : 'text-gray-500'}`}>
-                  {style.hint}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-
-        <label className="block mb-4">
-          <span className="flex items-center justify-between text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
-            <span className="flex items-center gap-1.5">
-              <Volume2 className="w-3.5 h-3.5" />
-              Volume
-            </span>
-            <span>{Math.round(settings.bellVolume * 100)}%</span>
-          </span>
-          <input
-            type="range"
-            min="0.1"
-            max="1"
-            step="0.05"
-            value={settings.bellVolume}
-            onChange={(e) => updateSettings({ bellVolume: Number(e.target.value) })}
-            className="w-full accent-yellow-500 min-h-11"
-          />
-        </label>
-
-        <div className="mb-4">
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Count-in</p>
-          <div className="grid grid-cols-3 gap-2">
-            {[3, 4, 5].map((beats) => (
-              <ChoiceButton
-                key={beats}
-                active={settings.countInBeats === beats}
-                onClick={() => updateSettings({ countInBeats: beats })}
-              >
-                {beats}-count
-              </ChoiceButton>
-            ))}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            {...holdPreview}
-            className="bg-yellow-500 text-black font-black py-3 rounded-xl min-h-12"
-            aria-label="Test ding, hold to sustain"
-          >
-            Test ding
-          </button>
-          <button
-            type="button"
-            onClick={() => playCountIn(settings.countInBeats, settings.bellStyle, settings.bellVolume)}
-            className="bg-gray-800 border border-gray-700 text-gray-100 font-bold py-3 rounded-xl min-h-12 flex items-center justify-center gap-2"
-          >
-            <Play className="w-4 h-4" />
-            Test count-in
-          </button>
-        </div>
-        <p className="text-[11px] text-gray-500 mt-2 text-center">Tap for a hit. Hold to sustain.</p>
       </SettingsSection>
 
       <SettingsSection

@@ -89,13 +89,13 @@ function CheckRow({ checked, Icon, label, count, onToggle }) {
       role="checkbox"
       aria-checked={checked}
       onClick={onToggle}
-      className={`h-8 px-2 rounded-lg border flex items-center gap-1.5 min-w-0 flex-1 ${
+      className={`min-h-8 px-2 py-1 rounded-lg border flex items-center gap-1.5 min-w-0 flex-1 ${
         checked ? 'bg-lime-600/15 text-white border-lime-600/50' : 'bg-[#1A1A1A] text-gray-200 border-gray-800'
       }`}
     >
       <Icon className={`w-3.5 h-3.5 shrink-0 ${checked ? 'text-lime-400' : 'text-gray-500'}`} />
-      <span className="flex-1 text-xs font-bold truncate text-left">{label}</span>
-      <span className={`text-[10px] tabular-nums shrink-0 ${checked ? 'text-lime-300/80' : 'text-gray-500'}`}>{count}</span>
+      <span className="flex-1 text-xs font-bold leading-tight text-left">{label}</span>
+      <span className={`text-2xs tabular-nums shrink-0 ${checked ? 'text-lime-300/80' : 'text-gray-500'}`}>{count}</span>
     </button>
   );
 }
@@ -314,7 +314,7 @@ export default function GeneratorView() {
           >
             <div className="text-left min-w-0">
               <h2 className="text-base font-black font-display text-white leading-tight">Ask for…</h2>
-              <p className="text-[11px] text-gray-500 truncate">
+              <p className="text-xs text-gray-500 leading-snug">
                 {selectedCats.length + selectedSkillItems.length} selected
                 {favoriteCats.length ? ` · ${favoriteCats.length} favorite${favoriteCats.length === 1 ? '' : 's'}` : ''}
                 {' · '}{selectedSummary}
@@ -327,7 +327,7 @@ export default function GeneratorView() {
             <div className="mt-2">
               {favoriteCats.length > 0 && (
                 <>
-                  <p className="text-[10px] uppercase tracking-wider text-yellow-500/80 font-bold px-0.5 mb-1">Favorites</p>
+                  <p className="text-2xs uppercase tracking-wider text-yellow-500/80 font-bold px-0.5 mb-1">Favorites</p>
                   <div className="grid grid-cols-2 gap-1">
                     {favoriteCats.map((cat) => (
                       <BankRow
@@ -344,7 +344,7 @@ export default function GeneratorView() {
               )}
               {remainingCats.length > 0 && (
                 <>
-                  <p className={`text-[10px] uppercase tracking-wider text-gray-500 font-bold px-0.5 mb-1 ${favoriteCats.length ? 'mt-2.5' : ''}`}>
+                  <p className={`text-2xs uppercase tracking-wider text-gray-500 font-bold px-0.5 mb-1 ${favoriteCats.length ? 'mt-2.5' : ''}`}>
                     {favoriteCats.length ? 'All banks' : 'Ask for'}
                   </p>
                   <div className="grid grid-cols-2 gap-1">
@@ -361,7 +361,7 @@ export default function GeneratorView() {
                   </div>
                 </>
               )}
-              <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold px-0.5 mt-2.5 mb-1">Skill Building</p>
+              <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold px-0.5 mt-2.5 mb-1">Skill Building</p>
               <div className="grid grid-cols-2 gap-1">
                 {skillItems.map((skill) => (
                   <CheckRow
@@ -388,7 +388,7 @@ export default function GeneratorView() {
             >
               {kit?.length ? (
                 <section className="bg-[#1A1A1A] border border-lime-800/50 rounded-2xl p-3">
-                  <p className="text-[10px] uppercase tracking-wider text-lime-400 font-bold mb-2">Scene kit</p>
+                  <p className="text-2xs uppercase tracking-wider text-lime-400 font-bold mb-2">Scene kit</p>
                   <div className="space-y-1.5">
                     {kit.map((item) => {
                       const Icon = item.Icon || Tag;
@@ -396,7 +396,7 @@ export default function GeneratorView() {
                         <div key={item.id} className="flex items-start gap-2 rounded-xl border border-gray-800 bg-card px-2.5 py-2">
                           <Icon className="w-3.5 h-3.5 text-lime-400 mt-0.5 shrink-0" />
                           <div className="min-w-0">
-                            <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">{item.label}</p>
+                            <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold">{item.label}</p>
                             <p className="text-sm font-bold text-gray-100 leading-snug">
                               {item.row ? displayRow(item.row) : `No ${item.label.toLowerCase()} yet.`}
                             </p>
@@ -413,7 +413,7 @@ export default function GeneratorView() {
                   key={`${generated.type}-${JSON.stringify(generated.content)}`}
                   className="bg-[#1A1A1A] border border-gray-700 rounded-2xl p-3"
                 >
-                  <p className="text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-2">{generated.title}</p>
+                  <p className="text-2xs uppercase tracking-wider text-gray-400 font-bold mb-2">{generated.title}</p>
 
                   {generated.type === 'core' && (
                     <div className="space-y-1.5">
@@ -425,7 +425,7 @@ export default function GeneratorView() {
                       ].map(([key, label, tone, value]) => (
                         <div key={key} className={`${tone.split(' ').slice(0, 2).join(' ')} px-2.5 py-2 rounded-xl border flex justify-between gap-2 items-center`}>
                           <div className="min-w-0">
-                            <span className={`${tone.split(' ').pop()} text-[10px] font-bold block uppercase tracking-wider`}>{label}</span>
+                            <span className={`${tone.split(' ').pop()} text-2xs font-bold block uppercase tracking-wider`}>{label}</span>
                             <span className="font-semibold text-gray-100 text-sm">{value}</span>
                           </div>
                           <button
@@ -444,13 +444,13 @@ export default function GeneratorView() {
                   {generated.type === 'fut' && generated.content && (
                     <div className="space-y-2">
                       <div>
-                        <span className="text-[10px] text-gray-500 block uppercase tracking-wider mb-1">Base Reality</span>
+                        <span className="text-2xs text-gray-500 block uppercase tracking-wider mb-1">Base Reality</span>
                         <p className="text-sm font-medium text-gray-300 bg-gray-900/50 p-2.5 rounded-xl border border-gray-800">
                           {generated.content.reality}
                         </p>
                       </div>
                       <div>
-                        <span className="text-[10px] text-pink-500 font-bold uppercase tracking-wider mb-1 flex items-center">
+                        <span className="text-2xs text-pink-500 font-bold uppercase tracking-wider mb-1 flex items-center">
                           <Star className="w-3 h-3 mr-1" /> First Unusual Thing
                         </span>
                         <p className="text-base font-bold text-pink-200 leading-snug">{generated.content.weirdThing}</p>
@@ -515,7 +515,7 @@ export default function GeneratorView() {
                 <p className="text-sm text-gray-500">No rows yet. Add some in the Generator tab.</p>
               ) : (
                 <>
-                  <p className="text-[11px] text-gray-500 mb-2">
+                  <p className="text-xs text-gray-500 mb-2">
                     {filteredCatalogue.length} match{filteredCatalogue.length === 1 ? '' : 'es'}
                     {filteredCatalogue.length > CATALOGUE_CAP ? ` · showing ${CATALOGUE_CAP}` : ''}
                   </p>
@@ -531,7 +531,7 @@ export default function GeneratorView() {
                       >
                         <span className="flex flex-wrap gap-1 mb-1">
                           {rowCategories(row).map((cat) => (
-                            <span key={cat} className="text-[10px] uppercase tracking-wider text-gray-400 font-bold px-1.5 py-0.5 rounded-full border border-gray-700 bg-gray-800">
+                            <span key={cat} className="text-2xs uppercase tracking-wider text-gray-400 font-bold px-1.5 py-0.5 rounded-full border border-gray-700 bg-gray-800">
                               {cat}
                             </span>
                           ))}

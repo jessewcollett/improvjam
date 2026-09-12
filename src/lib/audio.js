@@ -4,6 +4,8 @@ const activeVoices = new Set();
 const HOLD_CATCH_MS = 130;
 
 export const BELL_STYLES = [
+  { id: 'counter', label: 'Counter Bell', hint: 'Pet training ding' },
+  { id: 'ringing', label: 'Ringing Bell', hint: 'Tap one ring · hold to keep ringing' },
   { id: 'bell', label: 'Bell', hint: 'Classic scene-end ding' },
   { id: 'chime', label: 'Chime', hint: 'Brighter three-note hit' },
   { id: 'buzz', label: 'Buzz', hint: 'Short sawtooth poke' },
@@ -15,6 +17,34 @@ export const BELL_STYLES = [
   { id: 'right', label: 'High ding', hint: 'Correct / dolphin trainer' },
   { id: 'triangle', label: 'Triangle', hint: 'Thin metallic ping' },
 ];
+
+const SAMPLE_STYLES = {
+  counter: { url: '/sounds/counter-bell.mp3' },
+  ringing: {
+    url: '/sounds/ringing-bell.mp3',
+    tapDuration: 2.4,
+    pickSegment: true,
+    playThroughOnHold: true,
+    releaseFade: 0.45,
+  },
+};
+
+const sampleRaw = new Map();
+const sampleDecoded = new Map();
+
+export function preloadBellSamples() {
+  Object.values(SAMPLE_STYLES).forEach((spec) => {
+    const url = spec.url;
+    if (!url || sampleRaw.has(url)) return;
+    sampleRaw.set(
+      url,
+      fetch(url).then((res) => {
+        if (!res.ok) throw new Error(`Sample missing (${res.status})`);
+        return res.arrayBuffer();
+      }),
+    );
+  });
+}
 
 const STYLE_IDS = new Set(BELL_STYLES.map((s) => s.id));
 
@@ -63,6 +93,7 @@ function createVoice(audio, tapMs, sustainLevel) {
     sustaining: false,
     letTapFinish: false,
     onSustain: null,
+    releaseFade: 0.18,
   };
 }
 
@@ -134,21 +165,109 @@ function enterSustain(voice) {
   if (voice.onSustain) voice.onSustain();
 }
 
-function releaseNow(voice, fade = 0.18) {
+function releaseNow(voice, fade) {
   if (voice.released) return;
   voice.released = true;
   const now = voice.ctx.currentTime;
+  const fadeSec = fade ?? voice.releaseFade ?? 0.18;
   voice.master.gain.cancelScheduledValues(now);
   voice.master.gain.setValueAtTime(Math.max(voice.master.gain.value, 0.0001), now);
-  voice.master.gain.exponentialRampToValueAtTime(0.0001, now + fade);
-  stopSources(voice, now + fade + 0.03);
+  voice.master.gain.exponentialRampToValueAtTime(0.0001, now + fadeSec);
+  stopSources(voice, now + fadeSec + 0.03);
   activeVoices.delete(voice);
+}
+
+async function loadSample(url) {
+  if (sampleDecoded.has(url)) return sampleDecoded.get(url);
+  preloadBellSamples();
+  const pending = sampleRaw.get(url).then((raw) => ctx().decodeAudioData(raw.slice(0)));
+  sampleDecoded.set(url, pending);
+  try {
+    return await pending;
+  } catch (error) {
+    sampleDecoded.delete(url);
+    throw error;
+  }
+}
+
+function pickSegmentOffset(buffer, spec) {
+  const tap = spec.tapDuration;
+  if (!spec.pickSegment || !tap) return 0;
+  const usable = Math.max(0, buffer.duration - tap);
+  if (usable <= 0) return 0;
+  const slots = Math.floor(usable / tap) + 1;
+  return Math.min(Math.floor(Math.random() * slots) * tap, usable);
+}
+
+function attachBuffer(voice, buffer, volume, spec = {}) {
+  const audio = voice.ctx;
+  const src = audio.createBufferSource();
+  src.buffer = buffer;
+  const offset = pickSegmentOffset(buffer, spec);
+  const tapDuration = spec.tapDuration
+    ? Math.min(spec.tapDuration, Math.max(0.2, buffer.duration - offset))
+    : buffer.duration;
+  src.loop = Boolean(voice.sustaining && spec.playThroughOnHold);
+  if (spec.playThroughOnHold) {
+    src.loopStart = 0.12;
+    src.loopEnd = Math.max(src.loopStart + 0.4, buffer.duration - 0.25);
+  }
+  src.connect(voice.master);
+  voice.sources.push(src);
+  voice.releaseFade = spec.releaseFade || 0.18;
+  const now = audio.currentTime;
+  voice.master.gain.cancelScheduledValues(now);
+  voice.master.gain.setValueAtTime(0.0001, now);
+  voice.master.gain.exponentialRampToValueAtTime(Math.max(0.0001, volume), now + 0.004);
+  try {
+    src.start(now, offset);
+  } catch {
+    src.start(now);
+  }
+  const durationMs = Math.min(Math.max(tapDuration * 1000, 200), 30000);
+  voice.tapMs = durationMs;
+  voice.timeouts.push(
+    setTimeout(() => {
+      if (voice.released || voice.sustaining) return;
+      releaseNow(voice, spec.releaseFade || 0.2);
+    }, durationMs),
+  );
+  voice.onSustain = () => {
+    if (!spec.playThroughOnHold) {
+      try {
+        src.loop = true;
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    try {
+      src.loop = true;
+    } catch {
+      /* ignore */
+    }
+  };
+  if (voice.sustaining) voice.onSustain();
+}
+
+function buildSampleVoice(spec, volume) {
+  const vol = clampVolume(volume);
+  const tapMs = spec.tapDuration ? spec.tapDuration * 1000 : 2500;
+  const voice = createVoice(ctx(), tapMs, 0.55 * vol);
+  voice.releaseFade = spec.releaseFade || 0.18;
+  loadSample(spec.url).then((buffer) => {
+    if (voice.released) return;
+    attachBuffer(voice, buffer, vol, spec);
+  }).catch(() => {});
+  return voice;
 }
 
 function buildVoice(style, volume) {
   const audio = ctx();
   const vol = clampVolume(volume);
   const id = normalizeStyle(style);
+  const sampleSpec = SAMPLE_STYLES[id];
+  if (sampleSpec) return buildSampleVoice(sampleSpec, volume);
 
   if (id === 'buzz') {
     const voice = createVoice(audio, 360, 0.12 * vol);
@@ -338,8 +457,28 @@ export function playDing(style = 'bell', volume = 0.8) {
   return voice;
 }
 
+export function playPad(pad, volume = 0.8) {
+  if (!pad) return playDing('bell', volume);
+  if (pad.styleId && (pad.bundled || !pad.playUrl)) {
+    return playDing(pad.styleId, volume);
+  }
+  if (pad.playUrl) {
+    maybeHaptic();
+    const voice = buildSampleVoice({ url: pad.playUrl, playThroughOnHold: true, releaseFade: 0.35 }, volume);
+    activeVoices.add(voice);
+    return voice;
+  }
+  return playDing(pad.styleId || pad.id || 'bell', volume);
+}
+
 export function startDing(style = 'bell', volume = 0.8) {
   const voice = playDing(style, volume);
+  voice.timeouts.push(setTimeout(() => enterSustain(voice), HOLD_CATCH_MS));
+  return voice;
+}
+
+export function startPad(pad, volume = 0.8) {
+  const voice = playPad(pad, volume);
   voice.timeouts.push(setTimeout(() => enterSustain(voice), HOLD_CATCH_MS));
   return voice;
 }
@@ -350,7 +489,7 @@ export function releaseDing(voice, { heldMs = 0 } = {}) {
     voice.letTapFinish = true;
     return;
   }
-  releaseNow(voice, voice.sustaining ? 0.22 : 0.12);
+  releaseNow(voice, voice.releaseFade || (voice.sustaining ? 0.22 : 0.12));
 }
 
 export function stopAllDings() {
@@ -360,7 +499,8 @@ export function stopAllDings() {
 export async function playCountIn(seconds = 3, style = 'bell', volume = 0.8) {
   const beats = Math.max(1, Math.min(8, Number(seconds) || 3));
   for (let i = beats; i > 0; i -= 1) {
-    playDing(i === 1 ? 'chime' : style, volume);
+    if (style && typeof style === 'object') playPad(style, volume);
+    else playDing(i === 1 ? 'chime' : style, volume);
     await new Promise((r) => setTimeout(r, 700));
   }
 }

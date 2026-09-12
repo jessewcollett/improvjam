@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { Library, Dices, Wrench, ListTodo, Settings } from 'lucide-react';
 import { motion } from 'framer-motion';
 
@@ -10,9 +11,29 @@ const items = [
 ];
 
 export default function BottomNav({ activeRoute, onChange }) {
+  const navRef = useRef(null);
+
+  useEffect(() => {
+    const el = navRef.current;
+    if (!el) return undefined;
+    const sync = () => {
+      document.documentElement.style.setProperty('--bottom-nav-height', `${el.offsetHeight}px`);
+    };
+    sync();
+    const observer = new ResizeObserver(sync);
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      document.documentElement.style.removeProperty('--bottom-nav-height');
+    };
+  }, []);
+
   return (
-    <nav className="fixed bottom-0 left-0 w-full bg-[#1A1A1A]/95 backdrop-blur-md border-t border-gray-800 pb-safe z-50 shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
-      <div className="flex justify-around items-center px-1 py-1.5 max-w-md mx-auto">
+    <nav
+      ref={navRef}
+      className="fixed bottom-0 left-0 w-full bg-[#1A1A1A]/95 backdrop-blur-md border-t border-gray-800 pb-safe z-50 shadow-[0_-10px_40px_rgba(0,0,0,0.5)]"
+    >
+      <div className="flex justify-around items-stretch px-1 py-1.5 max-w-md mx-auto">
         {items.map((item) => {
           const Icon = item.icon;
           const isActive = activeRoute === item.id;
@@ -35,7 +56,7 @@ export default function BottomNav({ activeRoute, onChange }) {
                 />
               )}
               <Icon className={`w-5 h-5 mb-0.5 shrink-0 ${isActive ? 'text-blue-400 scale-110' : ''}`} strokeWidth={isActive ? 2.5 : 2} />
-              <span className={`text-xs leading-tight text-center ${isActive ? 'font-bold text-gray-200' : 'font-medium'}`}>
+              <span className={`text-xs leading-tight text-center max-w-full line-clamp-2 break-words ${isActive ? 'font-bold text-gray-200' : 'font-medium'}`}>
                 {item.label}
               </span>
             </button>

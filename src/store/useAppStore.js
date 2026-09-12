@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import fallback from '../data/mockData.json';
 import { fetchSheetData, normalizePayload } from '../lib/sheets.js';
+import { normalizeMusicTags, tagsForTrack, toggleTagList } from '../lib/music.js';
+import { defaultSfxSlots, normalizeSfxSlots } from '../lib/sfxPad.js';
 
 const bundled = normalizePayload(fallback);
 
@@ -23,6 +25,7 @@ export const defaultSettings = {
   bellStyle: 'bell',
   bellVolume: 0.8,
   countInBeats: 3,
+  defaultSfxId: 'bell',
   theme: 'dark',
   reducedMotion: false,
   libraryView: 'games',
@@ -47,6 +50,10 @@ export const useAppStore = create(
       syncError: null,
       isSyncing: false,
       dismissedTipDate: null,
+      sfxHidden: [],
+      sfxOrder: [],
+      sfxSlots: defaultSfxSlots,
+      musicTags: {},
 
       updateSettings: (partial) => {
         set((state) => ({ settings: { ...state.settings, ...partial } }));
@@ -54,6 +61,61 @@ export const useAppStore = create(
 
       dismissTipOfTheDay: () => {
         set({ dismissedTipDate: localDateString() });
+      },
+
+      setDefaultSfx: (id) => {
+        const next = String(id || '').trim();
+        if (!next) return;
+        set((state) => ({ settings: { ...state.settings, defaultSfxId: next, bellStyle: next } }));
+      },
+
+      toggleMusicTag: (trackId, tag, sheetTags = []) => {
+        const id = String(trackId || '').trim();
+        const nextTag = String(tag || '').trim();
+        if (!id || !nextTag) return;
+        set((state) => {
+          const current = tagsForTrack({ id, tags: sheetTags }, state.musicTags);
+          return {
+            musicTags: {
+              ...state.musicTags,
+              [id]: toggleTagList(current, nextTag),
+            },
+          };
+        });
+      },
+
+      assignSfxSlot: (index, soundId) => {
+        set((state) => {
+          const slots = normalizeSfxSlots(state.sfxSlots, state.sfxOrder, state.sfxHidden);
+          if (index < 0 || index >= slots.length) return {};
+          slots[index] = soundId || null;
+          return { sfxSlots: slots };
+        });
+      },
+
+      toggleSfxHidden: (id) => {
+        set((state) => {
+          const current = state.sfxHidden || [];
+          const next = current.includes(id) ? current.filter((item) => item !== id) : [...current, id];
+          return { sfxHidden: next };
+        });
+      },
+
+      moveSfx: (id, direction) => {
+        set((state) => {
+          const pads = Array.isArray(state.sfxOrder) ? [...state.sfxOrder] : [];
+          const from = pads.indexOf(id);
+          if (from < 0) return {};
+          const to = from + direction;
+          if (to < 0 || to >= pads.length) return {};
+          const [item] = pads.splice(from, 1);
+          pads.splice(to, 0, item);
+          return { sfxOrder: pads };
+        });
+      },
+
+      setSfxOrder: (ids) => {
+        set({ sfxOrder: Array.isArray(ids) ? ids : [] });
       },
 
       toggleGeneratorBank: (id) => {
@@ -170,6 +232,10 @@ export const useAppStore = create(
         generatorBankFavorites: state.generatorBankFavorites,
         lastSynced: state.lastSynced,
         dismissedTipDate: state.dismissedTipDate,
+        sfxHidden: state.sfxHidden,
+        sfxOrder: state.sfxOrder,
+        sfxSlots: state.sfxSlots,
+        musicTags: state.musicTags,
       }),
       merge: (persisted, current) => ({
         ...current,
@@ -191,6 +257,10 @@ export const useAppStore = create(
         generatorBankFavorites: Array.isArray(persisted?.generatorBankFavorites)
           ? persisted.generatorBankFavorites
           : current.generatorBankFavorites,
+        sfxHidden: Array.isArray(persisted?.sfxHidden) ? persisted.sfxHidden : current.sfxHidden,
+        sfxOrder: Array.isArray(persisted?.sfxOrder) ? persisted.sfxOrder : current.sfxOrder,
+        sfxSlots: normalizeSfxSlots(persisted?.sfxSlots, persisted?.sfxOrder, persisted?.sfxHidden),
+        musicTags: normalizeMusicTags(persisted?.musicTags),
       }),
     },
   ),

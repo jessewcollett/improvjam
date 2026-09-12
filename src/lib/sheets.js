@@ -1,10 +1,42 @@
 import fallback from '../data/mockData.json';
 import { promptsFromRows, rowsFromPrompts, splitList, withTermIds } from './generator.js';
+import { playbackUrl } from './mediaUrl.js';
+import { sheetAudioTags } from './music.js';
 
 export const SHEETS_URL = import.meta.env.VITE_SHEETS_URL || '';
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
+}
+
+function isEnabled(value) {
+  const raw = String(value ?? '').trim().toLowerCase();
+  return raw === '' || raw === 'true' || raw === 'yes' || raw === '1';
+}
+
+function normalizeKind(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw === 'track' || raw === 'music' || raw === 'song') return 'track';
+  return 'sfx';
+}
+
+export function normalizeAudio(row) {
+  const id = String(row?.id || '').trim();
+  const url = String(row?.url || '').trim();
+  if (!id) return null;
+  return {
+    id,
+    name: String(row?.name || id).trim(),
+    kind: normalizeKind(row?.kind),
+    url,
+    playUrl: playbackUrl(url),
+    icon: String(row?.icon || 'bell').trim().toLowerCase() || 'bell',
+    credit: String(row?.credit || '').trim(),
+    creditUrl: String(row?.creditUrl || row?.crediturl || '').trim(),
+    notes: String(row?.notes || '').trim(),
+    tags: sheetAudioTags(row),
+    enabled: isEnabled(row?.enabled),
+  };
 }
 
 function normalizeGame(game) {
@@ -16,6 +48,8 @@ function normalizeGame(game) {
     tags: splitList(game?.tags),
     lifeSkills: splitList(game?.lifeSkills),
     sourceIds: splitList(game?.sourceIds),
+    image: String(game?.image || '').trim(),
+    imageSrc: playbackUrl(game?.image),
   };
 }
 
@@ -26,6 +60,8 @@ function normalizeTerm(term) {
     categories,
     category: categories[0] || String(term?.category || '').trim(),
     sourceIds: splitList(term?.sourceIds),
+    image: String(term?.image || '').trim(),
+    imageSrc: playbackUrl(term?.image),
   };
 }
 
@@ -36,6 +72,7 @@ export function normalizePayload(raw) {
       games: asArray(fallback.games).map(normalizeGame),
       terms: withTermIds(fallback.terms).map(normalizeTerm),
       generator: asArray(fallback.generator).length ? fallback.generator : rowsFromPrompts(fallback.prompts),
+      audio: asArray(fallback.audio).map(normalizeAudio).filter(Boolean),
     };
   }
 
@@ -51,6 +88,7 @@ export function normalizePayload(raw) {
     sources: asArray(raw.sources).length ? raw.sources : fallback.sources,
     generator,
     prompts: promptsFromRows(generator, fallback.prompts),
+    audio: asArray(raw.audio).map(normalizeAudio).filter(Boolean),
   };
 }
 
@@ -61,8 +99,8 @@ function withCacheBust(url) {
 
 function catalogEndpoints(preferred) {
   const endpoints = [];
-  if (import.meta.env.PROD) endpoints.push('/api/catalog');
-  if (preferred) endpoints.push(preferred);
+  endpoints.push('/api/catalog');
+  if (preferred && !preferred.includes('/api/catalog')) endpoints.push(preferred);
   return [...new Set(endpoints)];
 }
 

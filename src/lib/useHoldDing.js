@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { releaseDing, startDing } from './audio.js';
+import { releaseDing, startDing, startPad } from './audio.js';
 
 export function useHoldDing(style, volume) {
   const voiceRef = useRef(null);
@@ -22,7 +22,10 @@ export function useHoldDing(style, volume) {
     event.preventDefault();
     release();
     downAt.current = performance.now();
-    voiceRef.current = startDing(styleRef.current, volumeRef.current);
+    const current = styleRef.current;
+    voiceRef.current = current && typeof current === 'object'
+      ? startPad(current, volumeRef.current)
+      : startDing(current, volumeRef.current);
     event.currentTarget.setPointerCapture?.(event.pointerId);
   }, [release]);
 

@@ -12,6 +12,9 @@ export default {
         display: ['Poppins', 'system-ui', 'sans-serif'],
         body: ['Inter', 'system-ui', 'sans-serif'],
       },
+      fontSize: {
+        '2xs': ['0.625rem', { lineHeight: '0.85rem' }],
+      },
     },
   },
   plugins: [],

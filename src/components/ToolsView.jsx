@@ -1,10 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Bell, Timer, Users, Shuffle, Lightbulb, Coins, Play, Settings } from 'lucide-react';
-import { BELL_STYLES, playCountIn, playDing } from '../lib/audio.js';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Bell, Timer, Users, Shuffle, Lightbulb, Coins, Play, Music } from 'lucide-react';
+import { playCountIn, playPad } from '../lib/audio.js';
+import { mergeSfxPads, resolveDefaultPad, sheetTracks } from '../lib/sfxPad.js';
 import { useHoldDing } from '../lib/useHoldDing.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { useWakeLock } from '../lib/useWakeLock.js';
 import ActionDock from './ActionDock.jsx';
+import MusicPlayer from './MusicPlayer.jsx';
+import SfxPad from './SfxPad.jsx';
 
 const PRESETS = [
   { label: '30s', seconds: 30 },
@@ -15,7 +18,8 @@ const PRESETS = [
 ];
 
 const TOOLS = [
-  { id: 'bell', label: 'Bell', icon: Bell, accent: 'text-yellow-300' },
+  { id: 'sfx', label: 'SFX', icon: Bell, accent: 'text-yellow-300' },
+  { id: 'music', label: 'Music', icon: Music, accent: 'text-fuchsia-300' },
   { id: 'timer', label: 'Timer', icon: Timer, accent: 'text-cyan-300' },
   { id: 'whosup', label: "Who's Up", icon: Users, accent: 'text-blue-300' },
   { id: 'hat', label: 'Hat', icon: Lightbulb, accent: 'text-lime-300' },
@@ -28,9 +32,14 @@ function formatTime(total) {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-export default function ToolsView({ onOpenSettings }) {
+export default function ToolsView() {
   const prompts = useAppStore((s) => s.data.prompts);
+  const audioRows = useAppStore((s) => s.data.audio) || [];
   const settings = useAppStore((s) => s.settings);
+  const updateSettings = useAppStore((s) => s.updateSettings);
+  const sfxSlots = useAppStore((s) => s.sfxSlots);
+  const setDefaultSfx = useAppStore((s) => s.setDefaultSfx);
+  const assignSfxSlot = useAppStore((s) => s.assignSfxSlot);
   useWakeLock(Boolean(settings.keepAwake));
   const [activeTool, setActiveTool] = useState('timer');
   const [seconds, setSeconds] = useState(60);
@@ -45,20 +54,26 @@ export default function ToolsView({ onOpenSettings }) {
   const [lastPicked, setLastPicked] = useState('');
   const [suggestion, setSuggestion] = useState(null);
   const [coin, setCoin] = useState('');
+  const musicRandomRef = useRef(null);
 
   const halfSequence = [60, 30, 15, 7];
-  const ding = () => playDing(settings.bellStyle, settings.bellVolume);
-  const holdHeaderDing = useHoldDing(settings.bellStyle, settings.bellVolume);
-  const holdPanelDing = useHoldDing(settings.bellStyle, settings.bellVolume);
-  const countIn = () => playCountIn(settings.countInBeats, settings.bellStyle, settings.bellVolume);
-  const styleLabel = BELL_STYLES.find((s) => s.id === settings.bellStyle)?.label || 'Bell';
+  const pads = useMemo(() => mergeSfxPads(audioRows), [audioRows]);
+  const tracks = useMemo(() => sheetTracks(audioRows), [audioRows]);
+  const defaultPad = useMemo(
+    () => resolveDefaultPad(pads, settings.defaultSfxId, settings.bellStyle),
+    [pads, settings.defaultSfxId, settings.bellStyle],
+  );
+
+  const ding = () => playPad(defaultPad, settings.bellVolume);
+  const holdHeaderDing = useHoldDing(defaultPad, settings.bellVolume);
+  const countIn = () => playCountIn(settings.countInBeats, defaultPad, settings.bellVolume);
 
   useEffect(() => {
     if (!running) return undefined;
     const id = setInterval(() => {
       setRemaining((prev) => {
         if (prev <= 1) {
-          playDing(settings.bellStyle, settings.bellVolume);
+          playPad(defaultPad, settings.bellVolume);
           if (halfLife && halfStep < halfSequence.length - 1) {
             const next = halfStep + 1;
             setHalfStep(next);
@@ -71,7 +86,7 @@ export default function ToolsView({ onOpenSettings }) {
       });
     }, 1000);
     return () => clearInterval(id);
-  }, [running, halfLife, halfStep, settings.bellStyle, settings.bellVolume]);
+  }, [running, halfLife, halfStep, defaultPad, settings.bellVolume]);
 
   const players = useMemo(
     () => roster.split(/[\n,]/).map((n) => n.trim()).filter(Boolean),
@@ -124,14 +139,14 @@ export default function ToolsView({ onOpenSettings }) {
   );
 
   return (
-    <div className="h-full flex flex-col pt-safe relative">
+    <div className="h-full min-h-0 overflow-hidden flex flex-col pt-safe relative">
       <div className="px-4">
         <div className="flex items-center justify-between mb-3 gap-3">
           <h1 className="text-2xl font-black font-display text-white tracking-tight">Jam Tools</h1>
           {dingButton('hidden md:flex px-5 py-2.5 min-w-[88px]')}
         </div>
 
-        <div className="flex gap-2 mb-4">
+        <div className="grid grid-cols-3 gap-2 mb-4">
           {TOOLS.map((tool) => {
             const Icon = tool.icon;
             const active = activeTool === tool.id;
@@ -146,53 +161,32 @@ export default function ToolsView({ onOpenSettings }) {
                 aria-pressed={active}
               >
                 <Icon className={`w-5 h-5 ${active ? tool.accent : ''}`} />
-                <span className="text-[10px] font-bold">{tool.label}</span>
+                <span className="text-2xs font-bold leading-tight text-center">{tool.label}</span>
               </button>
             );
           })}
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto scrollbar-hide px-4 pb-6 md:pb-nav">
-        {activeTool === 'bell' && (
-          <section className="bg-card border border-gray-800 rounded-2xl p-4">
-            <h2 className="text-lg font-black font-display mb-2 text-yellow-300 flex items-center">
-              <Bell className="w-5 h-5 mr-2" />
-              Bell
-            </h2>
-            <p className="text-xs text-gray-500 mb-3">
-              Sound is {styleLabel} · volume {Math.round(settings.bellVolume * 100)}% · {settings.countInBeats}-count.
-              Tap Ding for a hit, or hold it to sustain. Change the voice in Settings.
-            </p>
-            <div className="hidden md:grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                {...holdPanelDing}
-                className="bg-yellow-500 text-black font-black py-4 rounded-2xl text-lg active:scale-95 min-h-16"
-                aria-label="Ding, hold to sustain"
-              >
-                Ding
-              </button>
-              <button
-                type="button"
-                onClick={countIn}
-                className="bg-gray-800 border border-gray-700 text-gray-100 font-bold py-4 rounded-2xl active:scale-95 min-h-16 flex items-center justify-center gap-2"
-              >
-                <Play className="w-4 h-4" />
-                {settings.countInBeats}-count
-              </button>
-            </div>
-            {onOpenSettings && (
-              <button
-                type="button"
-                onClick={onOpenSettings}
-                className="w-full mt-3 min-h-11 rounded-xl border border-gray-700 bg-gray-800 text-sm font-bold text-gray-200 flex items-center justify-center gap-2"
-              >
-                <Settings className="w-4 h-4" />
-                Bell settings
-              </button>
-            )}
-          </section>
+      <div className={`${activeTool === 'music' ? 'flex-1 min-h-0 px-4 pb-2 md:pb-nav flex flex-col overflow-hidden' : 'flex-1 overflow-y-auto scrollbar-hide px-4 pb-6 md:pb-nav'}`}>
+        {activeTool === 'sfx' && (
+          <SfxPad
+            pads={pads}
+            slots={sfxSlots}
+            defaultPad={defaultPad}
+            volume={settings.bellVolume}
+            countInBeats={settings.countInBeats}
+            onAssign={assignSfxSlot}
+            onSetDefault={setDefaultSfx}
+            onVolume={(bellVolume) => updateSettings({ bellVolume })}
+            onCountInBeats={(countInBeats) => updateSettings({ countInBeats })}
+          />
+        )}
+
+        {activeTool === 'music' && (
+          <div className="flex-1 min-h-0">
+            <MusicPlayer tracks={tracks} randomRef={musicRandomRef} />
+          </div>
         )}
 
         {activeTool === 'timer' && (
@@ -315,10 +309,10 @@ export default function ToolsView({ onOpenSettings }) {
             </button>
             {suggestion && (
               <div className="grid grid-cols-2 gap-2 text-sm">
-                <p className="bg-gray-900 rounded-lg p-3 border border-gray-800"><span className="block text-[10px] uppercase text-gray-500">Location</span>{suggestion.location}</p>
-                <p className="bg-gray-900 rounded-lg p-3 border border-gray-800"><span className="block text-[10px] uppercase text-gray-500">Occupation</span>{suggestion.occupation}</p>
-                <p className="bg-gray-900 rounded-lg p-3 border border-gray-800"><span className="block text-[10px] uppercase text-gray-500">Relationship</span>{suggestion.relationship}</p>
-                <p className="bg-gray-900 rounded-lg p-3 border border-gray-800"><span className="block text-[10px] uppercase text-gray-500">Object</span>{suggestion.object}</p>
+                <p className="bg-gray-900 rounded-lg p-3 border border-gray-800"><span className="block text-2xs uppercase text-gray-500">Location</span>{suggestion.location}</p>
+                <p className="bg-gray-900 rounded-lg p-3 border border-gray-800"><span className="block text-2xs uppercase text-gray-500">Occupation</span>{suggestion.occupation}</p>
+                <p className="bg-gray-900 rounded-lg p-3 border border-gray-800"><span className="block text-2xs uppercase text-gray-500">Relationship</span>{suggestion.relationship}</p>
+                <p className="bg-gray-900 rounded-lg p-3 border border-gray-800"><span className="block text-2xs uppercase text-gray-500">Object</span>{suggestion.object}</p>
               </div>
             )}
           </section>
@@ -344,8 +338,18 @@ export default function ToolsView({ onOpenSettings }) {
 
       <ActionDock>
         <div className="flex gap-2">
-          {dingButton('px-5 min-w-[88px]', holdPanelDing)}
-          {activeTool === 'bell' && (
+          {dingButton('px-5 min-w-[88px]')}
+          {activeTool === 'music' && (
+            <button
+              type="button"
+              onClick={() => musicRandomRef.current?.()}
+              className="flex-1 bg-fuchsia-700 text-white font-bold rounded-xl min-h-12 flex items-center justify-center gap-2"
+            >
+              <Shuffle className="w-4 h-4" />
+              Random
+            </button>
+          )}
+          {activeTool === 'sfx' && (
             <button
               type="button"
               onClick={countIn}

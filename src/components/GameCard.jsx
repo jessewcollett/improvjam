@@ -13,6 +13,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore } from '../store/useAppStore.js';
 import { categoryClass } from '../lib/categoryStyles.js';
 import { splitList } from '../lib/generator.js';
+import CatalogImage from './CatalogImage.jsx';
 import { ItemSource } from './SourceCitation.jsx';
 
 function iconClass(active, on) {
@@ -39,7 +40,7 @@ export default function GameCard({ game, onCategoryClick }) {
 
   const customSetMenu = (
     <div className="absolute top-full right-0 mt-1 w-52 bg-[#121212] border border-gray-700 rounded-xl shadow-2xl overflow-hidden z-20">
-      <div className="bg-gray-800 text-[10px] font-bold text-gray-400 uppercase tracking-wider px-3 py-2 border-b border-gray-700">
+      <div className="bg-gray-800 text-2xs font-bold text-gray-400 uppercase tracking-wider px-3 py-2 border-b border-gray-700">
         Add to custom set
       </div>
       <div className="max-h-40 overflow-y-auto">
@@ -84,8 +85,8 @@ export default function GameCard({ game, onCategoryClick }) {
             className="w-full min-w-0 text-left py-0.5"
             aria-expanded={expanded}
           >
-            <div className="flex items-center gap-1">
-              <h3 className="text-[15px] font-bold font-display text-gray-100 truncate">{game.name}</h3>
+            <div className="flex items-start gap-1">
+              <h3 className="text-base font-bold font-display text-gray-100 leading-tight">{game.name}</h3>
               <ChevronRight className={`w-4 h-4 text-gray-500 shrink-0 transition-transform ${expanded ? 'rotate-90' : ''}`} />
             </div>
           </button>
@@ -98,7 +99,7 @@ export default function GameCard({ game, onCategoryClick }) {
                   e.stopPropagation();
                   onCategoryClick?.(cat);
                 }}
-                className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${categoryClass(cat)}`}
+                className={`text-2xs font-semibold px-1.5 py-0.5 rounded-full border ${categoryClass(cat)}`}
               >
                 {cat}
               </button>
@@ -106,7 +107,7 @@ export default function GameCard({ game, onCategoryClick }) {
             {visibleTags.map((tag) => (
               <span
                 key={`tag-${tag}`}
-                className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full border text-gray-400 bg-gray-800 border-gray-700"
+                className="text-2xs font-semibold px-1.5 py-0.5 rounded-full border text-gray-400 bg-gray-800 border-gray-700"
               >
                 {tag}
               </span>
@@ -165,11 +166,12 @@ export default function GameCard({ game, onCategoryClick }) {
             className="overflow-hidden"
           >
             <div className="px-3 pb-3 pt-0">
+              <CatalogImage src={game.imageSrc || game.image} alt={game.name} />
               {lifeSkills.length > 0 && (
                 <div className="mb-2 flex flex-wrap gap-1 items-center">
-                  <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-wider mr-1">Life Skills</span>
+                  <span className="text-2xs font-bold text-emerald-500 uppercase tracking-wider mr-1">Life Skills</span>
                   {lifeSkills.map((skill) => (
-                    <span key={skill} className="text-[10px] text-emerald-300/80 bg-emerald-900/20 border border-emerald-800/30 px-1.5 py-0.5 rounded-full">
+                    <span key={skill} className="text-2xs text-emerald-300/80 bg-emerald-900/20 border border-emerald-800/30 px-1.5 py-0.5 rounded-full">
                       {skill}
                     </span>
                   ))}

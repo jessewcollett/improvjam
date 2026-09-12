@@ -4,6 +4,9 @@
   "functions": {
     "api/catalog.js": {
       "maxDuration": 30
+    },
+    "api/media.js": {
+      "maxDuration": 30
     }
   }
 }
