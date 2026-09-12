@@ -36,6 +36,20 @@ export const defaultSettings = {
 export const defaultGeneratorBanks = ['Locations', 'Relationships', 'Objects'];
 export const defaultGeneratorSkills = [];
 export const defaultGeneratorBankFavorites = [];
+const emptyDrawCounts = {};
+
+function normalizeDrawCounts(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ...emptyDrawCounts };
+  const next = {};
+  for (const [id, value] of Object.entries(raw)) {
+    const key = String(id || '').trim();
+    if (!key) continue;
+    const n = Math.round(Number(value));
+    if (!Number.isFinite(n)) continue;
+    next[key] = Math.min(12, Math.max(1, n));
+  }
+  return next;
+}
 
 export const useAppStore = create(
   persist(
@@ -46,6 +60,7 @@ export const useAppStore = create(
       generatorBanks: defaultGeneratorBanks,
       generatorSkills: defaultGeneratorSkills,
       generatorBankFavorites: defaultGeneratorBankFavorites,
+      generatorDrawCounts: emptyDrawCounts,
       lastSynced: null,
       syncError: null,
       isSyncing: false,
@@ -146,6 +161,19 @@ export const useAppStore = create(
         });
       },
 
+      setGeneratorDrawCount: (id, count) => {
+        const key = String(id || '').trim();
+        if (!key) return;
+        const n = Math.round(Number(count));
+        if (!Number.isFinite(n)) return;
+        set((state) => ({
+          generatorDrawCounts: {
+            ...(state.generatorDrawCounts || {}),
+            [key]: Math.min(12, Math.max(1, n)),
+          },
+        }));
+      },
+
       toggleInList: (listName, id) => {
         set((state) => {
           const current = state.lists[listName] || [];
@@ -230,6 +258,7 @@ export const useAppStore = create(
         generatorBanks: state.generatorBanks,
         generatorSkills: state.generatorSkills,
         generatorBankFavorites: state.generatorBankFavorites,
+        generatorDrawCounts: state.generatorDrawCounts,
         lastSynced: state.lastSynced,
         dismissedTipDate: state.dismissedTipDate,
         sfxHidden: state.sfxHidden,
@@ -257,6 +286,7 @@ export const useAppStore = create(
         generatorBankFavorites: Array.isArray(persisted?.generatorBankFavorites)
           ? persisted.generatorBankFavorites
           : current.generatorBankFavorites,
+        generatorDrawCounts: normalizeDrawCounts(persisted?.generatorDrawCounts),
         sfxHidden: Array.isArray(persisted?.sfxHidden) ? persisted.sfxHidden : current.sfxHidden,
         sfxOrder: Array.isArray(persisted?.sfxOrder) ? persisted.sfxOrder : current.sfxOrder,
         sfxSlots: normalizeSfxSlots(persisted?.sfxSlots, persisted?.sfxOrder, persisted?.sfxHidden),

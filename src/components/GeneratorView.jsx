@@ -7,17 +7,55 @@ import {
   Star,
   ChevronDown,
   Tag,
+  Minus,
+  Plus,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore } from '../store/useAppStore.js';
 import { askForCategoriesFromRows, rowCategories, rowExtra, skillItemsFromRows } from '../lib/generator.js';
-import ActionDock from './ActionDock.jsx';
 import CatalogIcon from './CatalogIcon.jsx';
 import SearchField from './SearchField.jsx';
 import SyncButton from './SyncButton.jsx';
 
 const pick = (arr) => (arr?.length ? arr[Math.floor(Math.random() * arr.length)] : undefined);
 const CATALOGUE_CAP = 50;
+const DRAW_MIN = 1;
+const DRAW_MAX = 12;
+
+function clampDrawCount(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return DRAW_MIN;
+  return Math.min(DRAW_MAX, Math.max(DRAW_MIN, Math.round(n)));
+}
+
+function DrawChip({ icon, label, count, onCount }) {
+  const n = clampDrawCount(count);
+  return (
+    <div className="inline-flex items-center shrink-0 rounded-xl border border-lime-800/50 bg-[#1A1A1A] pl-2 overflow-hidden">
+      <CatalogIcon name={icon} className="w-3.5 h-3.5 text-lime-400 shrink-0" fallback={Tag} />
+      <span className="text-xs font-bold text-white px-1.5 max-w-[5rem] truncate">{label}</span>
+      <button
+        type="button"
+        onClick={() => onCount(n - 1)}
+        disabled={n <= DRAW_MIN}
+        className="min-w-11 min-h-11 flex items-center justify-center text-gray-200 disabled:text-gray-600"
+        aria-label={`Fewer ${label}`}
+      >
+        <Minus className="w-3.5 h-3.5" />
+      </button>
+      <span className="w-4 text-center text-sm font-black tabular-nums text-white">{n}</span>
+      <button
+        type="button"
+        onClick={() => onCount(n + 1)}
+        disabled={n >= DRAW_MAX}
+        className="min-w-11 min-h-11 flex items-center justify-center text-gray-200 disabled:text-gray-600"
+        aria-label={`More ${label}`}
+      >
+        <Plus className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  );
+}
 
 function displayText(row) {
   if (!row) return '';
@@ -100,6 +138,9 @@ export default function GeneratorView() {
   const toggleGeneratorBank = useAppStore((s) => s.toggleGeneratorBank);
   const toggleGeneratorBankFavorite = useAppStore((s) => s.toggleGeneratorBankFavorite);
   const toggleGeneratorSkill = useAppStore((s) => s.toggleGeneratorSkill);
+  const drawCounts = useAppStore((s) => s.generatorDrawCounts) || {};
+  const setGeneratorDrawCount = useAppStore((s) => s.setGeneratorDrawCount);
+  const countFor = (id) => clampDrawCount(drawCounts[id] ?? 1);
   const [locks, setLocks] = useState({ c: false, o: false, r: false, e: false });
   const [kit, setKit] = useState(null);
   const [skillResults, setSkillResults] = useState([]);
@@ -154,10 +195,21 @@ export default function GeneratorView() {
 
   const visibleCatalogue = filteredCatalogue.slice(0, CATALOGUE_CAP);
 
-  const drawFrom = (rows, current) => {
-    if (!rows.length) return undefined;
-    const nextPool = rows.filter((row) => row.id !== current?.id);
-    return pick(nextPool.length ? nextPool : rows);
+  const drawMany = (rows, n, previous = []) => {
+    if (!rows.length || n < 1) return [];
+    const avoid = new Set(previous.map((row) => row?.id).filter(Boolean));
+    const picked = [];
+    const used = new Set();
+    for (let i = 0; i < n; i += 1) {
+      const unused = rows.filter((row) => !used.has(row.id));
+      const fresh = unused.filter((row) => !avoid.has(row.id));
+      const pool = fresh.length ? fresh : unused.length ? unused : rows;
+      const next = pick(pool);
+      if (!next) break;
+      picked.push(next);
+      used.add(next.id);
+    }
+    return picked;
   };
 
   const buildCORE = (prev) => {
@@ -216,17 +268,34 @@ export default function GeneratorView() {
       setKit(
         selectedCats.map((cat) => {
           const rows = generator.filter((row) => rowCategories(row).includes(cat.id) && row.text);
-          const current = kit?.find((item) => item.id === cat.id)?.row;
-          return { id: cat.id, label: cat.label, icon: cat.icon, row: drawFrom(rows, current) || null };
+          const previous = kit?.find((item) => item.id === cat.id)?.rows || [];
+          return {
+            id: cat.id,
+            label: cat.label,
+            icon: cat.icon,
+            rows: drawMany(rows, countFor(cat.id), previous),
+          };
         }),
       );
     } else {
       setKit(null);
     }
 
-    setSkillResults((prev) => selectedSkillItems.map((skill) => (
-      buildSkill(skill, prev.find((item) => item?.id === skill.id || item?.type === skill.id))
-    )).filter(Boolean));
+    setSkillResults((prev) =>
+      selectedSkillItems.flatMap((skill) => {
+        const repeats = countFor(skill.id);
+        const batch = [];
+        for (let i = 0; i < repeats; i += 1) {
+          const built = buildSkill(skill, prev.find((item) => item?.type === skill.id || String(item?.id).startsWith(`${skill.id}`)));
+          if (!built) continue;
+          batch.push({
+            ...built,
+            id: repeats > 1 ? `${skill.id}-${i}` : skill.id,
+          });
+        }
+        return batch;
+      }),
+    );
   };
 
   const applyCatalogueRow = (row) => {
@@ -236,8 +305,8 @@ export default function GeneratorView() {
     setKit((prev) => {
       const next = prev?.length
         ? prev.map((item) => ({ ...item }))
-        : selectedCats.map((cat) => ({ id: cat.id, label: cat.label, icon: cat.icon, row: null }));
-      return next.map((item) => (item.id === match.id ? { ...item, row } : item));
+        : selectedCats.map((cat) => ({ id: cat.id, label: cat.label, icon: cat.icon, rows: [] }));
+      return next.map((item) => (item.id === match.id ? { ...item, rows: [row] } : item));
     });
   };
 
@@ -248,23 +317,41 @@ export default function GeneratorView() {
     ...selectedSkillItems.map((item) => item.label),
   ].join(', ') || 'Nothing selected';
 
-  const generateButton = (className) => (
-    <button
-      type="button"
-      onClick={generate}
-      disabled={!canGenerate}
-      className={`w-full bg-lime-600 disabled:bg-gray-800 disabled:text-gray-500 text-black font-black py-3 rounded-xl min-h-12 flex items-center justify-center gap-2 ${className}`}
-    >
-      <Shuffle className="w-4 h-4" />
-      Generate
-    </button>
+  const selectedDrawItems = [...selectedCats, ...selectedSkillItems];
+  const generateBlock = (
+    <div className="rounded-2xl border border-lime-800/40 bg-[#1A1A1A] p-2 flex flex-col gap-2">
+      {selectedDrawItems.length ? (
+        <div className="flex flex-wrap gap-1.5">
+          {selectedDrawItems.map((item) => (
+            <DrawChip
+              key={item.id}
+              icon={item.icon}
+              label={item.label}
+              count={countFor(item.id)}
+              onCount={(n) => setGeneratorDrawCount(item.id, n)}
+            />
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-gray-500 px-1">Check a bank above, then Generate.</p>
+      )}
+      <button
+        type="button"
+        onClick={generate}
+        disabled={!canGenerate}
+        className="w-full bg-lime-600 disabled:bg-gray-800 disabled:text-gray-500 text-black font-black py-3 rounded-xl min-h-12 flex items-center justify-center gap-2"
+      >
+        <Shuffle className="w-4 h-4" />
+        Generate
+      </button>
+    </div>
   );
 
   return (
     <div className="h-full flex flex-col pt-safe relative overflow-hidden">
       <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 rounded-full bg-green-500/5 blur-3xl pointer-events-none" />
-      <div className="flex-1 overflow-y-auto scrollbar-hide px-4 md:px-6 pb-6 md:pb-nav">
-        <div className="flex items-start justify-between gap-3 mb-4">
+      <div className="flex-none px-4 md:px-6 pb-3 bg-stage/95 z-20 border-b border-gray-800">
+        <div className="flex items-start justify-between gap-3 mb-3">
           <h1 className="text-2xl font-black font-display text-white tracking-tight flex items-center">
             <Wand2 className="text-green-400 mr-2 w-7 h-7" />
             Generator
@@ -272,7 +359,7 @@ export default function GeneratorView() {
           <SyncButton compact />
         </div>
 
-        <section className="mb-3">
+        <section className="mb-2">
           <button
             type="button"
             onClick={() => setBanksOpen((v) => !v)}
@@ -290,7 +377,7 @@ export default function GeneratorView() {
           </button>
 
           {banksOpen && (
-            <div className="mt-2">
+            <div className="mt-2 max-h-[36vh] overflow-y-auto scrollbar-hide">
               {favoriteCats.length > 0 && (
                 <>
                   <p className="text-2xs uppercase tracking-wider text-yellow-500/80 font-bold px-0.5 mb-1">Favorites</p>
@@ -348,6 +435,10 @@ export default function GeneratorView() {
           )}
         </section>
 
+        {generateBlock}
+      </div>
+
+      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide px-4 md:px-6 pt-3 pb-nav">
         <AnimatePresence>
           {hasOutput && (
             <motion.div
@@ -361,15 +452,27 @@ export default function GeneratorView() {
                   <p className="text-2xs uppercase tracking-wider text-lime-400 font-bold mb-2">Scene kit</p>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5">
                     {kit.map((item) => {
+                      const rows = item.rows || [];
                       return (
                         <div key={item.id} className="flex items-start gap-2 rounded-xl border border-gray-800 bg-card px-2.5 py-2">
                           <CatalogIcon name={item.icon} className="w-3.5 h-3.5 text-lime-400 mt-0.5 shrink-0" fallback={Tag} />
                           <div className="min-w-0">
-                            <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold">{item.label}</p>
-                            <p className="text-sm font-bold text-gray-100 leading-snug">
-                              {item.row ? displayText(item.row) : `No ${item.label.toLowerCase()} yet.`}
+                            <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold">
+                              {item.label}
+                              {rows.length > 1 ? ` · ${rows.length}` : ''}
                             </p>
-                            <ExtraCaption extra={item.row ? rowExtra(item.row) : ''} />
+                            {rows.length ? (
+                              <div className="space-y-1.5">
+                                {rows.map((row, index) => (
+                                  <div key={row.id || `${item.id}-${index}`}>
+                                    <p className="text-sm font-bold text-gray-100 leading-snug">{displayText(row)}</p>
+                                    <ExtraCaption extra={rowExtra(row)} />
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-sm font-bold text-gray-100 leading-snug">No {item.label.toLowerCase()} yet.</p>
+                            )}
                           </div>
                         </div>
                       );
@@ -470,8 +573,6 @@ export default function GeneratorView() {
           )}
         </AnimatePresence>
 
-        {generateButton('hidden md:flex mb-4')}
-
         <section className="mb-4">
           <button
             type="button"
@@ -512,7 +613,7 @@ export default function GeneratorView() {
                         type="button"
                         onClick={() => applyCatalogueRow(row)}
                         className={`w-full text-left bg-card border rounded-xl px-3 py-2.5 text-sm min-h-11 ${
-                          kit?.some((item) => item.row?.id === row.id) ? 'border-lime-600 text-white' : 'border-gray-800 text-gray-300'
+                          kit?.some((item) => item.rows?.some((entry) => entry.id === row.id)) ? 'border-lime-600 text-white' : 'border-gray-800 text-gray-300'
                         }`}
                       >
                         <span className="flex flex-wrap gap-1 mb-1">
@@ -533,9 +634,6 @@ export default function GeneratorView() {
           )}
         </section>
       </div>
-      <ActionDock>
-        {generateButton('')}
-      </ActionDock>
     </div>
   );
 }
