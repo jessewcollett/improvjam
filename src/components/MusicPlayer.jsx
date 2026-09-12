@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, ListFilter, Music, Pause, Play, Repeat, Shuffle, X } from 'lucide-react';
+import { Check, ListFilter, Music, Pause, Play, Repeat, Shuffle, Volume2, X } from 'lucide-react';
 import { UNTAGGED_FILTER, tagsForTrack, uniqueTags } from '../lib/music.js';
 import { useAppStore } from '../store/useAppStore.js';
 
@@ -18,13 +18,13 @@ function Credit({ track }) {
         href={track.creditUrl}
         target="_blank"
         rel="noopener noreferrer"
-        className="text-2xs text-blue-400 leading-snug break-words"
+        className="text-xs font-medium text-blue-400"
       >
         {track.credit}
       </a>
     );
   }
-  return <p className="text-2xs text-gray-500 leading-snug break-words">{track.credit}</p>;
+  return <span className="text-xs font-medium text-gray-500">{track.credit}</span>;
 }
 
 function TagPills({ tags, selected, onToggle, emptyLabel }) {
@@ -84,7 +84,7 @@ function MusicFilters({
   const summary = [...(sortBy === 'tag' ? ['Tag'] : []), ...filterLabels];
 
   return (
-    <div className="shrink-0 mb-3">
+    <div className="shrink-0 mb-2">
       <div className="flex items-center gap-2 flex-wrap">
         <button
           type="button"
@@ -170,6 +170,7 @@ export default function MusicPlayer({ tracks, randomRef }) {
   const [customTag, setCustomTag] = useState('');
   const [tagging, setTagging] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [volumeOpen, setVolumeOpen] = useState(false);
 
   const taggedTracks = useMemo(
     () => tracks.map((track) => ({ ...track, displayTags: tagsForTrack(track, musicTags) })),
@@ -315,9 +316,9 @@ export default function MusicPlayer({ tracks, randomRef }) {
   }
 
   return (
-    <section className="bg-card border border-gray-800 rounded-2xl p-4 h-full min-h-0 flex flex-col">
-      <h2 className="text-lg font-black font-display text-fuchsia-300 flex items-center mb-2 shrink-0">
-        <Music className="w-5 h-5 mr-2" />
+    <section className="bg-card border border-gray-800 rounded-2xl p-3 h-full min-h-0 flex flex-col">
+      <h2 className="text-base font-black font-display text-fuchsia-300 flex items-center mb-1.5 shrink-0">
+        <Music className="w-4 h-4 mr-2" />
         Music
       </h2>
       <audio ref={audioRef} preload="metadata" />
@@ -366,34 +367,42 @@ export default function MusicPlayer({ tracks, randomRef }) {
           </div>
         </div>
 
-        <div className="shrink-0 border-t border-gray-800 pt-3 bg-card md:border-t-0 md:border-l md:pl-4 md:pt-0 md:w-[min(24rem,46%)] md:overflow-y-auto scrollbar-hide">
-        <p className="text-base font-black font-display text-white leading-tight mb-1">{active?.name}</p>
-        <Credit track={active} />
+        <div className="shrink-0 border-t border-gray-800 pt-2 bg-card md:border-t-0 md:border-l md:pl-3 md:pt-0 md:w-64 lg:w-72 md:overflow-y-auto scrollbar-hide">
+        <p className="text-sm font-black font-display text-white leading-tight truncate">
+          {active?.name}
+          {active?.credit ? (
+            <span className="font-sans font-medium">
+              {' '}
+              — <Credit track={active} />
+            </span>
+          ) : null}
+        </p>
 
-        <input
-          type="range"
-          min="0"
-          max={duration || 0}
-          step="0.1"
-          value={Math.min(current, duration || 0)}
-          onChange={(e) => {
-            const next = Number(e.target.value);
-            if (audioRef.current) audioRef.current.currentTime = next;
-            setCurrent(next);
-          }}
-          className="w-full accent-fuchsia-500 min-h-11 mt-2"
-          aria-label="Seek"
-        />
-        <div className="flex justify-between text-2xs text-gray-500 tabular-nums mb-2">
-          <span>{formatTime(current)}</span>
-          <span>{formatTime(duration)}</span>
+        <div className="flex items-center gap-2 mt-1">
+          <input
+            type="range"
+            min="0"
+            max={duration || 0}
+            step="0.1"
+            value={Math.min(current, duration || 0)}
+            onChange={(e) => {
+              const next = Number(e.target.value);
+              if (audioRef.current) audioRef.current.currentTime = next;
+              setCurrent(next);
+            }}
+            className="flex-1 accent-fuchsia-500 min-h-11"
+            aria-label="Seek"
+          />
+          <span className="text-2xs text-gray-500 tabular-nums shrink-0">
+            {formatTime(current)}/{formatTime(duration)}
+          </span>
         </div>
 
-        <div className="flex gap-2 mb-3">
+        <div className="flex gap-1.5 mb-1">
           <button
             type="button"
             onClick={toggle}
-            className="flex-1 min-h-12 rounded-xl bg-fuchsia-700 text-white font-black inline-flex items-center justify-center gap-2"
+            className="flex-1 min-h-11 rounded-xl bg-fuchsia-700 text-white font-black inline-flex items-center justify-center gap-1.5"
           >
             {playing ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
             {playing ? 'Pause' : 'Play'}
@@ -401,16 +410,16 @@ export default function MusicPlayer({ tracks, randomRef }) {
           <button
             type="button"
             onClick={playRandom}
-            className="min-w-12 min-h-12 px-3 rounded-xl border bg-gray-800 text-gray-100 border-gray-700 inline-flex items-center justify-center gap-1.5 font-bold"
+            className="min-w-11 min-h-11 px-2.5 rounded-xl border bg-gray-800 text-gray-100 border-gray-700 inline-flex items-center justify-center gap-1 font-bold md:min-w-12 md:px-3"
             aria-label="Play a random track"
           >
             <Shuffle className="w-4 h-4" />
-            <span className="text-xs">Random</span>
+            <span className="text-xs hidden md:inline">Random</span>
           </button>
           <button
             type="button"
             onClick={() => setLoop((v) => !v)}
-            className={`min-w-12 min-h-12 rounded-xl border inline-flex items-center justify-center ${
+            className={`min-w-11 min-h-11 rounded-xl border inline-flex items-center justify-center ${
               loop ? 'bg-fuchsia-600 text-white border-fuchsia-400' : 'bg-gray-800 text-gray-300 border-gray-700'
             }`}
             aria-pressed={loop}
@@ -418,35 +427,48 @@ export default function MusicPlayer({ tracks, randomRef }) {
           >
             <Repeat className="w-4 h-4" />
           </button>
+          <button
+            type="button"
+            onClick={() => setVolumeOpen((v) => !v)}
+            className={`min-w-11 min-h-11 rounded-xl border inline-flex items-center justify-center ${
+              volumeOpen ? 'bg-fuchsia-600 text-white border-fuchsia-400' : 'bg-gray-800 text-gray-300 border-gray-700'
+            }`}
+            aria-pressed={volumeOpen}
+            aria-label="Volume"
+          >
+            <Volume2 className="w-4 h-4" />
+          </button>
         </div>
 
-        <label className="block mb-3">
-          <span className="flex justify-between text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">
-            Volume
-            <span>{Math.round(volume * 100)}%</span>
-          </span>
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.05"
-            value={volume}
-            onChange={(e) => setVolume(Number(e.target.value))}
-            className="w-full accent-fuchsia-500 min-h-11"
-          />
-        </label>
+        {volumeOpen ? (
+          <label className="block mb-1">
+            <span className="flex justify-between text-2xs font-bold text-gray-400 uppercase tracking-wider">
+              Volume
+              <span>{Math.round(volume * 100)}%</span>
+            </span>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={volume}
+              onChange={(e) => setVolume(Number(e.target.value))}
+              className="w-full accent-fuchsia-500 min-h-11"
+            />
+          </label>
+        ) : null}
 
         {active ? (
           <div>
             <button
               type="button"
               onClick={() => setTagging((v) => !v)}
-              className="w-full min-h-11 rounded-xl border border-gray-700 bg-[#1A1A1A] text-sm font-bold text-gray-200 mb-2"
+              className="w-full min-h-11 rounded-xl border border-gray-700 bg-[#1A1A1A] text-xs font-bold text-gray-200"
             >
-              {tagging ? 'Hide tags' : `Edit tags${active.displayTags.length ? ` · ${active.displayTags.join(', ')}` : ''}`}
+              {tagging ? 'Hide tags' : `Tags${active.displayTags.length ? ` · ${active.displayTags.join(', ')}` : ''}`}
             </button>
             {tagging ? (
-              <div className="space-y-2">
+              <div className="space-y-2 mt-2">
                 <TagPills
                   tags={uniqueTags([...tagOptions, ...active.displayTags])}
                   selected={active.displayTags}
