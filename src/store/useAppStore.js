@@ -5,6 +5,13 @@ import { fetchSheetData, normalizePayload } from '../lib/sheets.js';
 
 const bundled = normalizePayload(fallback);
 
+export function localDateString(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 const emptyLists = {
   favorites: [],
   toPlay: [],
@@ -39,9 +46,14 @@ export const useAppStore = create(
       lastSynced: null,
       syncError: null,
       isSyncing: false,
+      dismissedTipDate: null,
 
       updateSettings: (partial) => {
         set((state) => ({ settings: { ...state.settings, ...partial } }));
+      },
+
+      dismissTipOfTheDay: () => {
+        set({ dismissedTipDate: localDateString() });
       },
 
       toggleGeneratorBank: (id) => {
@@ -157,6 +169,7 @@ export const useAppStore = create(
         generatorSkills: state.generatorSkills,
         generatorBankFavorites: state.generatorBankFavorites,
         lastSynced: state.lastSynced,
+        dismissedTipDate: state.dismissedTipDate,
       }),
       merge: (persisted, current) => ({
         ...current,
@@ -167,6 +180,8 @@ export const useAppStore = create(
             : current.data,
         lists: persisted?.lists || current.lists,
         settings: { ...defaultSettings, ...(persisted?.settings || {}) },
+        dismissedTipDate:
+          typeof persisted?.dismissedTipDate === 'string' ? persisted.dismissedTipDate : current.dismissedTipDate,
         generatorBanks: Array.isArray(persisted?.generatorBanks)
           ? persisted.generatorBanks
           : current.generatorBanks,

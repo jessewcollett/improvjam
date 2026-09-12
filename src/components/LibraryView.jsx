@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Dices, BookMarked, ListFilter, Check, X } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
-import { useAppStore } from '../store/useAppStore.js';
+import { localDateString, useAppStore } from '../store/useAppStore.js';
 import { splitList } from '../lib/generator.js';
 import GameCard from './GameCard.jsx';
 import TermCard from './TermCard.jsx';
@@ -25,6 +25,8 @@ export default function LibraryView() {
   const data = useAppStore((s) => s.data);
   const settings = useAppStore((s) => s.settings);
   const updateSettings = useAppStore((s) => s.updateSettings);
+  const dismissedTipDate = useAppStore((s) => s.dismissedTipDate);
+  const dismissTipOfTheDay = useAppStore((s) => s.dismissTipOfTheDay);
   const [searchTerm, setSearchTerm] = useState('');
   const [gameFilters, setGameFilters] = useState([]);
   const [termFilters, setTermFilters] = useState([]);
@@ -86,8 +88,19 @@ export default function LibraryView() {
           <SyncButton compact />
         </div>
 
-        {viewType === 'terms' && tip && (
-          <div className="mb-4 rounded-xl border border-purple-800/50 bg-purple-900/20 p-3">
+        {viewType === 'terms' && tip && dismissedTipDate !== localDateString() && (
+          <div className="relative mb-4 rounded-xl border border-purple-800/50 bg-purple-900/20 p-3 pr-12">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                dismissTipOfTheDay();
+              }}
+              className="absolute top-0 right-0 flex items-center justify-center min-w-11 min-h-11 text-gray-400"
+              aria-label="Dismiss"
+            >
+              <X className="w-4 h-4" />
+            </button>
             <p className="text-xs uppercase tracking-wider text-purple-400 font-bold mb-1">Tip of the day</p>
             <p className="text-sm text-gray-100 font-semibold">{tip.term}</p>
             <p className="text-xs text-gray-400 mt-1">{tip.definition}</p>
