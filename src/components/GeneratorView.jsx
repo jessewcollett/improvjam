@@ -298,14 +298,13 @@ export default function GeneratorView() {
     <div className="h-full flex flex-col pt-safe relative overflow-hidden">
       <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 rounded-full bg-green-500/5 blur-3xl pointer-events-none" />
       <div className="flex-1 overflow-y-auto scrollbar-hide px-4 pb-6 md:pb-nav">
-        <div className="flex items-start justify-between gap-3 mb-1">
+        <div className="flex items-start justify-between gap-3 mb-4">
           <h1 className="text-2xl font-black font-display text-white tracking-tight flex items-center">
             <Wand2 className="text-green-400 mr-2 w-7 h-7" />
             Generator
           </h1>
           <SyncButton compact />
         </div>
-        <p className="text-xs text-gray-500 mb-4">Check banks, then generate.</p>
 
         <section className="mb-3">
           <button
