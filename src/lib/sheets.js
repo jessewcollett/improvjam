@@ -30,7 +30,7 @@ export function normalizeAudio(row) {
     kind: normalizeKind(row?.kind),
     url,
     playUrl: playbackUrl(url),
-    icon: String(row?.icon || 'bell').trim().toLowerCase() || 'bell',
+    icon: String(row?.icon || 'bell').trim() || 'bell',
     credit: String(row?.credit || '').trim(),
     creditUrl: String(row?.creditUrl || row?.crediturl || '').trim(),
     notes: String(row?.notes || '').trim(),

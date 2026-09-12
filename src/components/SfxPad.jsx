@@ -37,9 +37,29 @@ const ICONS = {
   waves: Wind,
 };
 
+function firstEmoji(value) {
+  const match = String(value).match(
+    /\p{Extended_Pictographic}(?:\uFE0F|\u200D\p{Extended_Pictographic}|\p{Emoji_Modifier})*/u,
+  );
+  return match ? match[0] : '';
+}
+
 function SfxIcon({ name, className }) {
-  const Icon = ICONS[String(name || 'bell').toLowerCase()] || Bell;
-  return <Icon className={className} />;
+  const raw = String(name || '').trim();
+  const Icon = ICONS[raw.toLowerCase()];
+  if (Icon) return <Icon className={className} />;
+  const emoji = firstEmoji(raw);
+  if (emoji) {
+    return (
+      <span
+        className={`inline-flex items-center justify-center leading-none ${className || ''}`}
+        aria-hidden="true"
+      >
+        {emoji}
+      </span>
+    );
+  }
+  return <Bell className={className} />;
 }
 
 function PadHit({ pad, volume, active, children, className }) {

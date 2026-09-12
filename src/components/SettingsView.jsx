@@ -128,7 +128,8 @@ export default function SettingsView() {
           refresh here. To Play, Favorites, Played, custom sets, and hidden SFX pads stay on this device.
         </p>
         <p className="text-xs text-gray-500 mb-3">
-          Audio credits live on the Audio tab (credit, creditUrl). Track genres use the tags column
+          Audio credits live on the Audio tab (credit, creditUrl). SFX icons use the icon column (drum, bell-ring,
+          or an emoji like 🥁). Track genres use the tags column
           (Pop, 80s, Underscore — comma or pipe separated), and you can also tag on this device in Music.
           Game and glossary photos use the image column (Drive share link, Anyone with the link). Drive
           files must be Anyone with the link.
