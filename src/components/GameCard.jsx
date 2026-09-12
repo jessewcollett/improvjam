@@ -176,45 +176,8 @@ export default function GameCard({ game, onCategoryClick }) {
                 </div>
               )}
 
-              <p className="text-sm text-gray-300 leading-relaxed mb-3">{game.description}</p>
-
-              <div className="flex justify-between items-center pt-2 border-t border-gray-700/50">
-                <ItemSource item={game} sources={sources} className="max-w-[38%]" />
-                <div className="flex gap-2 relative">
-                  <button
-                    type="button"
-                    onClick={() => toggleInList('toPlay', game.id)}
-                    className={`flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-medium min-h-11 ${
-                      isToPlay ? 'bg-blue-600/20 text-blue-400 border border-blue-600/30' : 'bg-gray-800 text-gray-400 border border-gray-700'
-                    }`}
-                  >
-                    <ListPlus className="w-4 h-4" />
-                    <span className="hidden sm:inline">{isToPlay ? 'In set' : 'To Play'}</span>
-                  </button>
-
-                  <div className="relative">
-                    <button
-                      type="button"
-                      onClick={() => setShowSets((v) => !v)}
-                      className="flex items-center justify-center p-2 rounded-lg text-gray-400 bg-gray-800 border border-gray-700 min-w-11 min-h-11"
-                      aria-label="Add to custom set"
-                    >
-                      <FolderPlus className="w-4 h-4" />
-                    </button>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => toggleInList('played', game.id)}
-                    className={`flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-medium min-h-11 ${
-                      isPlayed ? 'bg-green-600/20 text-green-400 border border-green-600/30' : 'bg-gray-800 text-gray-400 border border-gray-700'
-                    }`}
-                    aria-label="Mark played"
-                  >
-                    {isPlayed ? <CheckCircle className="w-4 h-4" /> : <Circle className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
+              <p className="text-sm text-gray-300 leading-relaxed mb-2">{game.description}</p>
+              <ItemSource item={game} sources={sources} />
             </div>
           </motion.div>
         )}
