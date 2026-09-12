@@ -16,10 +16,16 @@ export const defaultSettings = {
   bellStyle: 'bell',
   bellVolume: 0.8,
   countInBeats: 3,
+  theme: 'dark',
+  reducedMotion: false,
+  libraryView: 'games',
+  keepAwake: false,
+  hapticDing: false,
 };
 
 export const defaultGeneratorBanks = ['Locations', 'Relationships', 'Objects'];
 export const defaultGeneratorSkills = [];
+export const defaultGeneratorBankFavorites = [];
 
 export const useAppStore = create(
   persist(
@@ -29,6 +35,7 @@ export const useAppStore = create(
       settings: defaultSettings,
       generatorBanks: defaultGeneratorBanks,
       generatorSkills: defaultGeneratorSkills,
+      generatorBankFavorites: defaultGeneratorBankFavorites,
       lastSynced: null,
       syncError: null,
       isSyncing: false,
@@ -47,6 +54,14 @@ export const useAppStore = create(
 
       setGeneratorBanks: (ids) => {
         set({ generatorBanks: Array.isArray(ids) ? ids : [] });
+      },
+
+      toggleGeneratorBankFavorite: (id) => {
+        set((state) => {
+          const current = state.generatorBankFavorites || [];
+          const next = current.includes(id) ? current.filter((item) => item !== id) : [...current, id];
+          return { generatorBankFavorites: next };
+        });
       },
 
       toggleGeneratorSkill: (id) => {
@@ -140,6 +155,7 @@ export const useAppStore = create(
         settings: state.settings,
         generatorBanks: state.generatorBanks,
         generatorSkills: state.generatorSkills,
+        generatorBankFavorites: state.generatorBankFavorites,
         lastSynced: state.lastSynced,
       }),
       merge: (persisted, current) => ({
@@ -157,6 +173,9 @@ export const useAppStore = create(
         generatorSkills: Array.isArray(persisted?.generatorSkills)
           ? persisted.generatorSkills
           : current.generatorSkills,
+        generatorBankFavorites: Array.isArray(persisted?.generatorBankFavorites)
+          ? persisted.generatorBankFavorites
+          : current.generatorBankFavorites,
       }),
     },
   ),

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Dices, BookMarked, ListFilter, Check } from 'lucide-react';
+import { Dices, BookMarked, ListFilter, Check, X } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
 import { useAppStore } from '../store/useAppStore.js';
 import { splitList } from '../lib/generator.js';
@@ -9,20 +9,36 @@ import { LibraryFooter } from './SourceCitation.jsx';
 import SearchField from './SearchField.jsx';
 import SyncButton from './SyncButton.jsx';
 
+function itemCategories(item) {
+  return item.categories?.length ? item.categories : splitList(item.category);
+}
+
+function toggleValue(list, value) {
+  return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
+}
+
+function addValue(list, value) {
+  return list.includes(value) ? list : [...list, value];
+}
+
 export default function LibraryView() {
   const data = useAppStore((s) => s.data);
+  const settings = useAppStore((s) => s.settings);
+  const updateSettings = useAppStore((s) => s.updateSettings);
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeFilter, setActiveFilter] = useState('All');
-  const [termFilter, setTermFilter] = useState('All');
-  const [viewType, setViewType] = useState('games');
+  const [gameFilters, setGameFilters] = useState([]);
+  const [termFilters, setTermFilters] = useState([]);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const viewType = settings.libraryView === 'terms' ? 'terms' : 'games';
+
+  const setViewType = (next) => updateSettings({ libraryView: next });
 
   const categories = useMemo(
-    () => ['All', ...Array.from(new Set(data.games.flatMap((g) => (g.categories?.length ? g.categories : splitList(g.category)))))],
+    () => Array.from(new Set(data.games.flatMap(itemCategories).filter(Boolean))),
     [data.games],
   );
   const termCategories = useMemo(
-    () => ['All', ...Array.from(new Set(data.terms.flatMap((t) => (t.categories?.length ? t.categories : splitList(t.category))).filter(Boolean)))],
+    () => Array.from(new Set(data.terms.flatMap(itemCategories).filter(Boolean))),
     [data.terms],
   );
 
@@ -32,47 +48,47 @@ export default function LibraryView() {
     return data.terms[day % data.terms.length];
   }, [data.terms]);
 
+  const selectedFilters = viewType === 'games' ? gameFilters : termFilters;
+  const setSelectedFilters = viewType === 'games' ? setGameFilters : setTermFilters;
+  const filterOptions = viewType === 'games' ? categories : termCategories;
+  const filterActive = selectedFilters.length > 0;
+
   const filteredGames = useMemo(() => {
     const q = searchTerm.toLowerCase();
     return data.games.filter((game) => {
-      const cats = game.categories?.length ? game.categories : splitList(game.category);
+      const cats = itemCategories(game);
       const tags = splitList(game.tags);
       const skills = splitList(game.lifeSkills);
       const hay = [game.name, game.description, ...tags, ...skills, ...cats].join(' ').toLowerCase();
       const matchesSearch = !q || hay.includes(q);
-      const matchesFilter = activeFilter === 'All' || cats.includes(activeFilter);
+      const matchesFilter = !gameFilters.length || gameFilters.some((cat) => cats.includes(cat));
       return matchesSearch && matchesFilter;
     });
-  }, [data.games, searchTerm, activeFilter]);
+  }, [data.games, searchTerm, gameFilters]);
 
   const filteredTerms = useMemo(() => {
     const q = searchTerm.toLowerCase();
     return data.terms
       .filter((t) => {
-        const cats = t.categories?.length ? t.categories : splitList(t.category);
+        const cats = itemCategories(t);
         const matchesSearch = !q || `${t.term} ${t.definition} ${cats.join(' ')}`.toLowerCase().includes(q);
-        const matchesFilter = termFilter === 'All' || cats.includes(termFilter);
+        const matchesFilter = !termFilters.length || termFilters.some((cat) => cats.includes(cat));
         return matchesSearch && matchesFilter;
       })
       .sort((a, b) => a.term.localeCompare(b.term));
-  }, [data.terms, searchTerm, termFilter]);
-
-  const filterValue = viewType === 'games' ? activeFilter : termFilter;
-  const filterOptions = viewType === 'games' ? categories : termCategories;
-  const setFilter = viewType === 'games' ? setActiveFilter : setTermFilter;
-  const filterActive = filterValue !== 'All';
+  }, [data.terms, searchTerm, termFilters]);
 
   return (
-    <div className="h-full flex flex-col pt-4 px-4">
+    <div className="h-full flex flex-col pt-safe px-4">
       <div className="flex-none mb-4">
         <div className="flex items-center justify-between gap-3 mb-4">
-          <h1 className="text-2xl font-black font-display text-white tracking-tight">The Library</h1>
+          <h1 className="text-2xl font-black font-display text-white tracking-tight min-w-0">The Library</h1>
           <SyncButton compact />
         </div>
 
         {viewType === 'terms' && tip && (
           <div className="mb-4 rounded-xl border border-purple-800/50 bg-purple-900/20 p-3">
-            <p className="text-[10px] uppercase tracking-wider text-purple-400 font-bold mb-1">Tip of the day</p>
+            <p className="text-xs uppercase tracking-wider text-purple-400 font-bold mb-1">Tip of the day</p>
             <p className="text-sm text-gray-100 font-semibold">{tip.term}</p>
             <p className="text-xs text-gray-400 mt-1">{tip.definition}</p>
           </div>
@@ -89,31 +105,31 @@ export default function LibraryView() {
         <div className="flex bg-[#1A1A1A] p-1 rounded-xl mb-3 border border-gray-800">
           <button
             type="button"
-            className={`flex-1 py-2 text-sm font-bold rounded-lg flex items-center justify-center min-h-11 ${
+            className={`flex-1 py-2 text-sm font-bold rounded-lg flex items-center justify-center min-h-11 px-2 ${
               viewType === 'games' ? 'bg-gray-700 text-white' : 'text-gray-400'
             }`}
             onClick={() => setViewType('games')}
           >
-            <Dices className="w-4 h-4 mr-2" />
-            Games ({data.games.length})
+            <Dices className="w-4 h-4 mr-2 shrink-0" />
+            <span className="text-center leading-tight">Games ({data.games.length})</span>
           </button>
           <button
             type="button"
-            className={`flex-1 py-2 text-sm font-bold rounded-lg flex items-center justify-center min-h-11 ${
+            className={`flex-1 py-2 text-sm font-bold rounded-lg flex items-center justify-center min-h-11 px-2 ${
               viewType === 'terms' ? 'bg-gray-700 text-white' : 'text-gray-400'
             }`}
             onClick={() => setViewType('terms')}
           >
-            <BookMarked className="w-4 h-4 mr-2" />
-            Glossary ({data.terms.length})
+            <BookMarked className="w-4 h-4 mr-2 shrink-0" />
+            <span className="text-center leading-tight">Glossary ({data.terms.length})</span>
           </button>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             type="button"
             onClick={() => setFiltersOpen((v) => !v)}
-            className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-bold min-h-10 border ${
+            className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-bold min-h-11 border ${
               filterActive
                 ? 'bg-blue-600/20 text-blue-200 border-blue-400'
                 : 'bg-gray-800 text-gray-300 border-gray-700'
@@ -123,26 +139,38 @@ export default function LibraryView() {
             <ListFilter className="w-4 h-4" />
             Filter
             {filterActive ? (
-              <span className="inline-flex items-center justify-center min-w-5 h-5 rounded-full bg-blue-600 text-white text-[10px]">
-                <Check className="w-3 h-3" />
+              <span className="inline-flex items-center justify-center min-w-5 h-5 px-1 rounded-full bg-blue-600 text-white text-xs">
+                {selectedFilters.length}
               </span>
             ) : null}
           </button>
+          {filterActive ? (
+            <button
+              type="button"
+              onClick={() => setSelectedFilters([])}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-bold min-h-11 border border-gray-700 bg-gray-800 text-gray-200"
+            >
+              <X className="w-4 h-4" />
+              Clear filters
+            </button>
+          ) : null}
           {filterActive && !filtersOpen ? (
-            <span className="text-xs font-semibold text-blue-300 truncate">{filterValue}</span>
+            <span className="text-xs font-semibold text-blue-300 min-w-0">
+              {selectedFilters.join(' · ')}
+            </span>
           ) : null}
         </div>
 
         {filtersOpen && (
           <div className="flex flex-wrap gap-2 mt-3">
             {filterOptions.map((cat) => {
-              const active = filterValue === cat;
+              const active = selectedFilters.includes(cat);
               return (
                 <button
                   key={cat}
                   type="button"
-                  onClick={() => setFilter(cat)}
-                  className={`inline-flex items-center gap-1 whitespace-nowrap px-3 py-2 rounded-full text-sm font-medium min-h-10 border ${
+                  onClick={() => setSelectedFilters((prev) => toggleValue(prev, cat))}
+                  className={`inline-flex items-center gap-1 px-3 py-2 rounded-full text-sm font-medium min-h-11 border ${
                     active ? 'bg-blue-600 text-white border-blue-300 shadow-md' : 'bg-gray-800 text-gray-300 border-gray-700'
                   }`}
                 >
@@ -160,14 +188,22 @@ export default function LibraryView() {
           {viewType === 'games' ? (
             filteredGames.length > 0 ? (
               filteredGames.map((game) => (
-                <GameCard key={game.id} game={game} onCategoryClick={(cat) => setActiveFilter(cat)} />
+                <GameCard
+                  key={game.id}
+                  game={game}
+                  onCategoryClick={(cat) => setGameFilters((prev) => addValue(prev, cat))}
+                />
               ))
             ) : (
               <div className="text-center text-gray-500 mt-10">No games found matching “{searchTerm}”</div>
             )
           ) : filteredTerms.length > 0 ? (
             filteredTerms.map((term) => (
-              <TermCard key={term.id || term.term} termData={term} onCategoryClick={(cat) => setTermFilter(cat)} />
+              <TermCard
+                key={term.id || term.term}
+                termData={term}
+                onCategoryClick={(cat) => setTermFilters((prev) => addValue(prev, cat))}
+              />
             ))
           ) : (
             <div className="text-center text-gray-500 mt-10">No terms found matching “{searchTerm}”</div>

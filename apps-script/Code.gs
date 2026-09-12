@@ -69,9 +69,18 @@ function populateCatalog() {
   }));
 }
 
+function normalizeGenerator_(row) {
+  return {
+    id: String((row && row.id) || ''),
+    categories: formatCats_((row && (row.categories || row.category)) || ''),
+    text: String((row && row.text != null) ? row.text : ''),
+    extra: String((row && row.extra != null) ? row.extra : ''),
+  };
+}
+
 function readCatalog() {
   var ss = SpreadsheetApp.getActive();
-  var generator = objectsFrom_(ss, TAB_GENERATOR);
+  var generator = objectsFrom_(ss, TAB_GENERATOR).map(normalizeGenerator_);
   var prompts = generator.length ? promptsFromGenerator_(generator, {}) : {
     core: {
       characters: valuesFrom_(ss, TAB_CHAR),

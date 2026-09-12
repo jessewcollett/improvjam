@@ -8,6 +8,19 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg'],
+      workbox: {
+        navigateFallbackDenylist: [/^\/api\//],
+        runtimeCaching: [
+          {
+            urlPattern: ({ url }) => (
+              url.pathname.startsWith('/api/catalog')
+              || url.hostname.includes('script.google.com')
+              || url.hostname.includes('script.googleusercontent.com')
+            ),
+            handler: 'NetworkOnly',
+          },
+        ],
+      },
       manifest: {
         name: 'Improv Jam',
         short_name: 'Improv Jam',

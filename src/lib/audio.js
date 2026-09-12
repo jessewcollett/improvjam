@@ -320,7 +320,19 @@ function buildVoice(style, volume) {
   return voice;
 }
 
+function maybeHaptic() {
+  try {
+    const on = window.__improvJamHapticDing;
+    if (on && typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+      navigator.vibrate(16);
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 export function playDing(style = 'bell', volume = 0.8) {
+  maybeHaptic();
   const voice = buildVoice(style, volume);
   activeVoices.add(voice);
   return voice;

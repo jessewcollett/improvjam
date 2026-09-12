@@ -54,11 +54,20 @@ export function normalizePayload(raw) {
   };
 }
 
-export async function fetchSheetData(url = SHEETS_URL) {
-  if (!url) {
-    throw new Error('No Google Sheets URL configured.');
-  }
-  const res = await fetch(url, { cache: 'no-store' });
+function withCacheBust(url) {
+  const join = url.includes('?') ? '&' : '?';
+  return `${url}${join}_=${Date.now()}`;
+}
+
+function catalogEndpoints(preferred) {
+  const endpoints = [];
+  if (import.meta.env.PROD) endpoints.push('/api/catalog');
+  if (preferred) endpoints.push(preferred);
+  return [...new Set(endpoints)];
+}
+
+async function fetchJson(url) {
+  const res = await fetch(withCacheBust(url));
   if (!res.ok) {
     throw new Error(`Sheet fetch failed (${res.status}). Redeploy the Apps Script as Anyone.`);
   }
@@ -66,7 +75,24 @@ export async function fetchSheetData(url = SHEETS_URL) {
   if (text.trim().startsWith('<')) {
     throw new Error('Sheet URL asked for a Google login. Redeploy the web app as Anyone.');
   }
-  return normalizePayload(JSON.parse(text));
+  return JSON.parse(text);
+}
+
+export async function fetchSheetData(url = SHEETS_URL) {
+  const endpoints = catalogEndpoints(url);
+  if (!endpoints.length) {
+    throw new Error('No Google Sheets URL configured.');
+  }
+
+  let lastError;
+  for (const endpoint of endpoints) {
+    try {
+      return normalizePayload(await fetchJson(endpoint));
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
 }
 
 export function sourceById(sources, id) {

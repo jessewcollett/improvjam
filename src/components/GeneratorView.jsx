@@ -89,7 +89,7 @@ function CheckRow({ checked, Icon, label, count, onToggle }) {
       role="checkbox"
       aria-checked={checked}
       onClick={onToggle}
-      className={`h-8 px-2 rounded-lg border flex items-center gap-1.5 min-w-0 ${
+      className={`h-8 px-2 rounded-lg border flex items-center gap-1.5 min-w-0 flex-1 ${
         checked ? 'bg-lime-600/15 text-white border-lime-600/50' : 'bg-[#1A1A1A] text-gray-200 border-gray-800'
       }`}
     >
@@ -100,12 +100,39 @@ function CheckRow({ checked, Icon, label, count, onToggle }) {
   );
 }
 
+function BankRow({ cat, checked, favorited, onToggle, onFavorite }) {
+  return (
+    <div className="flex items-center gap-0.5 min-w-0">
+      <CheckRow
+        checked={checked}
+        Icon={cat.Icon}
+        label={cat.label}
+        count={cat.count}
+        onToggle={onToggle}
+      />
+      <button
+        type="button"
+        onClick={onFavorite}
+        className={`flex items-center justify-center w-9 h-9 rounded-lg shrink-0 ${
+          favorited ? 'text-yellow-400' : 'text-gray-600'
+        }`}
+        aria-label={favorited ? `Unfavorite ${cat.label}` : `Favorite ${cat.label}`}
+        aria-pressed={favorited}
+      >
+        <Star className="w-4 h-4" fill={favorited ? 'currentColor' : 'none'} />
+      </button>
+    </div>
+  );
+}
+
 export default function GeneratorView() {
   const prompts = useAppStore((s) => s.data.prompts);
   const generator = useAppStore((s) => s.data.generator) || [];
   const selectedIds = useAppStore((s) => s.generatorBanks) || [];
   const selectedSkills = useAppStore((s) => s.generatorSkills) || [];
+  const favoriteIds = useAppStore((s) => s.generatorBankFavorites) || [];
   const toggleGeneratorBank = useAppStore((s) => s.toggleGeneratorBank);
+  const toggleGeneratorBankFavorite = useAppStore((s) => s.toggleGeneratorBankFavorite);
   const toggleGeneratorSkill = useAppStore((s) => s.toggleGeneratorSkill);
   const [locks, setLocks] = useState({ c: false, o: false, r: false, e: false });
   const [kit, setKit] = useState(null);
@@ -138,6 +165,16 @@ export default function GeneratorView() {
   const selectedCats = useMemo(
     () => askForCategories.filter((cat) => selectedIds.includes(cat.id)),
     [askForCategories, selectedIds],
+  );
+
+  const favoriteCats = useMemo(
+    () => askForCategories.filter((cat) => favoriteIds.includes(cat.id)),
+    [askForCategories, favoriteIds],
+  );
+
+  const remainingCats = useMemo(
+    () => askForCategories.filter((cat) => !favoriteIds.includes(cat.id)),
+    [askForCategories, favoriteIds],
   );
 
   const selectedSkillItems = useMemo(
@@ -258,7 +295,7 @@ export default function GeneratorView() {
   );
 
   return (
-    <div className="h-full flex flex-col pt-4 relative overflow-hidden">
+    <div className="h-full flex flex-col pt-safe relative overflow-hidden">
       <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 rounded-full bg-green-500/5 blur-3xl pointer-events-none" />
       <div className="flex-1 overflow-y-auto scrollbar-hide px-4 pb-6 md:pb-nav">
         <div className="flex items-start justify-between gap-3 mb-1">
@@ -268,9 +305,7 @@ export default function GeneratorView() {
           </h1>
           <SyncButton compact />
         </div>
-        <p className="text-xs text-gray-500 mb-4">
-          Check banks, then generate. Categories in the sheet can be comma or pipe separated — <span className="text-gray-300">Locations, Scenes</span>.
-        </p>
+        <p className="text-xs text-gray-500 mb-4">Check banks, then generate.</p>
 
         <section className="mb-3">
           <button
@@ -281,7 +316,9 @@ export default function GeneratorView() {
             <div className="text-left min-w-0">
               <h2 className="text-base font-black font-display text-white leading-tight">Ask for…</h2>
               <p className="text-[11px] text-gray-500 truncate">
-                {selectedCats.length + selectedSkillItems.length} selected · {selectedSummary}
+                {selectedCats.length + selectedSkillItems.length} selected
+                {favoriteCats.length ? ` · ${favoriteCats.length} favorite${favoriteCats.length === 1 ? '' : 's'}` : ''}
+                {' · '}{selectedSummary}
               </p>
             </div>
             <ChevronDown className={`w-5 h-5 text-gray-500 shrink-0 transition-transform ${banksOpen ? 'rotate-180' : ''}`} />
@@ -289,19 +326,42 @@ export default function GeneratorView() {
 
           {banksOpen && (
             <div className="mt-2">
-              <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold px-0.5 mb-1">Ask for</p>
-              <div className="grid grid-cols-2 gap-1">
-                {askForCategories.map((cat) => (
-                  <CheckRow
-                    key={cat.id}
-                    checked={selectedIds.includes(cat.id)}
-                    Icon={cat.Icon}
-                    label={cat.label}
-                    count={cat.count}
-                    onToggle={() => toggleGeneratorBank(cat.id)}
-                  />
-                ))}
-              </div>
+              {favoriteCats.length > 0 && (
+                <>
+                  <p className="text-[10px] uppercase tracking-wider text-yellow-500/80 font-bold px-0.5 mb-1">Favorites</p>
+                  <div className="grid grid-cols-2 gap-1">
+                    {favoriteCats.map((cat) => (
+                      <BankRow
+                        key={cat.id}
+                        cat={cat}
+                        checked={selectedIds.includes(cat.id)}
+                        favorited
+                        onToggle={() => toggleGeneratorBank(cat.id)}
+                        onFavorite={() => toggleGeneratorBankFavorite(cat.id)}
+                      />
+                    ))}
+                  </div>
+                </>
+              )}
+              {remainingCats.length > 0 && (
+                <>
+                  <p className={`text-[10px] uppercase tracking-wider text-gray-500 font-bold px-0.5 mb-1 ${favoriteCats.length ? 'mt-2.5' : ''}`}>
+                    {favoriteCats.length ? 'All banks' : 'Ask for'}
+                  </p>
+                  <div className="grid grid-cols-2 gap-1">
+                    {remainingCats.map((cat) => (
+                      <BankRow
+                        key={cat.id}
+                        cat={cat}
+                        checked={selectedIds.includes(cat.id)}
+                        favorited={false}
+                        onToggle={() => toggleGeneratorBank(cat.id)}
+                        onFavorite={() => toggleGeneratorBankFavorite(cat.id)}
+                      />
+                    ))}
+                  </div>
+                </>
+              )}
               <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold px-0.5 mt-2.5 mb-1">Skill Building</p>
               <div className="grid grid-cols-2 gap-1">
                 {skillItems.map((skill) => (

@@ -21,7 +21,7 @@ export default function BottomNav({ activeRoute, onChange }) {
               key={item.id}
               type="button"
               onClick={() => onChange(item.id)}
-              className={`flex flex-col items-center justify-center w-full py-1.5 relative rounded-xl transition-colors min-h-12 ${
+              className={`flex flex-col items-center justify-center w-full py-1.5 px-0.5 relative rounded-xl transition-colors min-h-12 ${
                 isActive ? 'text-white' : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800/50'
               }`}
             >
@@ -34,8 +34,8 @@ export default function BottomNav({ activeRoute, onChange }) {
                   style={{ zIndex: -1 }}
                 />
               )}
-              <Icon className={`w-5 h-5 mb-0.5 ${isActive ? 'text-blue-400 scale-110' : ''}`} strokeWidth={isActive ? 2.5 : 2} />
-              <span className={`text-[9px] tracking-wide ${isActive ? 'font-bold text-gray-200' : 'font-medium'}`}>
+              <Icon className={`w-5 h-5 mb-0.5 shrink-0 ${isActive ? 'text-blue-400 scale-110' : ''}`} strokeWidth={isActive ? 2.5 : 2} />
+              <span className={`text-xs leading-tight text-center ${isActive ? 'font-bold text-gray-200' : 'font-medium'}`}>
                 {item.label}
               </span>
             </button>

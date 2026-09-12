@@ -4,9 +4,9 @@ export default {
   theme: {
     extend: {
       colors: {
-        stage: '#121212',
-        card: '#1E1E1E',
-        ink: '#1A1A1A',
+        stage: 'var(--color-stage)',
+        card: 'var(--color-card)',
+        ink: 'var(--color-ink)',
       },
       fontFamily: {
         display: ['Poppins', 'system-ui', 'sans-serif'],

@@ -3,6 +3,7 @@ import { Bell, Timer, Users, Shuffle, Lightbulb, Coins, Play, Settings } from 'l
 import { BELL_STYLES, playCountIn, playDing } from '../lib/audio.js';
 import { useHoldDing } from '../lib/useHoldDing.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { useWakeLock } from '../lib/useWakeLock.js';
 import ActionDock from './ActionDock.jsx';
 
 const PRESETS = [
@@ -30,6 +31,7 @@ function formatTime(total) {
 export default function ToolsView({ onOpenSettings }) {
   const prompts = useAppStore((s) => s.data.prompts);
   const settings = useAppStore((s) => s.settings);
+  useWakeLock(Boolean(settings.keepAwake));
   const [activeTool, setActiveTool] = useState('timer');
   const [seconds, setSeconds] = useState(60);
   const [remaining, setRemaining] = useState(60);
@@ -122,7 +124,7 @@ export default function ToolsView({ onOpenSettings }) {
   );
 
   return (
-    <div className="h-full flex flex-col pt-4 relative">
+    <div className="h-full flex flex-col pt-safe relative">
       <div className="px-4">
         <div className="flex items-center justify-between mb-3 gap-3">
           <h1 className="text-2xl font-black font-display text-white tracking-tight">Jam Tools</h1>

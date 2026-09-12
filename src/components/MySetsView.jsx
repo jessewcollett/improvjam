@@ -18,8 +18,6 @@ export default function MySetsView() {
   const data = useAppStore((s) => s.data);
   const lists = useAppStore((s) => s.lists);
   const clearList = useAppStore((s) => s.clearList);
-  const syncError = useAppStore((s) => s.syncError);
-  const lastSynced = useAppStore((s) => s.lastSynced);
   const createCustomSet = useAppStore((s) => s.createCustomSet);
   const deleteCustomSet = useAppStore((s) => s.deleteCustomSet);
   const clearCustomSet = useAppStore((s) => s.clearCustomSet);
@@ -47,42 +45,12 @@ export default function MySetsView() {
   const activeCustomSet = lists.customSets.find((s) => s.id === activeCustomSetId);
 
   return (
-    <div className="h-full flex flex-col pt-4 px-4">
+    <div className="h-full flex flex-col pt-safe px-4">
       <div className="flex-none mb-4">
-        <div className="flex justify-between items-center mb-4">
-          <h1 className="text-2xl font-black font-display text-white tracking-tight">My Sets</h1>
-          <SyncButton />
+        <div className="flex justify-between items-center gap-3 mb-4">
+          <h1 className="text-2xl font-black font-display text-white tracking-tight min-w-0">My Sets</h1>
+          <SyncButton compact />
         </div>
-        {lastSynced && <p className="text-[10px] text-gray-500 mb-2">Last synced {new Date(lastSynced).toLocaleString()}</p>}
-        {syncError && (
-          <p className="text-xs text-amber-300 bg-amber-900/20 border border-amber-800/40 rounded-lg p-2 mb-3">
-            {syncError} The bundled catalog stays available offline.
-          </p>
-        )}
-
-        {data.sources?.length > 0 && (
-          <div className="mb-4 rounded-xl border border-gray-800 bg-[#1A1A1A] p-3">
-            <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold mb-2">Sources (edit URLs in the Google Sheet Sources tab)</p>
-            <ul className="space-y-2">
-              {data.sources.map((source) => (
-                <li key={source.id} className="text-xs text-gray-300">
-                  <span className="font-semibold text-gray-100">{source.name}</span>
-                  {source.url ? (
-                    <>
-                      {' · '}
-                      <a href={source.url} target="_blank" rel="noopener noreferrer" className="text-blue-400 break-all">
-                        {source.url}
-                      </a>
-                    </>
-                  ) : (
-                    <span className="text-gray-500"> · add a link in the sheet</span>
-                  )}
-                  {source.note ? <p className="text-gray-500 mt-0.5">{source.note}</p> : null}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
 
         <div className="flex bg-[#1A1A1A] p-1 rounded-xl border border-gray-800 overflow-x-auto scrollbar-hide">
           {[
