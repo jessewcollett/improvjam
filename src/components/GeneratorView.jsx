@@ -13,6 +13,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore } from '../store/useAppStore.js';
 import { askForCategoriesFromRows, rowCategories, rowExtra, skillItemsFromRows } from '../lib/generator.js';
+import ActionDock from './ActionDock.jsx';
 import CatalogIcon from './CatalogIcon.jsx';
 import SearchField from './SearchField.jsx';
 import SyncButton from './SyncButton.jsx';
@@ -318,7 +319,7 @@ export default function GeneratorView() {
   ].join(', ') || 'Nothing selected';
 
   const selectedDrawItems = [...selectedCats, ...selectedSkillItems];
-  const generateBlock = (
+  const renderGenerateBlock = () => (
     <div className="rounded-2xl border border-lime-800/40 bg-[#1A1A1A] p-2 flex flex-col gap-2">
       {selectedDrawItems.length ? (
         <div className="flex flex-wrap gap-1.5">
@@ -435,10 +436,10 @@ export default function GeneratorView() {
           )}
         </section>
 
-        {generateBlock}
+        <div className="hidden md:block">{renderGenerateBlock()}</div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide px-4 md:px-6 pt-3 pb-nav">
+      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide px-4 md:px-6 pt-3 pb-3 md:pb-nav">
         <AnimatePresence>
           {hasOutput && (
             <motion.div
@@ -634,6 +635,7 @@ export default function GeneratorView() {
           )}
         </section>
       </div>
+      <ActionDock>{renderGenerateBlock()}</ActionDock>
     </div>
   );
 }
