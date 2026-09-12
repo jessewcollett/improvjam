@@ -86,10 +86,11 @@ export default function SettingsView() {
   const canHaptic = typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function';
 
   return (
-    <div className="h-full flex flex-col pt-safe px-4 pb-nav overflow-y-auto scrollbar-hide">
+    <div className="h-full flex flex-col pt-safe px-4 md:px-6 pb-nav overflow-y-auto scrollbar-hide">
       <h1 className="text-2xl font-black font-display text-white mb-1 tracking-tight">Settings</h1>
       <p className="text-xs text-gray-500 mb-4">Prefs stay on this device. Sync pulls the live Google Sheet.</p>
 
+      <div className="lg:grid lg:grid-cols-2 lg:gap-x-4 lg:items-start">
       <SettingsSection
         title="Catalog sync"
         icon={RefreshCw}
@@ -129,10 +130,11 @@ export default function SettingsView() {
         </p>
         <p className="text-xs text-gray-500 mb-3">
           Audio credits live on the Audio tab (credit, creditUrl). SFX icons use the icon column (drum, bell-ring,
-          or an emoji like 🥁). Track genres use the tags column
+          or an emoji like 🥁). Tracks use the tags column only — no genre column
           (Pop, 80s, Underscore — comma or pipe separated), and you can also tag on this device in Music.
           Game and glossary photos use the image column (Drive share link, Anyone with the link). Drive
-          files must be Anyone with the link.
+          files must be Anyone with the link. Improv Jam → Update tabs adds missing columns (tags, image)
+          without overwriting rows.
         </p>
         <p className="text-xs text-gray-500 mb-3">
           {lastSynced ? `Last synced ${new Date(lastSynced).toLocaleString()}` : 'Not synced yet'}
@@ -239,6 +241,7 @@ export default function SettingsView() {
           disabled={!canHaptic}
         />
       </SettingsSection>
+      </div>
     </div>
   );
 }

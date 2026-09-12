@@ -14,6 +14,20 @@ var TAB_GENERATOR = 'Generator';
 var TAB_AUDIO = 'Audio';
 
 var AUDIO_HEADERS = ['id', 'name', 'kind', 'url', 'icon', 'credit', 'creditUrl', 'notes', 'enabled', 'tags'];
+var SOURCES_HEADERS = ['id', 'name', 'url', 'note'];
+var GAMES_HEADERS = ['id', 'name', 'category', 'tags', 'lifeSkills', 'description', 'sourceIds', 'source', 'image'];
+var TERMS_HEADERS = ['id', 'term', 'category', 'definition', 'sourceIds', 'image'];
+var GENERATOR_HEADERS = ['id', 'categories', 'text', 'extra', 'group'];
+
+function tabSchemas_() {
+  return [
+    { tab: TAB_SOURCES, headers: SOURCES_HEADERS },
+    { tab: TAB_GAMES, headers: GAMES_HEADERS },
+    { tab: TAB_TERMS, headers: TERMS_HEADERS },
+    { tab: TAB_GENERATOR, headers: GENERATOR_HEADERS },
+    { tab: TAB_AUDIO, headers: AUDIO_HEADERS },
+  ];
+}
 
 // Legacy prompt tabs — read only if Generator is empty. Safe to delete once Generator has rows.
 var TAB_CHAR = 'CORE_Characters';
@@ -32,9 +46,8 @@ var TAB_SOBJ = 'Suggestions_Objects';
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Improv Jam')
+    .addItem('Update tabs', 'updateTabs')
     .addItem('Populate catalog (overwrite tabs)', 'populateCatalog')
-    .addItem('Ensure Audio tab', 'ensureAudioTab')
-    .addItem('Ensure image columns', 'ensureImageColumns')
     .addToUi();
 }
 
@@ -45,46 +58,150 @@ function doGet() {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
+function updateTabs() {
+  var results = ensureAllTabs_(SpreadsheetApp.getActive());
+  var lines = results.map(function (r) {
+    if (r.created) return r.tab + ': created' + (r.added.length ? ' (' + r.added.join(', ') + ')' : '');
+    if (r.added.length) return r.tab + ': added ' + r.added.join(', ');
+    return r.tab + ': already current';
+  });
+  SpreadsheetApp.getUi().alert('Update tabs', lines.join('\n') + '\n\nExisting rows were not overwritten.', SpreadsheetApp.getUi().ButtonSet.OK);
+  return results;
+}
+
 function ensureAudioTab() {
-  var ss = SpreadsheetApp.getActive();
-  var sheet = ss.getSheetByName(TAB_AUDIO);
-  var seeded = false;
-  if (!sheet) {
-    sheet = ss.insertSheet(TAB_AUDIO);
-    seeded = true;
-  }
-  if (sheet.getLastRow() < 1) seeded = true;
-  sheet.getRange(1, 1, 1, AUDIO_HEADERS.length).setValues([AUDIO_HEADERS]);
-  sheet.setFrozenRows(1);
-  if (seeded || sheet.getLastRow() < 2) {
-    sheet.getRange(2, 1, 2, AUDIO_HEADERS.length).setValues([
-      [
-        'counter',
-        'Counter Bell',
-        'SFX',
-        '/sounds/counter-bell.mp3',
-        'bell',
-        'Alva Majo (5ro4), CC0',
-        'https://freesound.org/people/5ro4/sounds/611113/',
-        'Tap; hold to sustain',
-        'TRUE',
-        '',
-      ],
-      [
-        'ringing',
-        'Ringing Bell',
-        'SFX',
-        '/sounds/ringing-bell.mp3',
-        'bell-ring',
-        'designerschoice / Nicholas Judy, CC BY',
-        'https://freesound.org/people/designerschoice/sounds/804750/',
-        'Tap one ring; hold to keep ringing',
-        'TRUE',
-        '',
-      ],
-    ]);
-  }
+  ensureAllTabs_(SpreadsheetApp.getActive());
   return TAB_AUDIO;
+}
+
+function ensureImageColumns() {
+  ensureAllTabs_(SpreadsheetApp.getActive());
+}
+
+function ensureAllTabs_(ss) {
+  return tabSchemas_().map(function (schema) {
+    return ensureTabHeaders_(ss, schema.tab, schema.headers);
+  });
+}
+
+function knownHeaders_() {
+  var seen = {};
+  var out = [];
+  tabSchemas_().forEach(function (schema) {
+    schema.headers.forEach(function (h) {
+      if (!seen[h]) {
+        seen[h] = true;
+        out.push(h);
+      }
+    });
+  });
+  return out;
+}
+
+function canonHeader_(name) {
+  var raw = String(name == null ? '' : name).trim();
+  if (!raw) return '';
+  var compact = raw.replace(/[\s_-]+/g, '').toLowerCase();
+  var aliases = {
+    crediturl: 'creditUrl',
+    lifeskills: 'lifeSkills',
+    sourceids: 'sourceIds',
+    section: 'group',
+    grouping: 'group',
+  };
+  if (aliases[compact]) return aliases[compact];
+  var known = knownHeaders_();
+  for (var i = 0; i < known.length; i++) {
+    if (known[i].replace(/[\s_-]+/g, '').toLowerCase() === compact) return known[i];
+  }
+  return raw;
+}
+
+function headerIndex_(headers, name) {
+  var want = canonHeader_(name).toLowerCase();
+  for (var i = 0; i < headers.length; i++) {
+    if (canonHeader_(headers[i]).toLowerCase() === want) return i;
+  }
+  return -1;
+}
+
+function ensureTabHeaders_(ss, tab, headers) {
+  var sheet = ss.getSheetByName(tab);
+  var created = false;
+  if (!sheet) {
+    sheet = ss.insertSheet(tab);
+    created = true;
+  }
+  if (sheet.getLastRow() < 1) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.setFrozenRows(1);
+    if (tab === TAB_AUDIO) seedAudioDefaults_(sheet);
+    if (tab === TAB_GENERATOR) ensureGroupValidation_(sheet);
+    return { tab: tab, created: true, added: headers.slice() };
+  }
+  var last = Math.max(sheet.getLastColumn(), 1);
+  var existing = sheet.getRange(1, 1, 1, last).getValues()[0];
+  while (existing.length && !String(existing[existing.length - 1]).trim()) existing.pop();
+  if (!existing.length) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    existing = headers.slice();
+    created = true;
+  }
+  var added = [];
+  headers.forEach(function (name) {
+    if (headerIndex_(existing, name) >= 0) return;
+    existing.push(name);
+    added.push(name);
+    sheet.getRange(1, existing.length).setValue(name);
+  });
+  sheet.setFrozenRows(1);
+  if (tab === TAB_AUDIO && sheet.getLastRow() < 2) seedAudioDefaults_(sheet);
+  if (tab === TAB_GENERATOR) ensureGroupValidation_(sheet);
+  return { tab: tab, created: created, added: added };
+}
+
+function ensureGroupValidation_(sheet) {
+  var last = Math.max(sheet.getLastColumn(), 1);
+  var headers = sheet.getRange(1, 1, 1, last).getValues()[0];
+  var col = headerIndex_(headers, 'group') + 1;
+  if (col < 1) return;
+  var rows = Math.max(sheet.getMaxRows() - 1, 1);
+  var rule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(['Ask-for', 'Skill Building', 'Both'], true)
+    .setAllowInvalid(true)
+    .setHelpText('Ask-for, Skill Building, or Both. Blank uses the app default for that category.')
+    .build();
+  sheet.getRange(2, col, rows, 1).setDataValidation(rule);
+}
+
+function seedAudioDefaults_(sheet) {
+  if (sheet.getLastRow() >= 2) return;
+  sheet.getRange(2, 1, 2, AUDIO_HEADERS.length).setValues([
+    [
+      'counter',
+      'Counter Bell',
+      'SFX',
+      '/sounds/counter-bell.mp3',
+      'bell',
+      'Alva Majo (5ro4), CC0',
+      'https://freesound.org/people/5ro4/sounds/611113/',
+      'Tap; hold to sustain',
+      'TRUE',
+      '',
+    ],
+    [
+      'ringing',
+      'Ringing Bell',
+      'SFX',
+      '/sounds/ringing-bell.mp3',
+      'bell-ring',
+      'designerschoice / Nicholas Judy, CC BY',
+      'https://freesound.org/people/designerschoice/sounds/804750/',
+      'Tap one ring; hold to keep ringing',
+      'TRUE',
+      '',
+    ],
+  ]);
 }
 
 function populateCatalog() {
@@ -114,9 +231,12 @@ function populateCatalog() {
     var id = t.id || '';
     return [id, t.term, t.category, t.definition, (t.sourceIds || []).join('|'), t.image || termImages[id] || ''];
   }));
+  var generatorGroups = fieldMap_(ss, TAB_GENERATOR, 'id', 'group');
   var generator = CATALOG_DATA.generator || [];
-  writeRows_(ss, TAB_GENERATOR, ['id', 'categories', 'text', 'extra'], generator.map(function (row) {
-    return [row.id || '', formatCats_(row.categories || row.category || ''), row.text || '', row.extra || ''];
+  writeRows_(ss, TAB_GENERATOR, ['id', 'categories', 'text', 'extra', 'group'], generator.map(function (row) {
+    var id = row.id || '';
+    var cats = formatCats_(row.categories || row.category || '');
+    return [id, cats, row.text || '', row.extra || '', row.group || generatorGroups[id] || defaultGeneratorGroup_(cats)];
   }));
 }
 
@@ -126,14 +246,25 @@ function normalizeGenerator_(row) {
     categories: formatCats_((row && (row.categories || row.category)) || ''),
     text: String((row && row.text != null) ? row.text : ''),
     extra: String((row && row.extra != null) ? row.extra : ''),
+    group: String((row && row.group) != null ? row.group : ''),
   };
+}
+
+function defaultGeneratorGroup_(cats) {
+  var list = splitCats_(cats);
+  var i;
+  for (i = 0; i < list.length; i++) {
+    var cat = list[i];
+    if (cat === 'FUT' || cat === 'PlayStyle' || cat === 'Lines' || cat === 'Objectives' || cat === 'CORE' || cat === 'C.O.R.E.') {
+      return 'Skill Building';
+    }
+  }
+  return '';
 }
 
 function readCatalog() {
   var ss = SpreadsheetApp.getActive();
-  if (!ss.getSheetByName(TAB_AUDIO)) ensureAudioTab();
-  ensureHeaderColumn_(ss, TAB_AUDIO, 'tags');
-  ensureImageColumns();
+  ensureAllTabs_(ss);
   var generator = objectsFrom_(ss, TAB_GENERATOR).map(normalizeGenerator_);
   var prompts = generator.length ? promptsFromGenerator_(generator, {}) : {
     core: {
@@ -159,7 +290,7 @@ function readCatalog() {
     terms: objectsFrom_(ss, TAB_TERMS).map(splitFields_).map(ensureTermId_),
     generator: generator,
     prompts: prompts,
-    audio: objectsFrom_(ss, TAB_AUDIO),
+    audio: objectsFrom_(ss, TAB_AUDIO).map(splitFields_),
   };
 }
 
@@ -267,10 +398,13 @@ function objectsFrom_(ss, name) {
   if (!sheet) return [];
   var values = sheet.getDataRange().getValues();
   if (values.length < 2) return [];
-  var headers = values[0].map(function (h) { return String(h); });
+  var headers = values[0].map(function (h) { return canonHeader_(String(h).trim()); });
   return values.slice(1).filter(function (row) { return row.join('').trim(); }).map(function (row) {
     var obj = {};
-    headers.forEach(function (h, i) { obj[h] = row[i]; });
+    headers.forEach(function (h, i) {
+      if (!h) return;
+      obj[h] = row[i];
+    });
     return obj;
   });
 }
@@ -279,6 +413,16 @@ function valuesFrom_(ss, name) {
   return objectsFrom_(ss, name).map(function (row) {
     return row.text || row.name || Object.values(row)[0];
   }).filter(Boolean);
+}
+
+function fieldMap_(ss, tab, idKey, field) {
+  var map = {};
+  objectsFrom_(ss, tab).forEach(function (row) {
+    var id = String((row && (row[idKey] || row.id)) || '');
+    var value = String((row && row[field]) || '').trim();
+    if (id && value) map[id] = value;
+  });
+  return map;
 }
 
 function imageMap_(ss, tab, idKey) {
@@ -291,17 +435,3 @@ function imageMap_(ss, tab, idKey) {
   return map;
 }
 
-function ensureHeaderColumn_(ss, tab, column) {
-  var sheet = ss.getSheetByName(tab);
-  if (!sheet) return;
-  var last = Math.max(sheet.getLastColumn(), 1);
-  var headers = sheet.getRange(1, 1, 1, last).getValues()[0].map(function (h) { return String(h).trim(); });
-  if (headers.indexOf(column) >= 0) return;
-  sheet.getRange(1, headers.length + 1).setValue(column);
-}
-
-function ensureImageColumns() {
-  var ss = SpreadsheetApp.getActive();
-  ensureHeaderColumn_(ss, TAB_GAMES, 'image');
-  ensureHeaderColumn_(ss, TAB_TERMS, 'image');
-}

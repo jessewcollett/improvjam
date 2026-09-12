@@ -33,7 +33,7 @@ export default function BottomNav({ activeRoute, onChange }) {
       ref={navRef}
       className="fixed bottom-0 left-0 w-full bg-[#1A1A1A]/95 backdrop-blur-md border-t border-gray-800 pb-safe z-50 shadow-[0_-10px_40px_rgba(0,0,0,0.5)]"
     >
-      <div className="flex justify-around items-stretch px-1 py-1.5 max-w-md mx-auto">
+      <div className="flex justify-around items-stretch px-1 py-1.5 max-w-md md:max-w-3xl lg:max-w-5xl mx-auto">
         {items.map((item) => {
           const Icon = item.icon;
           const isActive = activeRoute === item.id;

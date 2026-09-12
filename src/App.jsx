@@ -38,7 +38,7 @@ export default function App() {
 
   return (
     <MotionConfig reducedMotion={settings.reducedMotion ? 'always' : 'user'}>
-      <div className="flex flex-col h-screen w-full max-w-md mx-auto bg-stage font-body text-gray-100 overflow-hidden relative selection:bg-blue-500/30">
+      <div className="flex flex-col h-screen w-full max-w-md md:max-w-3xl lg:max-w-5xl mx-auto bg-stage font-body text-gray-100 overflow-hidden relative selection:bg-blue-500/30">
         <main className="flex-1 overflow-hidden relative">
           <AnimatePresence mode="wait">
             <motion.div

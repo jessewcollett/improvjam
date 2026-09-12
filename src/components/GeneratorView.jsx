@@ -33,7 +33,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore } from '../store/useAppStore.js';
-import { askForCategoriesFromRows, rowCategories } from '../lib/generator.js';
+import { askForCategoriesFromRows, rowCategories, rowExtra, skillItemsFromRows } from '../lib/generator.js';
 import ActionDock from './ActionDock.jsx';
 import SearchField from './SearchField.jsx';
 import SyncButton from './SyncButton.jsx';
@@ -64,11 +64,30 @@ const BANK_ICONS = {
   Words: Quote,
 };
 
-function displayRow(row) {
+const SKILL_ICONS = {
+  core: Layers,
+  fut: Sparkles,
+  line: MessageSquare,
+  two: Users,
+  style: Clapperboard,
+  instruction: ScrollText,
+};
+
+function displayText(row) {
   if (!row) return '';
-  if (rowCategories(row).includes('FUT')) return `${row.text} → ${row.extra}`;
-  if (rowCategories(row).includes('PlayStyle')) return row.extra ? `${row.text} — ${row.extra}` : row.text;
-  return row.text;
+  if (typeof row === 'string') return row;
+  return row.text || '';
+}
+
+function ExtraCaption({ extra, className = '' }) {
+  if (!extra) return null;
+  return <span className={`block text-xs text-gray-500 leading-snug mt-0.5 ${className}`}>{extra}</span>;
+}
+
+function asSuggestion(value) {
+  if (!value) return null;
+  if (typeof value === 'string') return { text: value, extra: '' };
+  return value;
 }
 
 function styleLabel(content) {
@@ -89,7 +108,7 @@ function CheckRow({ checked, Icon, label, count, onToggle }) {
       role="checkbox"
       aria-checked={checked}
       onClick={onToggle}
-      className={`min-h-8 px-2 py-1 rounded-lg border flex items-center gap-1.5 min-w-0 flex-1 ${
+      className={`min-h-11 px-2 py-1.5 rounded-lg border flex items-center gap-1.5 min-w-0 flex-1 ${
         checked ? 'bg-lime-600/15 text-white border-lime-600/50' : 'bg-[#1A1A1A] text-gray-200 border-gray-800'
       }`}
     >
@@ -113,7 +132,7 @@ function BankRow({ cat, checked, favorited, onToggle, onFavorite }) {
       <button
         type="button"
         onClick={onFavorite}
-        className={`flex items-center justify-center w-9 h-9 rounded-lg shrink-0 ${
+        className={`flex items-center justify-center min-w-11 min-h-11 rounded-lg shrink-0 ${
           favorited ? 'text-yellow-400' : 'text-gray-600'
         }`}
         aria-label={favorited ? `Unfavorite ${cat.label}` : `Favorite ${cat.label}`}
@@ -149,18 +168,13 @@ export default function GeneratorView() {
     [generator],
   );
 
-  const skillItems = useMemo(() => {
-    const instructionCount = prompts.instructions?.length
-      || generator.filter((row) => rowCategories(row).includes('Instructions') && row.text).length;
-    return [
-      { id: 'core', label: 'C.O.R.E.', count: prompts.core?.characters?.length || 0, Icon: Layers },
-      { id: 'fut', label: 'F.U.T.', count: prompts.fut?.length || 0, Icon: Sparkles },
-      { id: 'line', label: 'Line in a Pocket', count: prompts.lines?.length || 0, Icon: MessageSquare },
-      { id: 'two', label: 'Two-Person Scene', count: prompts.twoPerson?.length || 0, Icon: Users },
-      { id: 'style', label: 'Play Style', count: prompts.playStyles?.length || 0, Icon: Clapperboard },
-      { id: 'instruction', label: 'Secret Instruction', count: instructionCount, Icon: ScrollText },
-    ];
-  }, [prompts, generator]);
+  const skillItems = useMemo(
+    () => skillItemsFromRows(generator, prompts).map((skill) => ({
+      ...skill,
+      Icon: SKILL_ICONS[skill.id] || BANK_ICONS[skill.category] || Tag,
+    })),
+    [generator, prompts],
+  );
 
   const selectedCats = useMemo(
     () => askForCategories.filter((cat) => selectedIds.includes(cat.id)),
@@ -192,7 +206,7 @@ export default function GeneratorView() {
     const q = bankQuery.trim().toLowerCase();
     if (!q) return selectedRows;
     return selectedRows.filter((row) => {
-      const hay = `${row.text} ${row.extra || ''} ${rowCategories(row).join(' ')}`.toLowerCase();
+      const hay = `${row.text} ${rowExtra(row)} ${rowCategories(row).join(' ')}`.toLowerCase();
       return hay.includes(q);
     });
   }, [selectedRows, bankQuery]);
@@ -219,29 +233,37 @@ export default function GeneratorView() {
     };
   };
 
-  const buildSkill = (id, prev) => {
+  const pickSkillRow = (cat, fallbackList) => {
+    const rows = generator.filter((row) => rowCategories(row).includes(cat) && row.text);
+    return asSuggestion(pick(rows.length ? rows : fallbackList));
+  };
+
+  const buildSkill = (skill, prev) => {
+    const id = skill.id;
     if (id === 'core') return buildCORE(prev);
     if (id === 'fut') {
       const item = pick(prompts.fut);
       return item ? { type: 'fut', title: 'F.U.T. Starter', content: item } : null;
     }
     if (id === 'line') {
-      const line = pick(prompts.lines);
+      const line = pickSkillRow('Lines', prompts.lines);
       return line ? { type: 'line', title: 'Opening Line', content: line } : null;
     }
     if (id === 'two') {
-      const scene = pick(prompts.twoPerson);
+      const scene = pickSkillRow('Scenes', prompts.twoPerson);
       return scene ? { type: 'two', title: 'Two-Person Scene', content: scene } : null;
     }
     if (id === 'style') {
       const style = pick(prompts.playStyles);
       return style ? { type: 'style', title: 'Play Style', content: style } : null;
     }
-    const pool = prompts.instructions?.length
-      ? prompts.instructions
-      : generator.filter((row) => rowCategories(row).includes('Instructions')).map((row) => row.text);
-    const instruction = pick(pool);
-    return instruction ? { type: 'instruction', title: 'Secret Instruction', content: instruction } : null;
+    if (id === 'instruction') {
+      const instruction = pickSkillRow('Instructions', prompts.instructions);
+      return instruction ? { type: 'instruction', title: 'Secret Instruction', content: instruction } : null;
+    }
+    const category = skill.category || (id.startsWith('cat:') ? id.slice(4) : id);
+    const row = pickSkillRow(category, []);
+    return row ? { type: 'bank', title: skill.label || category, content: row } : null;
   };
 
   const generate = () => {
@@ -259,7 +281,7 @@ export default function GeneratorView() {
     }
 
     setSkillResults((prev) => selectedSkillItems.map((skill) => (
-      buildSkill(skill.id, prev.find((item) => item?.type === skill.id))
+      buildSkill(skill, prev.find((item) => item?.type === skill.id))
     )).filter(Boolean));
   };
 
@@ -297,7 +319,7 @@ export default function GeneratorView() {
   return (
     <div className="h-full flex flex-col pt-safe relative overflow-hidden">
       <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 rounded-full bg-green-500/5 blur-3xl pointer-events-none" />
-      <div className="flex-1 overflow-y-auto scrollbar-hide px-4 pb-6 md:pb-nav">
+      <div className="flex-1 overflow-y-auto scrollbar-hide px-4 md:px-6 pb-6 md:pb-nav">
         <div className="flex items-start justify-between gap-3 mb-4">
           <h1 className="text-2xl font-black font-display text-white tracking-tight flex items-center">
             <Wand2 className="text-green-400 mr-2 w-7 h-7" />
@@ -328,7 +350,7 @@ export default function GeneratorView() {
               {favoriteCats.length > 0 && (
                 <>
                   <p className="text-2xs uppercase tracking-wider text-yellow-500/80 font-bold px-0.5 mb-1">Favorites</p>
-                  <div className="grid grid-cols-2 gap-1">
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-1">
                     {favoriteCats.map((cat) => (
                       <BankRow
                         key={cat.id}
@@ -347,7 +369,7 @@ export default function GeneratorView() {
                   <p className={`text-2xs uppercase tracking-wider text-gray-500 font-bold px-0.5 mb-1 ${favoriteCats.length ? 'mt-2.5' : ''}`}>
                     {favoriteCats.length ? 'All banks' : 'Ask for'}
                   </p>
-                  <div className="grid grid-cols-2 gap-1">
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-1">
                     {remainingCats.map((cat) => (
                       <BankRow
                         key={cat.id}
@@ -362,7 +384,7 @@ export default function GeneratorView() {
                 </>
               )}
               <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold px-0.5 mt-2.5 mb-1">Skill Building</p>
-              <div className="grid grid-cols-2 gap-1">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-1">
                 {skillItems.map((skill) => (
                   <CheckRow
                     key={skill.id}
@@ -389,7 +411,7 @@ export default function GeneratorView() {
               {kit?.length ? (
                 <section className="bg-[#1A1A1A] border border-lime-800/50 rounded-2xl p-3">
                   <p className="text-2xs uppercase tracking-wider text-lime-400 font-bold mb-2">Scene kit</p>
-                  <div className="space-y-1.5">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5">
                     {kit.map((item) => {
                       const Icon = item.Icon || Tag;
                       return (
@@ -398,8 +420,9 @@ export default function GeneratorView() {
                           <div className="min-w-0">
                             <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold">{item.label}</p>
                             <p className="text-sm font-bold text-gray-100 leading-snug">
-                              {item.row ? displayRow(item.row) : `No ${item.label.toLowerCase()} yet.`}
+                              {item.row ? displayText(item.row) : `No ${item.label.toLowerCase()} yet.`}
                             </p>
+                            <ExtraCaption extra={item.row ? rowExtra(item.row) : ''} />
                           </div>
                         </div>
                       );
@@ -416,7 +439,7 @@ export default function GeneratorView() {
                   <p className="text-2xs uppercase tracking-wider text-gray-400 font-bold mb-2">{generated.title}</p>
 
                   {generated.type === 'core' && (
-                    <div className="space-y-1.5">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5">
                       {[
                         ['c', 'Character', 'bg-blue-900/10 border-blue-900/30 text-blue-400', generated.content.c],
                         ['o', 'Objective', 'bg-rose-900/10 border-rose-900/30 text-rose-400', generated.content.o],
@@ -459,11 +482,17 @@ export default function GeneratorView() {
                   )}
 
                   {generated.type === 'line' && (
-                    <p className="text-lg font-black text-emerald-300 italic leading-tight text-center py-2">“{generated.content}”</p>
+                    <div className="text-center py-2">
+                      <p className="text-lg font-black text-emerald-300 italic leading-tight">“{displayText(generated.content)}”</p>
+                      <ExtraCaption extra={rowExtra(generated.content)} />
+                    </div>
                   )}
 
                   {generated.type === 'two' && (
-                    <p className="text-base font-bold text-amber-200 leading-snug">{generated.content}</p>
+                    <div>
+                      <p className="text-base font-bold text-amber-200 leading-snug">{displayText(generated.content)}</p>
+                      <ExtraCaption extra={rowExtra(generated.content)} />
+                    </div>
                   )}
 
                   {generated.type === 'style' && (
@@ -476,7 +505,17 @@ export default function GeneratorView() {
                   )}
 
                   {generated.type === 'instruction' && (
-                    <p className="text-base font-bold text-fuchsia-200 leading-snug">{generated.content}</p>
+                    <div>
+                      <p className="text-base font-bold text-fuchsia-200 leading-snug">{displayText(generated.content)}</p>
+                      <ExtraCaption extra={rowExtra(generated.content)} />
+                    </div>
+                  )}
+
+                  {generated.type === 'bank' && (
+                    <div>
+                      <p className="text-base font-bold text-gray-100 leading-snug">{displayText(generated.content)}</p>
+                      <ExtraCaption extra={rowExtra(generated.content)} />
+                    </div>
                   )}
                 </section>
               ))}
@@ -519,7 +558,7 @@ export default function GeneratorView() {
                     {filteredCatalogue.length} match{filteredCatalogue.length === 1 ? '' : 'es'}
                     {filteredCatalogue.length > CATALOGUE_CAP ? ` · showing ${CATALOGUE_CAP}` : ''}
                   </p>
-                  <div className="space-y-1.5">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5">
                     {visibleCatalogue.map((row) => (
                       <button
                         key={row.id || row.text}
@@ -536,7 +575,8 @@ export default function GeneratorView() {
                             </span>
                           ))}
                         </span>
-                        {displayRow(row)}
+                        <span className="block">{displayText(row)}</span>
+                        <ExtraCaption extra={rowExtra(row)} />
                       </button>
                     ))}
                   </div>

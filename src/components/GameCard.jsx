@@ -75,7 +75,7 @@ export default function GameCard({ game, onCategoryClick }) {
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.98 }}
-      className="bg-card border border-gray-800 rounded-xl mb-2 shadow-lg overflow-visible relative"
+      className="bg-card border border-gray-800 rounded-xl shadow-lg overflow-visible relative h-full"
     >
       <div className="flex items-center gap-1 px-2.5 py-1.5">
         <div className="flex-1 min-w-0">

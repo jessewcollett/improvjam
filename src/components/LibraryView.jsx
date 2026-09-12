@@ -81,7 +81,7 @@ export default function LibraryView() {
   }, [data.terms, searchTerm, termFilters]);
 
   return (
-    <div className="h-full flex flex-col pt-safe px-4">
+    <div className="h-full flex flex-col pt-safe px-4 md:px-6">
       <div className="flex-none mb-4">
         <div className="flex items-center justify-between gap-3 mb-4">
           <h1 className="text-2xl font-black font-display text-white tracking-tight min-w-0">The Library</h1>
@@ -200,24 +200,28 @@ export default function LibraryView() {
         <AnimatePresence mode="popLayout">
           {viewType === 'games' ? (
             filteredGames.length > 0 ? (
-              filteredGames.map((game) => (
-                <GameCard
-                  key={game.id}
-                  game={game}
-                  onCategoryClick={(cat) => setGameFilters((prev) => addValue(prev, cat))}
-                />
-              ))
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 lg:gap-3">
+                {filteredGames.map((game) => (
+                  <GameCard
+                    key={game.id}
+                    game={game}
+                    onCategoryClick={(cat) => setGameFilters((prev) => addValue(prev, cat))}
+                  />
+                ))}
+              </div>
             ) : (
               <div className="text-center text-gray-500 mt-10">No games found matching “{searchTerm}”</div>
             )
           ) : filteredTerms.length > 0 ? (
-            filteredTerms.map((term) => (
-              <TermCard
-                key={term.id || term.term}
-                termData={term}
-                onCategoryClick={(cat) => setTermFilters((prev) => addValue(prev, cat))}
-              />
-            ))
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 lg:gap-3">
+              {filteredTerms.map((term) => (
+                <TermCard
+                  key={term.id || term.term}
+                  termData={term}
+                  onCategoryClick={(cat) => setTermFilters((prev) => addValue(prev, cat))}
+                />
+              ))}
+            </div>
           ) : (
             <div className="text-center text-gray-500 mt-10">No terms found matching “{searchTerm}”</div>
           )}

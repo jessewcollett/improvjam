@@ -1,5 +1,5 @@
 import fallback from '../data/mockData.json';
-import { promptsFromRows, rowsFromPrompts, splitList, withTermIds } from './generator.js';
+import { promptsFromRows, rowsFromPrompts, splitList, withTermIds, joinCategories } from './generator.js';
 import { playbackUrl } from './mediaUrl.js';
 import { sheetAudioTags } from './music.js';
 
@@ -65,22 +65,39 @@ function normalizeTerm(term) {
   };
 }
 
+function normalizeGeneratorRow(row) {
+  if (!row || typeof row !== 'object') return row;
+  const categories = splitList(row.categories || row.category);
+  return {
+    ...row,
+    id: String(row.id || '').trim(),
+    categories: joinCategories(categories),
+    category: categories[0] || String(row.category || '').trim(),
+    text: String(row.text ?? '').trim(),
+    extra: String(row.extra ?? row.extras ?? '').trim(),
+    group: String(row.group || row.section || '').trim(),
+  };
+}
+
 export function normalizePayload(raw) {
   if (!raw || typeof raw !== 'object') {
     return {
       ...fallback,
       games: asArray(fallback.games).map(normalizeGame),
       terms: withTermIds(fallback.terms).map(normalizeTerm),
-      generator: asArray(fallback.generator).length ? fallback.generator : rowsFromPrompts(fallback.prompts),
+      generator: asArray(fallback.generator).length
+        ? fallback.generator.map(normalizeGeneratorRow)
+        : rowsFromPrompts(fallback.prompts),
       audio: asArray(fallback.audio).map(normalizeAudio).filter(Boolean),
     };
   }
 
-  const generator = asArray(raw.generator).length
+  const generator = (asArray(raw.generator).length
     ? raw.generator
     : asArray(fallback.generator).length
       ? fallback.generator
-      : rowsFromPrompts(raw.prompts || fallback.prompts);
+      : rowsFromPrompts(raw.prompts || fallback.prompts)
+  ).map(normalizeGeneratorRow);
 
   return {
     games: (asArray(raw.games).length ? raw.games : fallback.games).map(normalizeGame),

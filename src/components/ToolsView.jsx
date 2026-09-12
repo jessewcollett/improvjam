@@ -140,13 +140,25 @@ export default function ToolsView() {
 
   return (
     <div className="h-full min-h-0 overflow-hidden flex flex-col pt-safe relative">
-      <div className="px-4">
+      <div className="px-4 md:px-6">
         <div className="flex items-center justify-between mb-3 gap-3">
           <h1 className="text-2xl font-black font-display text-white tracking-tight">Jam Tools</h1>
-          {dingButton('hidden md:flex px-5 py-2.5 min-w-[88px]')}
+          <div className="hidden md:flex items-center gap-2">
+            {dingButton('flex px-5 py-2.5 min-w-[88px]')}
+            {activeTool === 'sfx' && (
+              <button
+                type="button"
+                onClick={countIn}
+                className="bg-gray-800 border border-gray-700 text-gray-100 font-bold rounded-2xl min-h-12 px-4 flex items-center justify-center gap-2"
+              >
+                <Play className="w-4 h-4" />
+                {settings.countInBeats}-count
+              </button>
+            )}
+          </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-2 mb-4">
+        <div className="grid grid-cols-3 lg:grid-cols-6 gap-2 mb-4">
           {TOOLS.map((tool) => {
             const Icon = tool.icon;
             const active = activeTool === tool.id;
@@ -168,7 +180,7 @@ export default function ToolsView() {
         </div>
       </div>
 
-      <div className={`${activeTool === 'music' ? 'flex-1 min-h-0 px-4 pb-2 md:pb-nav flex flex-col overflow-hidden' : 'flex-1 overflow-y-auto scrollbar-hide px-4 pb-6 md:pb-nav'}`}>
+      <div className={`${activeTool === 'music' ? 'flex-1 min-h-0 px-4 md:px-6 pb-2 md:pb-nav flex flex-col overflow-hidden' : 'flex-1 overflow-y-auto scrollbar-hide px-4 md:px-6 pb-6 md:pb-nav'}`}>
         {activeTool === 'sfx' && (
           <SfxPad
             pads={pads}
@@ -199,7 +211,7 @@ export default function ToolsView() {
               <p className="text-6xl font-black font-display tabular-nums text-white">{formatTime(remaining)}</p>
               {halfLife && <p className="text-xs text-cyan-400 mt-1">Half-Life beat {halfStep + 1} of 4</p>}
             </div>
-            <div className="flex overflow-x-auto gap-2 mb-3 scrollbar-hide">
+            <div className="flex flex-wrap overflow-x-auto gap-2 mb-3 scrollbar-hide">
               {PRESETS.map((p) => (
                 <button
                   key={p.label}
@@ -288,7 +300,7 @@ export default function ToolsView() {
               value={roster}
               onChange={(e) => setRoster(e.target.value)}
               placeholder="Names, comma or line separated"
-              className="w-full bg-gray-900 border border-gray-700 rounded-xl p-3 text-sm mb-3 min-h-24"
+              className="w-full bg-gray-900 border border-gray-700 rounded-xl p-3 text-sm mb-3 min-h-24 md:min-h-32"
             />
             <button type="button" onClick={pickPlayer} className="hidden md:flex w-full bg-blue-600 text-white font-bold py-3 rounded-xl min-h-12 items-center justify-center gap-2">
               <Shuffle className="w-4 h-4" />
@@ -308,7 +320,7 @@ export default function ToolsView() {
               Draw a suggestion
             </button>
             {suggestion && (
-              <div className="grid grid-cols-2 gap-2 text-sm">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 text-sm">
                 <p className="bg-gray-900 rounded-lg p-3 border border-gray-800"><span className="block text-2xs uppercase text-gray-500">Location</span>{suggestion.location}</p>
                 <p className="bg-gray-900 rounded-lg p-3 border border-gray-800"><span className="block text-2xs uppercase text-gray-500">Occupation</span>{suggestion.occupation}</p>
                 <p className="bg-gray-900 rounded-lg p-3 border border-gray-800"><span className="block text-2xs uppercase text-gray-500">Relationship</span>{suggestion.relationship}</p>

@@ -1,11 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ListFilter, Music, Pause, Play, Repeat, Shuffle, X } from 'lucide-react';
-import {
-  MUSIC_GENRE_PRESETS,
-  UNTAGGED_FILTER,
-  tagsForTrack,
-  uniqueTags,
-} from '../lib/music.js';
+import { UNTAGGED_FILTER, tagsForTrack, uniqueTags } from '../lib/music.js';
 import { useAppStore } from '../store/useAppStore.js';
 
 function formatTime(seconds) {
@@ -77,16 +72,16 @@ function Chip({ active, onClick, children }) {
 function MusicFilters({
   filtersOpen,
   onToggleOpen,
-  genreFilters,
-  genreOptions,
+  tagFilters,
+  tagOptions,
   sortBy,
   onSort,
   onToggleFilter,
   onClear,
 }) {
-  const filterActive = genreFilters.length > 0;
-  const filterLabels = genreFilters.map((tag) => (tag === UNTAGGED_FILTER ? 'Untagged' : tag));
-  const summary = [...(sortBy === 'genre' ? ['Genre'] : []), ...filterLabels];
+  const filterActive = tagFilters.length > 0;
+  const filterLabels = tagFilters.map((tag) => (tag === UNTAGGED_FILTER ? 'Untagged' : tag));
+  const summary = [...(sortBy === 'tag' ? ['Tag'] : []), ...filterLabels];
 
   return (
     <div className="shrink-0 mb-3">
@@ -105,7 +100,7 @@ function MusicFilters({
           Filter
           {filterActive ? (
             <span className="inline-flex items-center justify-center min-w-5 h-5 px-1 rounded-full bg-fuchsia-600 text-white text-xs">
-              {genreFilters.length}
+              {tagFilters.length}
             </span>
           ) : null}
         </button>
@@ -131,22 +126,22 @@ function MusicFilters({
             <Chip active={sortBy === 'name'} onClick={() => onSort('name')}>
               Name
             </Chip>
-            <Chip active={sortBy === 'genre'} onClick={() => onSort('genre')}>
-              Genre
+            <Chip active={sortBy === 'tag'} onClick={() => onSort('tag')}>
+              Tag
             </Chip>
           </div>
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Genre</p>
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Tags</p>
           <div className="flex flex-wrap gap-2">
             <Chip
-              active={genreFilters.some((item) => item === UNTAGGED_FILTER)}
+              active={tagFilters.some((item) => item === UNTAGGED_FILTER)}
               onClick={() => onToggleFilter(UNTAGGED_FILTER)}
             >
               Untagged
             </Chip>
-            {genreOptions.map((tag) => (
+            {tagOptions.map((tag) => (
               <Chip
                 key={tag}
-                active={genreFilters.some((item) => item.toLowerCase() === tag.toLowerCase())}
+                active={tagFilters.some((item) => item.toLowerCase() === tag.toLowerCase())}
                 onClick={() => onToggleFilter(tag)}
               >
                 {tag}
@@ -170,7 +165,7 @@ export default function MusicPlayer({ tracks, randomRef }) {
   const [volume, setVolume] = useState(0.85);
   const [current, setCurrent] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [genreFilters, setGenreFilters] = useState([]);
+  const [tagFilters, setTagFilters] = useState([]);
   const [sortBy, setSortBy] = useState('name');
   const [customTag, setCustomTag] = useState('');
   const [tagging, setTagging] = useState(false);
@@ -181,30 +176,30 @@ export default function MusicPlayer({ tracks, randomRef }) {
     [tracks, musicTags],
   );
 
-  const genreOptions = useMemo(
-    () => uniqueTags(taggedTracks.flatMap((track) => track.displayTags)),
+  const tagOptions = useMemo(
+    () => uniqueTags(taggedTracks.flatMap((track) => track.displayTags)).sort((a, b) => a.localeCompare(b)),
     [taggedTracks],
   );
 
   const visibleTracks = useMemo(() => {
     const filtered = taggedTracks.filter((track) => {
-      if (!genreFilters.length) return true;
-      const untagged = genreFilters.includes(UNTAGGED_FILTER) && !track.displayTags.length;
-      const tagged = genreFilters.some(
+      if (!tagFilters.length) return true;
+      const untagged = tagFilters.includes(UNTAGGED_FILTER) && !track.displayTags.length;
+      const tagged = tagFilters.some(
         (filter) => filter !== UNTAGGED_FILTER && track.displayTags.some((tag) => tag.toLowerCase() === filter.toLowerCase()),
       );
       return untagged || tagged;
     });
     return [...filtered].sort((a, b) => {
-      if (sortBy === 'genre') {
-        const ga = a.displayTags[0] || 'zzzz';
-        const gb = b.displayTags[0] || 'zzzz';
-        const byGenre = ga.localeCompare(gb);
-        if (byGenre) return byGenre;
+      if (sortBy === 'tag') {
+        const ta = a.displayTags[0] || 'zzzz';
+        const tb = b.displayTags[0] || 'zzzz';
+        const byTag = ta.localeCompare(tb);
+        if (byTag) return byTag;
       }
       return a.name.localeCompare(b.name);
     });
-  }, [taggedTracks, genreFilters, sortBy]);
+  }, [taggedTracks, tagFilters, sortBy]);
 
   const active = taggedTracks.find((track) => track.id === activeId) || visibleTracks[0] || taggedTracks[0] || null;
 
@@ -290,7 +285,7 @@ export default function MusicPlayer({ tracks, randomRef }) {
   }, [randomRef, playRandom]);
 
   const toggleFilter = (tag) => {
-    setGenreFilters((current) =>
+    setTagFilters((current) =>
       current.some((item) => item.toLowerCase() === tag.toLowerCase())
         ? current.filter((item) => item.toLowerCase() !== tag.toLowerCase())
         : [...current, tag],
@@ -327,46 +322,51 @@ export default function MusicPlayer({ tracks, randomRef }) {
       </h2>
       <audio ref={audioRef} preload="metadata" />
 
-      <MusicFilters
-        filtersOpen={filtersOpen}
-        onToggleOpen={() => setFiltersOpen((v) => !v)}
-        genreFilters={genreFilters}
-        genreOptions={genreOptions}
-        sortBy={sortBy}
-        onSort={setSortBy}
-        onToggleFilter={toggleFilter}
-        onClear={() => setGenreFilters([])}
-      />
+      <div className="flex-1 min-h-0 flex flex-col md:flex-row md:gap-4 overflow-hidden">
+        <div className="flex-1 min-h-0 min-w-0 flex flex-col">
+          <MusicFilters
+            filtersOpen={filtersOpen}
+            onToggleOpen={() => setFiltersOpen((v) => !v)}
+            tagFilters={tagFilters}
+            tagOptions={tagOptions}
+            sortBy={sortBy}
+            onSort={setSortBy}
+            onToggleFilter={toggleFilter}
+            onClear={() => setTagFilters([])}
+          />
 
-      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide space-y-1.5 mb-2">
-        {visibleTracks.length ? (
-          visibleTracks.map((track) => {
-            const selected = active?.id === track.id;
-            return (
-              <button
-                key={track.id}
-                type="button"
-                onClick={() => setActiveId(track.id)}
-                className={`w-full text-left rounded-xl border px-3 py-2.5 min-h-12 ${
-                  selected ? 'bg-fuchsia-700/30 border-fuchsia-500 text-white' : 'bg-[#1A1A1A] border-gray-800 text-gray-200'
-                }`}
-              >
-                <span className="block text-sm font-bold leading-tight">{track.name}</span>
-                {track.displayTags.length ? (
-                  <span className="block text-2xs text-fuchsia-200/80 mt-0.5 truncate">{track.displayTags.join(' · ')}</span>
-                ) : (
-                  <span className="block text-2xs text-gray-500 mt-0.5">No genre yet</span>
-                )}
-                <Credit track={track} />
-              </button>
-            );
-          })
-        ) : (
-          <p className="text-sm text-gray-500 px-1">No tracks in this genre. Clear filters or tag a track.</p>
-        )}
-      </div>
+          <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide space-y-1 mb-2 md:mb-0">
+            {visibleTracks.length ? (
+              visibleTracks.map((track) => {
+                const selected = active?.id === track.id;
+                const tagsLabel = track.displayTags.length ? track.displayTags.join(', ') : 'No tags';
+                return (
+                  <button
+                    key={track.id}
+                    type="button"
+                    onClick={() => setActiveId(track.id)}
+                    className={`w-full text-left rounded-lg border px-3 min-h-11 flex items-center ${
+                      selected ? 'bg-fuchsia-700/30 border-fuchsia-500 text-white' : 'bg-[#1A1A1A] border-gray-800 text-gray-200'
+                    }`}
+                  >
+                    <span className="block w-full min-w-0 text-sm leading-tight truncate">
+                      <span className="font-bold">{track.name}</span>
+                      <span className={`font-semibold ${track.displayTags.length ? 'text-fuchsia-200/80' : 'text-gray-500'}`}>
+                        {' '}
+                        — {tagsLabel}
+                      </span>
+                      {track.credit ? <span className="font-medium text-gray-500"> — {track.credit}</span> : null}
+                    </span>
+                  </button>
+                );
+              })
+            ) : (
+              <p className="text-sm text-gray-500 px-1">No tracks with these tags. Clear filters or tag a track.</p>
+            )}
+          </div>
+        </div>
 
-      <div className="shrink-0 border-t border-gray-800 pt-3 bg-card">
+        <div className="shrink-0 border-t border-gray-800 pt-3 bg-card md:border-t-0 md:border-l md:pl-4 md:pt-0 md:w-[min(24rem,46%)] md:overflow-y-auto scrollbar-hide">
         <p className="text-base font-black font-display text-white leading-tight mb-1">{active?.name}</p>
         <Credit track={active} />
 
@@ -443,14 +443,15 @@ export default function MusicPlayer({ tracks, randomRef }) {
               onClick={() => setTagging((v) => !v)}
               className="w-full min-h-11 rounded-xl border border-gray-700 bg-[#1A1A1A] text-sm font-bold text-gray-200 mb-2"
             >
-              {tagging ? 'Hide genres' : `Tag genre${active.displayTags.length ? ` · ${active.displayTags.join(', ')}` : ''}`}
+              {tagging ? 'Hide tags' : `Edit tags${active.displayTags.length ? ` · ${active.displayTags.join(', ')}` : ''}`}
             </button>
             {tagging ? (
               <div className="space-y-2">
                 <TagPills
-                  tags={uniqueTags([...MUSIC_GENRE_PRESETS, ...active.displayTags])}
+                  tags={uniqueTags([...tagOptions, ...active.displayTags])}
                   selected={active.displayTags}
                   onToggle={(tag) => toggleMusicTag(active.id, tag, active.tags)}
+                  emptyLabel="No sheet tags yet. Type one below."
                 />
                 <div className="flex gap-2">
                   <input
@@ -462,7 +463,7 @@ export default function MusicPlayer({ tracks, randomRef }) {
                         addCustomTag();
                       }
                     }}
-                    placeholder="Custom genre"
+                    placeholder="Custom tag"
                     className="flex-1 min-h-11 bg-gray-900 border border-gray-700 rounded-xl px-3 text-sm"
                   />
                   <button
@@ -477,6 +478,7 @@ export default function MusicPlayer({ tracks, randomRef }) {
             ) : null}
           </div>
         ) : null}
+      </div>
       </div>
     </section>
   );

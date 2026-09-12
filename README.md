@@ -34,16 +34,22 @@ npm run extract
 cd apps-script && npx --yes @google/clasp@3.1.3 push --force
 ```
 
-3. In the spreadsheet: **Improv Jam → Populate catalog (overwrite tabs)**.
+3. In the spreadsheet: **Improv Jam → Populate catalog (overwrite tabs)** for a first fill, or **Improv Jam → Update tabs** to add missing columns only.
 
 4. Deploy / re-deploy the Web App: Execute as **Me**, Who has access: **Anyone**.
 
-Tabs written:
+### Update tabs vs overwrite
+
+- **Improv Jam → Update tabs** — creates missing live tabs and appends any columns missing from the current schema (`tags` on Audio, `image` on Games/Terms, and later additions) without changing existing rows or header order. Sync Data does the same automatically when the app reads the catalog (`doGet`).
+- **Improv Jam → Populate catalog (overwrite tabs)** — replaces Sources, Games, Terms, and Generator from the bundled catalog. Use for a first fill or a full reset. Does not wipe Audio.
+
+Tabs:
 
 - `Sources` — citation URLs (`id`, `name`, `url`, `note`)
-- `Games` — `id, name, category, tags, lifeSkills, description, sourceIds, source`
-- `Terms` — `id, term, category, definition, sourceIds`
-- `Generator` — one tab for every ask-for bank: `id, categories, text, extra`. `categories` can be comma- or pipe-separated so a row can live in more than one bank (example: `Locations, Scenes`). Banks include Activities, Adjectives, Animals, Characters, Companies, Emotions, Famous, Genres, Instructions, Jobs, Lines, Locations, Nouns, Objects, Objectives, PlayStyle, Relationships, Scenes, Shapes, Songs, Story Titles, Verbs, Words, and FUT.
+- `Games` — `id, name, category, tags, lifeSkills, description, sourceIds, source, image`
+- `Terms` — `id, term, category, definition, sourceIds, image`
+- `Generator` — one tab for every ask-for bank: `id, categories, text, extra, group`. `categories` can be comma- or pipe-separated so a row can live in more than one bank (example: `Locations, Scenes`). Optional `group` is Ask-for, Skill Building, or Both (blank uses the app default for that category). Banks include Activities, Adjectives, Animals, Characters, Companies, Emotions, Famous, Genres, Instructions, Jobs, Lines, Locations, Nouns, Objects, Objectives, PlayStyle, Relationships, Scenes, Shapes, Songs, Story Titles, Verbs, Words, and FUT.
+- `Audio` — SFX and tracks (`id, name, kind, url, icon, credit, creditUrl, notes, enabled, tags`). One `tags` column only (no genre): put Pop, 80s, Underscore, and any other labels in `tags`, comma- or pipe-separated.
 
 Encyclopedia entries are used with attribution to [improvencyclopedia.org](https://improvencyclopedia.org/Download.html). Jam teaching notes come from `Improv- Terms.pdf`.
 

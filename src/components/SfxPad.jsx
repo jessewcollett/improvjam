@@ -133,7 +133,8 @@ export default function SfxPad({
             : 'Tap or hold a square to play. Open the bank to add sounds to empty pads.'}
       </p>
 
-      <div className="grid grid-cols-4 gap-2 mb-4">
+      <div className="lg:grid lg:grid-cols-2 lg:gap-6 lg:items-start">
+      <div className="grid grid-cols-4 gap-2 md:gap-3 mb-4 lg:mb-0">
         {grid.map((pad, index) => {
           const active = pad && defaultPad?.id === pad.id;
           const selecting = picking === index;
@@ -211,6 +212,7 @@ export default function SfxPad({
         })}
       </div>
 
+      <div>
       <button
         type="button"
         onClick={() => setBankOpen((v) => !v)}
@@ -225,7 +227,7 @@ export default function SfxPad({
       ) : null}
 
       {bankOpen ? (
-        <div className="max-h-56 overflow-y-auto space-y-1 mb-4 pr-1">
+        <div className="max-h-56 md:max-h-72 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-1 mb-4 pr-1">
           {pads.map((sound) => (
             <div
               key={sound.id}
@@ -299,6 +301,8 @@ export default function SfxPad({
         Ding: <span className="text-gray-300 font-semibold">{defaultPad?.name || 'Bell'}</span>
         {' '}(star a pad). Credits stay on each sound in the bank.
       </p>
+      </div>
+      </div>
     </section>
   );
 }

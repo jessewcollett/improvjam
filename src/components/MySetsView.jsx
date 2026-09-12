@@ -45,7 +45,7 @@ export default function MySetsView() {
   const activeCustomSet = lists.customSets.find((s) => s.id === activeCustomSetId);
 
   return (
-    <div className="h-full flex flex-col pt-safe px-4">
+    <div className="h-full flex flex-col pt-safe px-4 md:px-6">
       <div className="flex-none mb-4">
         <div className="flex justify-between items-center gap-3 mb-4">
           <h1 className="text-2xl font-black font-display text-white tracking-tight min-w-0">My Sets</h1>
@@ -118,29 +118,31 @@ export default function MySetsView() {
                 <p className="text-sm">No custom sets yet.</p>
               </div>
             ) : (
-              lists.customSets.map((set) => (
-                <div key={set.id} className="bg-[#1A1A1A] border border-gray-800 rounded-xl p-4 flex justify-between items-center">
-                  <button type="button" onClick={() => setActiveCustomSetId(set.id)} className="flex-1 text-left">
-                    <h3 className="font-bold text-gray-200 text-lg">{set.name}</h3>
-                    <p className="text-xs text-gray-500">{set.games.length} games</p>
-                  </button>
-                  {confirmDeleteSet === set.id ? (
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-red-400 font-bold">Delete?</span>
-                      <button type="button" onClick={() => deleteCustomSet(set.id)} className="text-xs bg-red-900/50 text-red-300 border border-red-800 px-2 py-1.5 rounded">
-                        Yes
-                      </button>
-                      <button type="button" onClick={() => setConfirmDeleteSet(null)} className="text-xs bg-gray-800 text-gray-300 border border-gray-700 px-2 py-1.5 rounded">
-                        No
-                      </button>
-                    </div>
-                  ) : (
-                    <button type="button" onClick={() => setConfirmDeleteSet(set.id)} className="p-2 text-gray-600 hover:text-red-400">
-                      <Trash2 className="w-4 h-4" />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 lg:gap-3">
+                {lists.customSets.map((set) => (
+                  <div key={set.id} className="bg-[#1A1A1A] border border-gray-800 rounded-xl p-4 flex justify-between items-center">
+                    <button type="button" onClick={() => setActiveCustomSetId(set.id)} className="flex-1 text-left min-h-11">
+                      <h3 className="font-bold text-gray-200 text-lg">{set.name}</h3>
+                      <p className="text-xs text-gray-500">{set.games.length} games</p>
                     </button>
-                  )}
-                </div>
-              ))
+                    {confirmDeleteSet === set.id ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-red-400 font-bold">Delete?</span>
+                        <button type="button" onClick={() => deleteCustomSet(set.id)} className="text-xs bg-red-900/50 text-red-300 border border-red-800 px-2 py-1.5 rounded min-h-11">
+                          Yes
+                        </button>
+                        <button type="button" onClick={() => setConfirmDeleteSet(null)} className="text-xs bg-gray-800 text-gray-300 border border-gray-700 px-2 py-1.5 rounded min-h-11">
+                          No
+                        </button>
+                      </div>
+                    ) : (
+                      <button type="button" onClick={() => setConfirmDeleteSet(set.id)} className="min-w-11 min-h-11 flex items-center justify-center text-gray-600 hover:text-red-400">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         )}
@@ -190,9 +192,11 @@ export default function MySetsView() {
             )}
 
             <AnimatePresence>
-              {currentListGames.map((game) => (
-                <GameCard key={game.id} game={game} />
-              ))}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 lg:gap-3">
+                {currentListGames.map((game) => (
+                  <GameCard key={game.id} game={game} />
+                ))}
+              </div>
             </AnimatePresence>
 
             {currentListGames.length === 0 && (

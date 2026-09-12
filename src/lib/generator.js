@@ -50,15 +50,26 @@ const ASK_FOR_IDS = [
 
 export const ASK_FOR_CATEGORIES = ASK_FOR_IDS.map((id) => BANK_CATEGORIES.find((cat) => cat.id === id)).filter(Boolean);
 
-const SKILL_BUILDING_CATEGORIES = new Set([
-  'FUT',
-  'PlayStyle',
-  'Lines',
-  'Objectives',
-  'CORE',
-  'Core',
-  'C.O.R.E.',
-]);
+/** Defaults when Generator.group is blank. Sheet values override these. */
+const DEFAULT_CATEGORY_GROUP = {
+  FUT: 'skill',
+  PlayStyle: 'skill',
+  Lines: 'skill',
+  Objectives: 'skill',
+  CORE: 'skill',
+  Core: 'skill',
+  'C.O.R.E.': 'skill',
+  Instructions: 'both',
+  Scenes: 'both',
+};
+
+export const SKILL_ITEM_BY_CATEGORY = {
+  FUT: { id: 'fut', label: 'F.U.T.' },
+  Lines: { id: 'line', label: 'Line in a Pocket' },
+  Scenes: { id: 'two', label: 'Two-Person Scene' },
+  PlayStyle: { id: 'style', label: 'Play Style' },
+  Instructions: { id: 'instruction', label: 'Secret Instruction' },
+};
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -76,30 +87,116 @@ export function splitCategories(raw) {
   return splitList(raw);
 }
 
-export function askForCategoriesFromRows(rows) {
-  const counts = new Map();
-  asArray(rows).forEach((row) => {
-    rowCategories(row).forEach((cat) => {
-      if (SKILL_BUILDING_CATEGORIES.has(cat)) return;
-      counts.set(cat, (counts.get(cat) || 0) + 1);
-    });
-  });
-  const known = ASK_FOR_IDS.filter((id) => counts.has(id));
-  const unknown = Array.from(counts.keys())
-    .filter((id) => !ASK_FOR_IDS.includes(id))
-    .sort((a, b) => a.localeCompare(b));
-  return [...known, ...unknown].map((id) => {
-    const bank = BANK_CATEGORIES.find((cat) => cat.id === id);
-    return { id, label: bank?.label || id, count: counts.get(id) || 0 };
-  });
-}
-
 export function joinCategories(categories) {
   return asArray(categories).map((s) => String(s).trim()).filter(Boolean).join(', ');
 }
 
 export function rowCategories(row) {
   return splitCategories(row?.categories || row?.category || '');
+}
+
+export function normalizeGroup(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return '';
+  if (/^skill/.test(raw) || raw === 'skills' || raw === 'yes' || raw === 'true' || raw === '1') return 'skill';
+  if (/^ask/.test(raw) || raw === 'no' || raw === 'false' || raw === '0') return 'ask';
+  if (raw === 'both' || raw === 'all') return 'both';
+  return '';
+}
+
+export function rowGroup(row) {
+  return normalizeGroup(row?.group || row?.section);
+}
+
+function bankMeta(id) {
+  const bank = BANK_CATEGORIES.find((cat) => cat.id === id);
+  return { id, label: bank?.label || id };
+}
+
+export function groupForCategory(category, rows) {
+  let skill = false;
+  let ask = false;
+  asArray(rows).forEach((row) => {
+    if (!rowCategories(row).includes(category)) return;
+    const group = rowGroup(row);
+    if (group === 'skill') skill = true;
+    else if (group === 'ask') ask = true;
+    else if (group === 'both') {
+      skill = true;
+      ask = true;
+    }
+  });
+  if (skill && ask) return 'both';
+  if (skill) return 'skill';
+  if (ask) return 'ask';
+  return DEFAULT_CATEGORY_GROUP[category] || 'ask';
+}
+
+function countedCategories(rows) {
+  const counts = new Map();
+  asArray(rows).forEach((row) => {
+    if (!String(row?.text || '').trim()) return;
+    rowCategories(row).forEach((cat) => {
+      counts.set(cat, (counts.get(cat) || 0) + 1);
+    });
+  });
+  return counts;
+}
+
+function orderedCategoryIds(counts) {
+  const known = ASK_FOR_IDS.filter((id) => counts.has(id));
+  const unknown = Array.from(counts.keys())
+    .filter((id) => !ASK_FOR_IDS.includes(id))
+    .sort((a, b) => a.localeCompare(b));
+  return [...known, ...unknown];
+}
+
+export function askForCategoriesFromRows(rows) {
+  const counts = countedCategories(rows);
+  return orderedCategoryIds(counts)
+    .filter((id) => {
+      const group = groupForCategory(id, rows);
+      return group === 'ask' || group === 'both';
+    })
+    .map((id) => ({ ...bankMeta(id), count: counts.get(id) || 0, group: groupForCategory(id, rows) }));
+}
+
+export function skillItemsFromRows(rows, prompts = {}) {
+  const counts = countedCategories(rows);
+  const items = [];
+  const coreGroup = groupForCategory('CORE', rows);
+  if (coreGroup === 'skill' || coreGroup === 'both') {
+    items.push({
+      id: 'core',
+      category: 'CORE',
+      label: 'C.O.R.E.',
+      count: prompts.core?.characters?.length || counts.get('Characters') || 0,
+    });
+  }
+  const seen = new Set(items.map((item) => item.id));
+  orderedCategoryIds(counts).forEach((id) => {
+    if (id === 'CORE' || id === 'Core' || id === 'C.O.R.E.' || id === 'Objectives') return;
+    const group = groupForCategory(id, rows);
+    if (group !== 'skill' && group !== 'both') return;
+    const special = SKILL_ITEM_BY_CATEGORY[id];
+    const item = special
+      ? { ...special, category: id, count: counts.get(id) || 0 }
+      : { id: `cat:${id}`, category: id, label: bankMeta(id).label, count: counts.get(id) || 0 };
+    if (seen.has(item.id)) return;
+    seen.add(item.id);
+    items.push(item);
+  });
+  return items;
+}
+
+/** Read the optional second line from a generator row. Does not invent values. */
+export function rowExtra(row) {
+  if (row == null || typeof row !== 'object') return '';
+  const raw = row.extra ?? row.extras;
+  if (Array.isArray(raw)) {
+    return raw.map((item) => String(item || '').trim()).filter(Boolean).join(' ');
+  }
+  return String(raw || '').trim();
 }
 
 function applyCategory(out, cat, text, extra) {
@@ -193,7 +290,7 @@ export function promptsFromRows(rows, fallback = {}) {
   };
   asArray(rows).forEach((row) => {
     const text = String(row.text || '').trim();
-    const extra = String(row.extra || '').trim();
+    const extra = rowExtra(row);
     if (!text) return;
     rowCategories(row).forEach((cat) => applyCategory(out, cat, text, extra));
   });

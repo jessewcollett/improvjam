@@ -13,7 +13,7 @@ export default function TermCard({ termData, onCategoryClick }) {
   const categories = termData.categories?.length ? termData.categories : splitList(termData.category);
 
   return (
-    <div className="bg-card border border-gray-800 rounded-xl mb-2 overflow-hidden">
+    <div className="bg-card border border-gray-800 rounded-xl overflow-hidden h-full">
       <div className="w-full px-3 py-2.5 min-h-12 flex flex-wrap items-start justify-between gap-2">
         <button
           type="button"
