@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import {
-  RefreshCw,
   ListPlus,
   CheckCircle,
   Star,
@@ -13,13 +12,12 @@ import {
 import { AnimatePresence } from 'framer-motion';
 import { useAppStore, gamesInIds } from '../store/useAppStore.js';
 import GameCard from './GameCard.jsx';
+import SyncButton from './SyncButton.jsx';
 
 export default function MySetsView() {
   const data = useAppStore((s) => s.data);
   const lists = useAppStore((s) => s.lists);
   const clearList = useAppStore((s) => s.clearList);
-  const syncFromSheet = useAppStore((s) => s.syncFromSheet);
-  const isSyncing = useAppStore((s) => s.isSyncing);
   const syncError = useAppStore((s) => s.syncError);
   const lastSynced = useAppStore((s) => s.lastSynced);
   const createCustomSet = useAppStore((s) => s.createCustomSet);
@@ -53,15 +51,7 @@ export default function MySetsView() {
       <div className="flex-none mb-4">
         <div className="flex justify-between items-center mb-4">
           <h1 className="text-2xl font-black font-display text-white tracking-tight">My Sets</h1>
-          <button
-            type="button"
-            onClick={() => syncFromSheet().catch(() => {})}
-            disabled={isSyncing}
-            className="flex items-center text-xs font-medium text-gray-400 bg-gray-800 hover:bg-gray-700 px-3 py-2 rounded-lg border border-gray-700 min-h-11"
-          >
-            <RefreshCw className={`w-3 h-3 mr-2 ${isSyncing ? 'animate-spin text-blue-400' : ''}`} />
-            {isSyncing ? 'Syncing…' : 'Sync Data'}
-          </button>
+          <SyncButton />
         </div>
         {lastSynced && <p className="text-[10px] text-gray-500 mb-2">Last synced {new Date(lastSynced).toLocaleString()}</p>}
         {syncError && (

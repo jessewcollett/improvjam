@@ -2,29 +2,40 @@ import { useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { termClass } from '../lib/categoryStyles.js';
+import { splitList } from '../lib/generator.js';
 import { ItemSource } from './SourceCitation.jsx';
 import { useAppStore } from '../store/useAppStore.js';
 
-export default function TermCard({ termData }) {
+export default function TermCard({ termData, onCategoryClick }) {
   const sources = useAppStore((s) => s.data.sources);
   const [expanded, setExpanded] = useState(false);
+  const categories = termData.categories?.length ? termData.categories : splitList(termData.category);
 
   return (
     <div className="bg-card border border-gray-800 rounded-xl mb-2 overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        className="w-full text-left px-3 py-2.5 min-h-12 flex items-center justify-between gap-3"
-        aria-expanded={expanded}
-      >
-        <h3 className="text-[15px] font-bold font-display text-gray-100 truncate">{termData.term}</h3>
+      <div className="w-full px-3 py-2.5 min-h-12 flex items-center justify-between gap-3">
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="flex-1 min-w-0 text-left flex items-center justify-between gap-3"
+          aria-expanded={expanded}
+        >
+          <h3 className="text-[15px] font-bold font-display text-gray-100 truncate">{termData.term}</h3>
+          <ChevronRight className={`w-4 h-4 text-gray-500 shrink-0 transition-transform ${expanded ? 'rotate-90' : ''}`} />
+        </button>
         <span className="flex items-center gap-1.5 shrink-0">
-          <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full border ${termClass(termData.category)}`}>
-            {termData.category}
-          </span>
-          <ChevronRight className={`w-4 h-4 text-gray-500 transition-transform ${expanded ? 'rotate-90' : ''}`} />
+          {categories.map((cat) => (
+            <button
+              key={cat}
+              type="button"
+              onClick={() => onCategoryClick?.(cat)}
+              className={`text-[10px] font-medium px-2 py-0.5 rounded-full border ${termClass(cat)}`}
+            >
+              {cat}
+            </button>
+          ))}
         </span>
-      </button>
+      </div>
       <AnimatePresence initial={false}>
         {expanded && (
           <motion.div

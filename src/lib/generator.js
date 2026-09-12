@@ -50,15 +50,48 @@ const ASK_FOR_IDS = [
 
 export const ASK_FOR_CATEGORIES = ASK_FOR_IDS.map((id) => BANK_CATEGORIES.find((cat) => cat.id === id)).filter(Boolean);
 
+const SKILL_BUILDING_CATEGORIES = new Set([
+  'FUT',
+  'PlayStyle',
+  'Lines',
+  'Objectives',
+  'CORE',
+  'Core',
+  'C.O.R.E.',
+]);
+
 function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
-export function splitCategories(raw) {
-  return String(raw || '')
+export function splitList(value) {
+  if (Array.isArray(value)) return value.flatMap((item) => splitList(item));
+  return String(value || '')
     .split(/[|,]/)
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+export function splitCategories(raw) {
+  return splitList(raw);
+}
+
+export function askForCategoriesFromRows(rows) {
+  const counts = new Map();
+  asArray(rows).forEach((row) => {
+    rowCategories(row).forEach((cat) => {
+      if (SKILL_BUILDING_CATEGORIES.has(cat)) return;
+      counts.set(cat, (counts.get(cat) || 0) + 1);
+    });
+  });
+  const known = ASK_FOR_IDS.filter((id) => counts.has(id));
+  const unknown = Array.from(counts.keys())
+    .filter((id) => !ASK_FOR_IDS.includes(id))
+    .sort((a, b) => a.localeCompare(b));
+  return [...known, ...unknown].map((id) => {
+    const bank = BANK_CATEGORIES.find((cat) => cat.id === id);
+    return { id, label: bank?.label || id, count: counts.get(id) || 0 };
+  });
 }
 
 export function joinCategories(categories) {

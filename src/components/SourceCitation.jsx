@@ -1,7 +1,43 @@
 import { BookOpen, ExternalLink } from 'lucide-react';
-import { sourceHref, sourceLabel } from '../lib/sheets.js';
+import { sourceById, sourceHref, sourceLabel } from '../lib/sheets.js';
+import { splitList } from '../lib/generator.js';
 
 export function ItemSource({ item, sources, className = '' }) {
+  const ids = splitList(item.sourceIds);
+  const named = ids
+    .map((id) => {
+      const src = sourceById(sources, id);
+      return src ? { id, name: src.name, href: src.url } : null;
+    })
+    .filter(Boolean);
+
+  if (named.length > 1) {
+    return (
+      <div className={`flex flex-wrap gap-1 min-w-0 ${className}`}>
+        {named.map((src) => (
+          src.href ? (
+            <a
+              key={src.id}
+              href={src.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[10px] text-blue-300 bg-blue-900/20 border border-blue-800/40 px-1.5 py-0.5 rounded-full truncate max-w-full"
+            >
+              {src.name}
+            </a>
+          ) : (
+            <span
+              key={src.id}
+              className="text-[10px] text-gray-400 bg-gray-800 border border-gray-700 px-1.5 py-0.5 rounded-full truncate max-w-full"
+            >
+              {src.name}
+            </span>
+          )
+        ))}
+      </div>
+    );
+  }
+
   const label = sourceLabel(item, sources);
   const href = sourceHref(item, sources);
   if (!label) return null;

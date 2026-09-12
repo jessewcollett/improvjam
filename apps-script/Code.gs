@@ -169,7 +169,9 @@ function promptsFromGenerator_(rows, fallback) {
 function splitFields_(row) {
   ['tags', 'lifeSkills', 'sourceIds'].forEach(function (key) {
     if (typeof row[key] === 'string') {
-      row[key] = row[key] ? row[key].split('|') : [];
+      row[key] = splitCats_(row[key]);
+    } else if (Array.isArray(row[key])) {
+      row[key] = splitCats_(row[key].join(','));
     }
   });
   return row;

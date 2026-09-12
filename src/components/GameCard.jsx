@@ -12,6 +12,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore } from '../store/useAppStore.js';
 import { categoryClass } from '../lib/categoryStyles.js';
+import { splitList } from '../lib/generator.js';
 import { ItemSource } from './SourceCitation.jsx';
 
 function iconClass(active, on) {
@@ -20,7 +21,7 @@ function iconClass(active, on) {
   }`;
 }
 
-export default function GameCard({ game }) {
+export default function GameCard({ game, onCategoryClick }) {
   const lists = useAppStore((s) => s.lists);
   const sources = useAppStore((s) => s.data.sources);
   const toggleInList = useAppStore((s) => s.toggleInList);
@@ -31,7 +32,10 @@ export default function GameCard({ game }) {
   const inAnySet = lists.customSets.some((set) => set.games.includes(game.id));
   const [expanded, setExpanded] = useState(false);
   const [showSets, setShowSets] = useState(false);
-  const pills = [game.category, ...(game.tags || []).slice(0, expanded ? 8 : 2)].filter(Boolean);
+  const categories = game.categories?.length ? game.categories : splitList(game.category);
+  const tags = splitList(game.tags);
+  const lifeSkills = splitList(game.lifeSkills);
+  const visibleTags = tags.slice(0, expanded ? tags.length : 2);
 
   const customSetMenu = (
     <div className="absolute top-full right-0 mt-1 w-52 bg-[#121212] border border-gray-700 rounded-xl shadow-2xl overflow-hidden z-20">
@@ -73,29 +77,42 @@ export default function GameCard({ game }) {
       className="bg-card border border-gray-800 rounded-xl mb-2 shadow-lg overflow-visible relative"
     >
       <div className="flex items-center gap-1 px-2.5 py-1.5">
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          className="flex-1 min-w-0 text-left py-0.5"
-          aria-expanded={expanded}
-        >
-          <div className="flex items-center gap-1">
-            <h3 className="text-[15px] font-bold font-display text-gray-100 truncate">{game.name}</h3>
-            <ChevronRight className={`w-4 h-4 text-gray-500 shrink-0 transition-transform ${expanded ? 'rotate-90' : ''}`} />
-          </div>
+        <div className="flex-1 min-w-0">
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="w-full min-w-0 text-left py-0.5"
+            aria-expanded={expanded}
+          >
+            <div className="flex items-center gap-1">
+              <h3 className="text-[15px] font-bold font-display text-gray-100 truncate">{game.name}</h3>
+              <ChevronRight className={`w-4 h-4 text-gray-500 shrink-0 transition-transform ${expanded ? 'rotate-90' : ''}`} />
+            </div>
+          </button>
           <div className="flex flex-wrap gap-1 mt-1">
-            {pills.map((tag) => (
+            {categories.map((cat) => (
+              <button
+                key={`cat-${cat}`}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onCategoryClick?.(cat);
+                }}
+                className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${categoryClass(cat)}`}
+              >
+                {cat}
+              </button>
+            ))}
+            {visibleTags.map((tag) => (
               <span
-                key={tag}
-                className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${
-                  tag === game.category ? categoryClass(game.category) : 'text-gray-400 bg-gray-800 border-gray-700'
-                }`}
+                key={`tag-${tag}`}
+                className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full border text-gray-400 bg-gray-800 border-gray-700"
               >
                 {tag}
               </span>
             ))}
           </div>
-        </button>
+        </div>
         <div className="flex items-center shrink-0">
           <button
             type="button"
@@ -148,11 +165,11 @@ export default function GameCard({ game }) {
             className="overflow-hidden"
           >
             <div className="px-3 pb-3 pt-0">
-              {game.lifeSkills?.length > 0 && (
+              {lifeSkills.length > 0 && (
                 <div className="mb-2 flex flex-wrap gap-1 items-center">
                   <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-wider mr-1">Life Skills</span>
-                  {game.lifeSkills.map((skill) => (
-                    <span key={skill} className="text-[10px] text-emerald-300/80 bg-emerald-900/20 border border-emerald-800/30 px-1.5 py-0.5 rounded">
+                  {lifeSkills.map((skill) => (
+                    <span key={skill} className="text-[10px] text-emerald-300/80 bg-emerald-900/20 border border-emerald-800/30 px-1.5 py-0.5 rounded-full">
                       {skill}
                     </span>
                   ))}

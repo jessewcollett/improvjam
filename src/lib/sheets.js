@@ -1,5 +1,5 @@
 import fallback from '../data/mockData.json';
-import { promptsFromRows, rowsFromPrompts, withTermIds } from './generator.js';
+import { promptsFromRows, rowsFromPrompts, splitList, withTermIds } from './generator.js';
 
 export const SHEETS_URL = import.meta.env.VITE_SHEETS_URL || '';
 
@@ -7,11 +7,34 @@ function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function normalizeGame(game) {
+  const categories = splitList(game?.categories || game?.category);
+  return {
+    ...game,
+    categories,
+    category: categories[0] || String(game?.category || '').trim(),
+    tags: splitList(game?.tags),
+    lifeSkills: splitList(game?.lifeSkills),
+    sourceIds: splitList(game?.sourceIds),
+  };
+}
+
+function normalizeTerm(term) {
+  const categories = splitList(term?.category);
+  return {
+    ...term,
+    categories,
+    category: categories[0] || String(term?.category || '').trim(),
+    sourceIds: splitList(term?.sourceIds),
+  };
+}
+
 export function normalizePayload(raw) {
   if (!raw || typeof raw !== 'object') {
     return {
       ...fallback,
-      terms: withTermIds(fallback.terms),
+      games: asArray(fallback.games).map(normalizeGame),
+      terms: withTermIds(fallback.terms).map(normalizeTerm),
       generator: asArray(fallback.generator).length ? fallback.generator : rowsFromPrompts(fallback.prompts),
     };
   }
@@ -23,8 +46,8 @@ export function normalizePayload(raw) {
       : rowsFromPrompts(raw.prompts || fallback.prompts);
 
   return {
-    games: asArray(raw.games).length ? raw.games : fallback.games,
-    terms: withTermIds(asArray(raw.terms).length ? raw.terms : fallback.terms),
+    games: (asArray(raw.games).length ? raw.games : fallback.games).map(normalizeGame),
+    terms: withTermIds(asArray(raw.terms).length ? raw.terms : fallback.terms).map(normalizeTerm),
     sources: asArray(raw.sources).length ? raw.sources : fallback.sources,
     generator,
     prompts: promptsFromRows(generator, fallback.prompts),
@@ -52,13 +75,13 @@ export function sourceById(sources, id) {
 
 export function sourceLabel(item, sources) {
   if (item.source) return item.source;
-  const ids = asArray(item.sourceIds);
+  const ids = splitList(item.sourceIds);
   const names = ids.map((id) => sourceById(sources, id)?.name).filter(Boolean);
   return names.join(' · ') || 'Unknown source';
 }
 
 export function sourceHref(item, sources) {
-  const ids = asArray(item.sourceIds);
+  const ids = splitList(item.sourceIds);
   for (const id of ids) {
     const href = sourceById(sources, id)?.url;
     if (href) return href;

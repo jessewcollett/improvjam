@@ -2,16 +2,35 @@ import { Bell, Play, Volume2 } from 'lucide-react';
 import { BELL_STYLES, playCountIn, playDing } from '../lib/audio.js';
 import { useHoldDing } from '../lib/useHoldDing.js';
 import { useAppStore } from '../store/useAppStore.js';
+import SyncButton from './SyncButton.jsx';
 
 export default function SettingsView() {
   const settings = useAppStore((s) => s.settings);
   const updateSettings = useAppStore((s) => s.updateSettings);
+  const lastSynced = useAppStore((s) => s.lastSynced);
+  const syncError = useAppStore((s) => s.syncError);
   const holdPreview = useHoldDing(settings.bellStyle, settings.bellVolume);
 
   return (
     <div className="h-full flex flex-col pt-4 px-4 pb-nav overflow-y-auto scrollbar-hide">
       <h1 className="text-2xl font-black font-display text-white mb-1 tracking-tight">Settings</h1>
-      <p className="text-xs text-gray-500 mb-6">Bell prefs stay on this device. Sync the catalog from My Sets.</p>
+      <p className="text-xs text-gray-500 mb-6">Bell prefs stay on this device. Catalog sync pulls the live Google Sheet.</p>
+
+      <section className="bg-card border border-gray-800 rounded-2xl p-4 mb-4">
+        <h2 className="text-lg font-black font-display text-white mb-2">Catalog sync</h2>
+        <p className="text-sm text-gray-400 mb-3">
+          After you edit the Google Sheet or run Populate catalog, tap Sync Data. The app fetches the live sheet and replaces games, glossary, and generator banks on this device. Your To Play, Favorites, and custom sets stay in local storage.
+        </p>
+        <SyncButton />
+        {lastSynced && (
+          <p className="text-[10px] text-gray-500 mt-2">Last synced {new Date(lastSynced).toLocaleString()}</p>
+        )}
+        {syncError && (
+          <p className="text-xs text-amber-300 bg-amber-900/20 border border-amber-800/40 rounded-lg p-2 mt-2">
+            {syncError} The bundled catalog stays available offline.
+          </p>
+        )}
+      </section>
 
       <section className="bg-card border border-gray-800 rounded-2xl p-4 mb-4">
         <h2 className="text-lg font-black font-display text-yellow-300 mb-3 flex items-center">

@@ -5,7 +5,6 @@ import {
   Lock,
   Unlock,
   Star,
-  Search,
   ChevronDown,
   Footprints,
   Pencil,
@@ -34,8 +33,10 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore } from '../store/useAppStore.js';
-import { ASK_FOR_CATEGORIES, rowCategories } from '../lib/generator.js';
+import { askForCategoriesFromRows, rowCategories } from '../lib/generator.js';
 import ActionDock from './ActionDock.jsx';
+import SearchField from './SearchField.jsx';
+import SyncButton from './SyncButton.jsx';
 
 const pick = (arr) => (arr?.length ? arr[Math.floor(Math.random() * arr.length)] : undefined);
 const CATALOGUE_CAP = 50;
@@ -110,19 +111,16 @@ export default function GeneratorView() {
   const [kit, setKit] = useState(null);
   const [skillResults, setSkillResults] = useState([]);
   const [bankQuery, setBankQuery] = useState('');
-  const [banksOpen, setBanksOpen] = useState(true);
+  const [banksOpen, setBanksOpen] = useState(false);
   const [catalogueOpen, setCatalogueOpen] = useState(false);
 
-  const askForCategories = useMemo(() => {
-    const counts = new Map();
-    generator.forEach((row) => {
-      rowCategories(row).forEach((cat) => counts.set(cat, (counts.get(cat) || 0) + 1));
-    });
-    return ASK_FOR_CATEGORIES.filter((cat) => {
-      if (cat.id === 'Instructions') return (counts.get(cat.id) || 0) > 0;
-      return true;
-    }).map((cat) => ({ ...cat, count: counts.get(cat.id) || 0, Icon: BANK_ICONS[cat.id] || Tag }));
-  }, [generator]);
+  const askForCategories = useMemo(
+    () => askForCategoriesFromRows(generator).map((cat) => ({
+      ...cat,
+      Icon: BANK_ICONS[cat.id] || Tag,
+    })),
+    [generator],
+  );
 
   const skillItems = useMemo(() => {
     const instructionCount = prompts.instructions?.length
@@ -210,6 +208,7 @@ export default function GeneratorView() {
   };
 
   const generate = () => {
+    setBanksOpen(false);
     if (selectedCats.length) {
       setKit(
         selectedCats.map((cat) => {
@@ -262,10 +261,13 @@ export default function GeneratorView() {
     <div className="h-full flex flex-col pt-4 relative overflow-hidden">
       <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 rounded-full bg-green-500/5 blur-3xl pointer-events-none" />
       <div className="flex-1 overflow-y-auto scrollbar-hide px-4 pb-6 md:pb-nav">
-        <h1 className="text-2xl font-black font-display text-white mb-1 tracking-tight flex items-center">
-          <Wand2 className="text-green-400 mr-2 w-7 h-7" />
-          Generator
-        </h1>
+        <div className="flex items-start justify-between gap-3 mb-1">
+          <h1 className="text-2xl font-black font-display text-white tracking-tight flex items-center">
+            <Wand2 className="text-green-400 mr-2 w-7 h-7" />
+            Generator
+          </h1>
+          <SyncButton compact />
+        </div>
         <p className="text-xs text-gray-500 mb-4">
           Check banks, then generate. Categories in the sheet can be comma or pipe separated — <span className="text-gray-300">Locations, Scenes</span>.
         </p>
@@ -440,14 +442,12 @@ export default function GeneratorView() {
 
           {catalogueOpen && (
             <div className="mt-2">
-              <div className="relative mb-2">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
-                <input
-                  type="search"
+              <div className="mb-2">
+                <SearchField
                   value={bankQuery}
-                  onChange={(e) => setBankQuery(e.target.value)}
+                  onChange={setBankQuery}
                   placeholder={selectedCats.length ? `Filter ${selectedCats.map((c) => c.label).join(', ').toLowerCase()}…` : 'Check a bank first…'}
-                  className="w-full pl-10 pr-3 py-3 border border-gray-700 rounded-xl bg-[#1A1A1A] text-gray-300 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-lime-600"
+                  ringClass="focus:ring-lime-600"
                 />
               </div>
               {!selectedCats.length ? (
@@ -470,8 +470,12 @@ export default function GeneratorView() {
                           kit?.some((item) => item.row?.id === row.id) ? 'border-lime-600 text-white' : 'border-gray-800 text-gray-300'
                         }`}
                       >
-                        <span className="block text-[10px] uppercase tracking-wider text-gray-500 font-bold mb-0.5">
-                          {rowCategories(row).join(' · ')}
+                        <span className="flex flex-wrap gap-1 mb-1">
+                          {rowCategories(row).map((cat) => (
+                            <span key={cat} className="text-[10px] uppercase tracking-wider text-gray-400 font-bold px-1.5 py-0.5 rounded-full border border-gray-700 bg-gray-800">
+                              {cat}
+                            </span>
+                          ))}
                         </span>
                         {displayRow(row)}
                       </button>

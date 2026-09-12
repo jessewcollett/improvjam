@@ -147,7 +147,7 @@ export const useAppStore = create(
         ...(persisted || {}),
         data:
           persisted?.lastSynced && persisted?.data?.games?.length
-            ? persisted.data
+            ? normalizePayload(persisted.data)
             : current.data,
         lists: persisted?.lists || current.lists,
         settings: { ...defaultSettings, ...(persisted?.settings || {}) },
