@@ -7,3 +7,4 @@ book-extract.txt
 *.log
 .vscode
 .idea
+.vercel
