@@ -21,8 +21,42 @@ function addValue(list, value) {
   return list.includes(value) ? list : [...list, value];
 }
 
+const BUILTIN_SETS = [
+  { id: 'toPlay', label: 'To Play' },
+  { id: 'played', label: 'Played' },
+  { id: 'favorites', label: 'Favorites' },
+];
+
+function idsInSet(lists, setId) {
+  if (setId === 'favorites' || setId === 'toPlay' || setId === 'played') {
+    return lists[setId] || [];
+  }
+  return lists.customSets.find((set) => set.id === setId)?.games || [];
+}
+
+function Chip({ active, onClick, tone = 'blue', children }) {
+  const on =
+    tone === 'rose'
+      ? 'bg-rose-600 text-white border-rose-300 shadow-md'
+      : 'bg-blue-600 text-white border-blue-300 shadow-md';
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`inline-flex items-center gap-1 px-3 py-2 rounded-full text-sm font-medium min-h-11 border ${
+        active ? on : 'bg-gray-800 text-gray-300 border-gray-700'
+      }`}
+    >
+      {active ? <Check className="w-3.5 h-3.5" /> : null}
+      {children}
+    </button>
+  );
+}
+
 export default function LibraryView() {
   const data = useAppStore((s) => s.data);
+  const lists = useAppStore((s) => s.lists);
   const settings = useAppStore((s) => s.settings);
   const updateSettings = useAppStore((s) => s.updateSettings);
   const dismissedTipDate = useAppStore((s) => s.dismissedTipDate);
@@ -30,6 +64,8 @@ export default function LibraryView() {
   const [searchTerm, setSearchTerm] = useState('');
   const [gameFilters, setGameFilters] = useState([]);
   const [termFilters, setTermFilters] = useState([]);
+  const [inSetFilters, setInSetFilters] = useState([]);
+  const [notInSetFilters, setNotInSetFilters] = useState([]);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const viewType = settings.libraryView === 'terms' ? 'terms' : 'games';
 
@@ -53,7 +89,37 @@ export default function LibraryView() {
   const selectedFilters = viewType === 'games' ? gameFilters : termFilters;
   const setSelectedFilters = viewType === 'games' ? setGameFilters : setTermFilters;
   const filterOptions = viewType === 'games' ? categories : termCategories;
-  const filterActive = selectedFilters.length > 0;
+  const setFilterOptions = useMemo(
+    () => [...BUILTIN_SETS, ...lists.customSets.map((set) => ({ id: set.id, label: set.name }))],
+    [lists.customSets],
+  );
+  const setLabel = (setId) => setFilterOptions.find((set) => set.id === setId)?.label || setId;
+  const setFilterCount = viewType === 'games' ? inSetFilters.length + notInSetFilters.length : 0;
+  const filterCount = selectedFilters.length + setFilterCount;
+  const filterActive = filterCount > 0;
+  const filterSummary = [
+    ...selectedFilters,
+    ...(viewType === 'games' ? inSetFilters.map(setLabel) : []),
+    ...(viewType === 'games' ? notInSetFilters.map((id) => `Not ${setLabel(id)}`) : []),
+  ];
+
+  const toggleInSet = (setId) => {
+    setNotInSetFilters((current) => current.filter((id) => id !== setId));
+    setInSetFilters((current) => toggleValue(current, setId));
+  };
+
+  const toggleNotInSet = (setId) => {
+    setInSetFilters((current) => current.filter((id) => id !== setId));
+    setNotInSetFilters((current) => toggleValue(current, setId));
+  };
+
+  const clearFilters = () => {
+    setSelectedFilters([]);
+    if (viewType === 'games') {
+      setInSetFilters([]);
+      setNotInSetFilters([]);
+    }
+  };
 
   const filteredGames = useMemo(() => {
     const q = searchTerm.toLowerCase();
@@ -64,9 +130,13 @@ export default function LibraryView() {
       const hay = [game.name, game.description, ...tags, ...skills, ...cats].join(' ').toLowerCase();
       const matchesSearch = !q || hay.includes(q);
       const matchesFilter = !gameFilters.length || gameFilters.some((cat) => cats.includes(cat));
-      return matchesSearch && matchesFilter;
+      const matchesInSet =
+        !inSetFilters.length || inSetFilters.some((setId) => idsInSet(lists, setId).includes(game.id));
+      const matchesNotInSet =
+        !notInSetFilters.length || notInSetFilters.every((setId) => !idsInSet(lists, setId).includes(game.id));
+      return matchesSearch && matchesFilter && matchesInSet && matchesNotInSet;
     });
-  }, [data.games, searchTerm, gameFilters]);
+  }, [data.games, searchTerm, gameFilters, inSetFilters, notInSetFilters, lists]);
 
   const filteredTerms = useMemo(() => {
     const q = searchTerm.toLowerCase();
@@ -153,14 +223,14 @@ export default function LibraryView() {
             Filter
             {filterActive ? (
               <span className="inline-flex items-center justify-center min-w-5 h-5 px-1 rounded-full bg-blue-600 text-white text-xs">
-                {selectedFilters.length}
+                {filterCount}
               </span>
             ) : null}
           </button>
           {filterActive ? (
             <button
               type="button"
-              onClick={() => setSelectedFilters([])}
+              onClick={clearFilters}
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-bold min-h-11 border border-gray-700 bg-gray-800 text-gray-200"
             >
               <X className="w-4 h-4" />
@@ -169,29 +239,50 @@ export default function LibraryView() {
           ) : null}
           {filterActive && !filtersOpen ? (
             <span className="text-xs font-semibold text-blue-300 min-w-0">
-              {selectedFilters.join(' · ')}
+              {filterSummary.join(' · ')}
             </span>
           ) : null}
         </div>
 
         {filtersOpen && (
-          <div className="flex flex-wrap gap-2 mt-3">
-            {filterOptions.map((cat) => {
-              const active = selectedFilters.includes(cat);
-              return (
-                <button
+          <div className="mt-3">
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Categories</p>
+            <div className="flex flex-wrap gap-2">
+              {filterOptions.map((cat) => (
+                <Chip
                   key={cat}
-                  type="button"
+                  active={selectedFilters.includes(cat)}
                   onClick={() => setSelectedFilters((prev) => toggleValue(prev, cat))}
-                  className={`inline-flex items-center gap-1 px-3 py-2 rounded-full text-sm font-medium min-h-11 border ${
-                    active ? 'bg-blue-600 text-white border-blue-300 shadow-md' : 'bg-gray-800 text-gray-300 border-gray-700'
-                  }`}
                 >
-                  {active ? <Check className="w-3.5 h-3.5" /> : null}
                   {cat}
-                </button>
-              );
-            })}
+                </Chip>
+              ))}
+            </div>
+            {viewType === 'games' ? (
+              <>
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 mt-3">In a set</p>
+                <div className="flex flex-wrap gap-2">
+                  {setFilterOptions.map((set) => (
+                    <Chip key={`in-${set.id}`} active={inSetFilters.includes(set.id)} onClick={() => toggleInSet(set.id)}>
+                      {set.label}
+                    </Chip>
+                  ))}
+                </div>
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 mt-3">Not in a set</p>
+                <div className="flex flex-wrap gap-2">
+                  {setFilterOptions.map((set) => (
+                    <Chip
+                      key={`out-${set.id}`}
+                      tone="rose"
+                      active={notInSetFilters.includes(set.id)}
+                      onClick={() => toggleNotInSet(set.id)}
+                    >
+                      {set.label}
+                    </Chip>
+                  ))}
+                </div>
+              </>
+            ) : null}
           </div>
         )}
       </div>
@@ -210,7 +301,9 @@ export default function LibraryView() {
                 ))}
               </div>
             ) : (
-              <div className="text-center text-gray-500 mt-10">No games found matching “{searchTerm}”</div>
+              <div className="text-center text-gray-500 mt-10">
+                {searchTerm || filterActive ? 'No games match these filters.' : 'No games in the catalog.'}
+              </div>
             )
           ) : filteredTerms.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2 lg:gap-3">
