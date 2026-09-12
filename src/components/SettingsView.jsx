@@ -133,8 +133,13 @@ export default function SettingsView() {
           or an emoji like 🥁). Tracks use the tags column only — no genre column
           (Pop, 80s, Underscore — comma or pipe separated), and you can also tag on this device in Music.
           Game and glossary photos use the image column (Drive share link, Anyone with the link). Drive
-          files must be Anyone with the link. Improv Jam → Update tabs adds missing columns (tags, image)
-          without overwriting rows.
+          files must be Anyone with the link. Improv Jam → Update tabs adds missing columns (tags, image,
+          Generator group) and creates the Icons and Banks tabs without overwriting rows.
+        </p>
+        <p className="text-xs text-gray-500 mb-3">
+          Generator categories live on the Banks tab: set group to Ask-for, Skill Building, or Both, and
+          icon to a keyword from the Icons tab (footprints, drum, sparkles) or any emoji. Leave Generator
+          group blank to use the Banks value; fill a row to override that category.
         </p>
         <p className="text-xs text-gray-500 mb-3">
           {lastSynced ? `Last synced ${new Date(lastSynced).toLocaleString()}` : 'Not synced yet'}

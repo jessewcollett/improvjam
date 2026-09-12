@@ -12,12 +12,16 @@ var TAB_GAMES = 'Games';
 var TAB_TERMS = 'Terms';
 var TAB_GENERATOR = 'Generator';
 var TAB_AUDIO = 'Audio';
+var TAB_BANKS = 'Banks';
+var TAB_ICONS = 'Icons';
 
 var AUDIO_HEADERS = ['id', 'name', 'kind', 'url', 'icon', 'credit', 'creditUrl', 'notes', 'enabled', 'tags'];
 var SOURCES_HEADERS = ['id', 'name', 'url', 'note'];
 var GAMES_HEADERS = ['id', 'name', 'category', 'tags', 'lifeSkills', 'description', 'sourceIds', 'source', 'image'];
 var TERMS_HEADERS = ['id', 'term', 'category', 'definition', 'sourceIds', 'image'];
 var GENERATOR_HEADERS = ['id', 'categories', 'text', 'extra', 'group'];
+var BANKS_HEADERS = ['id', 'label', 'group', 'icon'];
+var ICONS_HEADERS = ['id', 'name', 'kind', 'sample'];
 
 function tabSchemas_() {
   return [
@@ -25,6 +29,8 @@ function tabSchemas_() {
     { tab: TAB_GAMES, headers: GAMES_HEADERS },
     { tab: TAB_TERMS, headers: TERMS_HEADERS },
     { tab: TAB_GENERATOR, headers: GENERATOR_HEADERS },
+    { tab: TAB_BANKS, headers: BANKS_HEADERS },
+    { tab: TAB_ICONS, headers: ICONS_HEADERS },
     { tab: TAB_AUDIO, headers: AUDIO_HEADERS },
   ];
 }
@@ -136,7 +142,7 @@ function ensureTabHeaders_(ss, tab, headers) {
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
     sheet.setFrozenRows(1);
     if (tab === TAB_AUDIO) seedAudioDefaults_(sheet);
-    if (tab === TAB_GENERATOR) ensureGroupValidation_(sheet);
+    finishTabSetup_(sheet, tab);
     return { tab: tab, created: true, added: headers.slice() };
   }
   var last = Math.max(sheet.getLastColumn(), 1);
@@ -156,8 +162,20 @@ function ensureTabHeaders_(ss, tab, headers) {
   });
   sheet.setFrozenRows(1);
   if (tab === TAB_AUDIO && sheet.getLastRow() < 2) seedAudioDefaults_(sheet);
-  if (tab === TAB_GENERATOR) ensureGroupValidation_(sheet);
+  finishTabSetup_(sheet, tab);
   return { tab: tab, created: created, added: added };
+}
+
+function finishTabSetup_(sheet, tab) {
+  if (tab === TAB_GENERATOR) ensureGroupValidation_(sheet);
+  if (tab === TAB_BANKS) {
+    seedBanksIfEmpty_(sheet);
+    ensureGroupValidation_(sheet);
+  }
+  if (tab === TAB_ICONS) {
+    seedIconsIfEmpty_(sheet);
+    ensureIconKindValidation_(sheet);
+  }
 }
 
 function ensureGroupValidation_(sheet) {
@@ -172,6 +190,110 @@ function ensureGroupValidation_(sheet) {
     .setHelpText('Ask-for, Skill Building, or Both. Blank uses the app default for that category.')
     .build();
   sheet.getRange(2, col, rows, 1).setDataValidation(rule);
+}
+
+function ensureIconKindValidation_(sheet) {
+  var last = Math.max(sheet.getLastColumn(), 1);
+  var headers = sheet.getRange(1, 1, 1, last).getValues()[0];
+  var col = headerIndex_(headers, 'kind') + 1;
+  if (col < 1) return;
+  var rows = Math.max(sheet.getMaxRows() - 1, 1);
+  var rule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(['lucide', 'emoji'], true)
+    .setAllowInvalid(true)
+    .setHelpText('lucide = keyword from this tab. emoji = any emoji also works in an icon cell.')
+    .build();
+  sheet.getRange(2, col, rows, 1).setDataValidation(rule);
+}
+
+function seedIfEmpty_(sheet, headers, rows) {
+  if (sheet.getLastRow() >= 2) return;
+  if (!rows.length) return;
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
+  sheet.setFrozenRows(1);
+}
+
+function seedIconsIfEmpty_(sheet) {
+  seedIfEmpty_(sheet, ICONS_HEADERS, iconSeedRows_());
+}
+
+function seedBanksIfEmpty_(sheet) {
+  seedIfEmpty_(sheet, BANKS_HEADERS, bankSeedRows_());
+}
+
+function iconSeedRows_() {
+  return [
+    ['footprints', 'Footprints', 'lucide', '👣'],
+    ['pencil', 'Pencil', 'lucide', '✏️'],
+    ['paw-print', 'Paw print', 'lucide', '🐾'],
+    ['user-round', 'User', 'lucide', '👤'],
+    ['building-2', 'Buildings', 'lucide', '🏢'],
+    ['heart', 'Heart', 'lucide', '❤️'],
+    ['crown', 'Crown', 'lucide', '👑'],
+    ['clapperboard', 'Clapperboard', 'lucide', '🎬'],
+    ['scroll-text', 'Scroll', 'lucide', '📜'],
+    ['briefcase', 'Briefcase', 'lucide', '💼'],
+    ['map-pin', 'Map pin', 'lucide', '📍'],
+    ['tag', 'Tag', 'lucide', '🏷️'],
+    ['package', 'Package', 'lucide', '📦'],
+    ['heart-handshake', 'Handshake', 'lucide', '🤝'],
+    ['drama', 'Drama', 'lucide', '🎭'],
+    ['shapes', 'Shapes', 'lucide', '🔷'],
+    ['music', 'Music', 'lucide', '🎵'],
+    ['book-open', 'Open book', 'lucide', '📖'],
+    ['play', 'Play', 'lucide', '▶️'],
+    ['quote', 'Quote', 'lucide', '💬'],
+    ['layers', 'Layers', 'lucide', '📚'],
+    ['message-square', 'Message', 'lucide', '💭'],
+    ['users', 'Users', 'lucide', '👥'],
+    ['star', 'Star', 'lucide', '⭐'],
+    ['bell', 'Bell', 'lucide', '🔔'],
+    ['bell-ring', 'Ringing bell', 'lucide', '🔔'],
+    ['drum', 'Drum', 'lucide', '🥁'],
+    ['zap', 'Zap', 'lucide', '⚡'],
+    ['volume-2', 'Volume', 'lucide', '🔊'],
+    ['disc-3', 'Disc', 'lucide', '💿'],
+    ['gong', 'Gong (alias of disc-3)', 'lucide', '💿'],
+    ['triangle', 'Triangle', 'lucide', '🔺'],
+    ['megaphone', 'Megaphone', 'lucide', '📣'],
+    ['sparkles', 'Sparkles', 'lucide', '✨'],
+    ['wind', 'Wind', 'lucide', '💨'],
+    ['whoosh', 'Whoosh (alias of wind)', 'lucide', '💨'],
+    ['waves', 'Waves (alias of wind)', 'lucide', '💨'],
+    ['circle-dot', 'Circle dot', 'lucide', '⏺️'],
+    ['any-emoji', 'Any emoji works — paste one in an icon cell', 'emoji', '🎲'],
+  ];
+}
+
+function bankSeedRows_() {
+  return [
+    ['Activities', 'Activities', 'Ask-for', 'footprints'],
+    ['Adjectives', 'Adjectives', 'Ask-for', 'pencil'],
+    ['Animals', 'Animals', 'Ask-for', 'paw-print'],
+    ['Characters', 'Characters', 'Ask-for', 'user-round'],
+    ['Companies', 'Companies', 'Ask-for', 'building-2'],
+    ['Emotions', 'Emotions', 'Ask-for', 'heart'],
+    ['Famous', 'Famous', 'Ask-for', 'crown'],
+    ['Genres', 'Genres', 'Ask-for', 'clapperboard'],
+    ['Instructions', 'Instructions', 'Both', 'scroll-text'],
+    ['Jobs', 'Jobs', 'Ask-for', 'briefcase'],
+    ['Lines', 'Line in a Pocket', 'Skill Building', 'message-square'],
+    ['Locations', 'Locations', 'Ask-for', 'map-pin'],
+    ['Nouns', 'Nouns', 'Ask-for', 'tag'],
+    ['Objects', 'Objects', 'Ask-for', 'package'],
+    ['Objectives', 'Objectives', 'Skill Building', 'star'],
+    ['PlayStyle', 'Play styles', 'Skill Building', 'clapperboard'],
+    ['Relationships', 'Relationships', 'Ask-for', 'heart-handshake'],
+    ['Scenes', 'Scenes', 'Both', 'drama'],
+    ['Shapes', 'Shapes', 'Ask-for', 'shapes'],
+    ['Songs', 'Songs', 'Ask-for', 'music'],
+    ['Story Titles', 'Story titles', 'Ask-for', 'book-open'],
+    ['Verbs', 'Verbs', 'Ask-for', 'play'],
+    ['Words', 'Words', 'Ask-for', 'quote'],
+    ['FUT', 'F.U.T.', 'Skill Building', 'sparkles'],
+    ['CORE', 'C.O.R.E.', 'Skill Building', 'layers'],
+  ];
 }
 
 function seedAudioDefaults_(sheet) {
@@ -209,6 +331,7 @@ function populateCatalog() {
     throw new Error('CatalogData.gs is missing. Push the apps-script folder with clasp.');
   }
   var ss = SpreadsheetApp.getActive();
+  ensureAllTabs_(ss);
   var gameImages = imageMap_(ss, TAB_GAMES, 'id');
   var termImages = imageMap_(ss, TAB_TERMS, 'id');
   writeRows_(ss, TAB_SOURCES, ['id', 'name', 'url', 'note'], CATALOG_DATA.sources.map(function (s) {
@@ -289,6 +412,8 @@ function readCatalog() {
     games: objectsFrom_(ss, TAB_GAMES).map(splitFields_),
     terms: objectsFrom_(ss, TAB_TERMS).map(splitFields_).map(ensureTermId_),
     generator: generator,
+    banks: objectsFrom_(ss, TAB_BANKS),
+    icons: objectsFrom_(ss, TAB_ICONS),
     prompts: prompts,
     audio: objectsFrom_(ss, TAB_AUDIO).map(splitFields_),
   };

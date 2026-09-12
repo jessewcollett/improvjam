@@ -1,5 +1,5 @@
 import fallback from '../data/mockData.json';
-import { promptsFromRows, rowsFromPrompts, splitList, withTermIds, joinCategories } from './generator.js';
+import { defaultBanks, promptsFromRows, rowsFromPrompts, splitList, withTermIds, joinCategories } from './generator.js';
 import { playbackUrl } from './mediaUrl.js';
 import { sheetAudioTags } from './music.js';
 
@@ -79,6 +79,28 @@ function normalizeGeneratorRow(row) {
   };
 }
 
+function normalizeBank(row) {
+  const id = String(row?.id || row?.category || '').trim();
+  if (!id) return null;
+  return {
+    id,
+    label: String(row?.label || id).trim(),
+    group: String(row?.group || row?.section || '').trim(),
+    icon: String(row?.icon || '').trim(),
+  };
+}
+
+function normalizeIconRow(row) {
+  const id = String(row?.id || '').trim();
+  if (!id) return null;
+  return {
+    id,
+    name: String(row?.name || id).trim(),
+    kind: String(row?.kind || '').trim().toLowerCase() || 'lucide',
+    sample: String(row?.sample || '').trim(),
+  };
+}
+
 export function normalizePayload(raw) {
   if (!raw || typeof raw !== 'object') {
     return {
@@ -88,6 +110,10 @@ export function normalizePayload(raw) {
       generator: asArray(fallback.generator).length
         ? fallback.generator.map(normalizeGeneratorRow)
         : rowsFromPrompts(fallback.prompts),
+      banks: asArray(fallback.banks).map(normalizeBank).filter(Boolean).length
+        ? asArray(fallback.banks).map(normalizeBank).filter(Boolean)
+        : defaultBanks(),
+      icons: asArray(fallback.icons).map(normalizeIconRow).filter(Boolean),
       audio: asArray(fallback.audio).map(normalizeAudio).filter(Boolean),
     };
   }
@@ -99,11 +125,15 @@ export function normalizePayload(raw) {
       : rowsFromPrompts(raw.prompts || fallback.prompts)
   ).map(normalizeGeneratorRow);
 
+  const banks = asArray(raw.banks).map(normalizeBank).filter(Boolean);
+
   return {
     games: (asArray(raw.games).length ? raw.games : fallback.games).map(normalizeGame),
     terms: withTermIds(asArray(raw.terms).length ? raw.terms : fallback.terms).map(normalizeTerm),
     sources: asArray(raw.sources).length ? raw.sources : fallback.sources,
     generator,
+    banks: banks.length ? banks : defaultBanks(),
+    icons: asArray(raw.icons).map(normalizeIconRow).filter(Boolean),
     prompts: promptsFromRows(generator, fallback.prompts),
     audio: asArray(raw.audio).map(normalizeAudio).filter(Boolean),
   };

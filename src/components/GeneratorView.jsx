@@ -6,72 +6,18 @@ import {
   Unlock,
   Star,
   ChevronDown,
-  Footprints,
-  Pencil,
-  PawPrint,
-  UserRound,
-  Building2,
-  Heart,
-  Crown,
-  Clapperboard,
-  ScrollText,
-  Briefcase,
-  MapPin,
   Tag,
-  Package,
-  HeartHandshake,
-  Drama,
-  Shapes,
-  Music,
-  BookOpen,
-  Play,
-  Quote,
-  Layers,
-  Users,
-  Sparkles,
-  MessageSquare,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore } from '../store/useAppStore.js';
 import { askForCategoriesFromRows, rowCategories, rowExtra, skillItemsFromRows } from '../lib/generator.js';
 import ActionDock from './ActionDock.jsx';
+import CatalogIcon from './CatalogIcon.jsx';
 import SearchField from './SearchField.jsx';
 import SyncButton from './SyncButton.jsx';
 
 const pick = (arr) => (arr?.length ? arr[Math.floor(Math.random() * arr.length)] : undefined);
 const CATALOGUE_CAP = 50;
-
-const BANK_ICONS = {
-  Activities: Footprints,
-  Adjectives: Pencil,
-  Animals: PawPrint,
-  Characters: UserRound,
-  Companies: Building2,
-  Emotions: Heart,
-  Famous: Crown,
-  Genres: Clapperboard,
-  Instructions: ScrollText,
-  Jobs: Briefcase,
-  Locations: MapPin,
-  Nouns: Tag,
-  Objects: Package,
-  Relationships: HeartHandshake,
-  Scenes: Drama,
-  Shapes: Shapes,
-  Songs: Music,
-  'Story Titles': BookOpen,
-  Verbs: Play,
-  Words: Quote,
-};
-
-const SKILL_ICONS = {
-  core: Layers,
-  fut: Sparkles,
-  line: MessageSquare,
-  two: Users,
-  style: Clapperboard,
-  instruction: ScrollText,
-};
 
 function displayText(row) {
   if (!row) return '';
@@ -101,7 +47,7 @@ function styleDescription(content) {
   return content.description || '';
 }
 
-function CheckRow({ checked, Icon, label, count, onToggle }) {
+function CheckRow({ checked, icon, label, count, onToggle }) {
   return (
     <button
       type="button"
@@ -112,7 +58,7 @@ function CheckRow({ checked, Icon, label, count, onToggle }) {
         checked ? 'bg-lime-600/15 text-white border-lime-600/50' : 'bg-[#1A1A1A] text-gray-200 border-gray-800'
       }`}
     >
-      <Icon className={`w-3.5 h-3.5 shrink-0 ${checked ? 'text-lime-400' : 'text-gray-500'}`} />
+      <CatalogIcon name={icon} className={`w-3.5 h-3.5 shrink-0 ${checked ? 'text-lime-400' : 'text-gray-500'}`} fallback={Tag} />
       <span className="flex-1 text-xs font-bold leading-tight text-left">{label}</span>
       <span className={`text-2xs tabular-nums shrink-0 ${checked ? 'text-lime-300/80' : 'text-gray-500'}`}>{count}</span>
     </button>
@@ -124,7 +70,7 @@ function BankRow({ cat, checked, favorited, onToggle, onFavorite }) {
     <div className="flex items-center gap-0.5 min-w-0">
       <CheckRow
         checked={checked}
-        Icon={cat.Icon}
+        icon={cat.icon}
         label={cat.label}
         count={cat.count}
         onToggle={onToggle}
@@ -147,6 +93,7 @@ function BankRow({ cat, checked, favorited, onToggle, onFavorite }) {
 export default function GeneratorView() {
   const prompts = useAppStore((s) => s.data.prompts);
   const generator = useAppStore((s) => s.data.generator) || [];
+  const banks = useAppStore((s) => s.data.banks) || [];
   const selectedIds = useAppStore((s) => s.generatorBanks) || [];
   const selectedSkills = useAppStore((s) => s.generatorSkills) || [];
   const favoriteIds = useAppStore((s) => s.generatorBankFavorites) || [];
@@ -161,19 +108,13 @@ export default function GeneratorView() {
   const [catalogueOpen, setCatalogueOpen] = useState(false);
 
   const askForCategories = useMemo(
-    () => askForCategoriesFromRows(generator).map((cat) => ({
-      ...cat,
-      Icon: BANK_ICONS[cat.id] || Tag,
-    })),
-    [generator],
+    () => askForCategoriesFromRows(generator, banks),
+    [generator, banks],
   );
 
   const skillItems = useMemo(
-    () => skillItemsFromRows(generator, prompts).map((skill) => ({
-      ...skill,
-      Icon: SKILL_ICONS[skill.id] || BANK_ICONS[skill.category] || Tag,
-    })),
-    [generator, prompts],
+    () => skillItemsFromRows(generator, prompts, banks),
+    [generator, prompts, banks],
   );
 
   const selectedCats = useMemo(
@@ -239,31 +180,34 @@ export default function GeneratorView() {
   };
 
   const buildSkill = (skill, prev) => {
-    const id = skill.id;
-    if (id === 'core') return buildCORE(prev);
+    const id = typeof skill === 'string' ? skill : skill?.id;
+    if (!id) return null;
+    const category = (typeof skill === 'object' && skill.category)
+      || (String(id).startsWith('cat:') ? id.slice(4) : id);
+    const title = (typeof skill === 'object' && skill.label) || category;
+    if (id === 'core') return { ...buildCORE(prev), id };
     if (id === 'fut') {
       const item = pick(prompts.fut);
-      return item ? { type: 'fut', title: 'F.U.T. Starter', content: item } : null;
+      return item ? { id, type: 'fut', title: 'F.U.T. Starter', content: item } : null;
     }
     if (id === 'line') {
       const line = pickSkillRow('Lines', prompts.lines);
-      return line ? { type: 'line', title: 'Opening Line', content: line } : null;
+      return line ? { id, type: 'line', title: 'Opening Line', content: line } : null;
     }
     if (id === 'two') {
       const scene = pickSkillRow('Scenes', prompts.twoPerson);
-      return scene ? { type: 'two', title: 'Two-Person Scene', content: scene } : null;
+      return scene ? { id, type: 'two', title: 'Two-Person Scene', content: scene } : null;
     }
     if (id === 'style') {
       const style = pick(prompts.playStyles);
-      return style ? { type: 'style', title: 'Play Style', content: style } : null;
+      return style ? { id, type: 'style', title: 'Play Style', content: style } : null;
     }
     if (id === 'instruction') {
       const instruction = pickSkillRow('Instructions', prompts.instructions);
-      return instruction ? { type: 'instruction', title: 'Secret Instruction', content: instruction } : null;
+      return instruction ? { id, type: 'instruction', title: 'Secret Instruction', content: instruction } : null;
     }
-    const category = skill.category || (id.startsWith('cat:') ? id.slice(4) : id);
     const row = pickSkillRow(category, []);
-    return row ? { type: 'bank', title: skill.label || category, content: row } : null;
+    return row ? { id, type: 'bank', title, content: row } : null;
   };
 
   const generate = () => {
@@ -273,7 +217,7 @@ export default function GeneratorView() {
         selectedCats.map((cat) => {
           const rows = generator.filter((row) => rowCategories(row).includes(cat.id) && row.text);
           const current = kit?.find((item) => item.id === cat.id)?.row;
-          return { id: cat.id, label: cat.label, Icon: cat.Icon, row: drawFrom(rows, current) || null };
+          return { id: cat.id, label: cat.label, icon: cat.icon, row: drawFrom(rows, current) || null };
         }),
       );
     } else {
@@ -281,7 +225,7 @@ export default function GeneratorView() {
     }
 
     setSkillResults((prev) => selectedSkillItems.map((skill) => (
-      buildSkill(skill, prev.find((item) => item?.type === skill.id))
+      buildSkill(skill, prev.find((item) => item?.id === skill.id || item?.type === skill.id))
     )).filter(Boolean));
   };
 
@@ -292,7 +236,7 @@ export default function GeneratorView() {
     setKit((prev) => {
       const next = prev?.length
         ? prev.map((item) => ({ ...item }))
-        : selectedCats.map((cat) => ({ id: cat.id, label: cat.label, Icon: cat.Icon, row: null }));
+        : selectedCats.map((cat) => ({ id: cat.id, label: cat.label, icon: cat.icon, row: null }));
       return next.map((item) => (item.id === match.id ? { ...item, row } : item));
     });
   };
@@ -383,19 +327,23 @@ export default function GeneratorView() {
                   </div>
                 </>
               )}
-              <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold px-0.5 mt-2.5 mb-1">Skill Building</p>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-1">
-                {skillItems.map((skill) => (
-                  <CheckRow
-                    key={skill.id}
-                    checked={selectedSkills.includes(skill.id)}
-                    Icon={skill.Icon}
-                    label={skill.label}
-                    count={skill.count}
-                    onToggle={() => toggleGeneratorSkill(skill.id)}
-                  />
-                ))}
-              </div>
+              {skillItems.length > 0 && (
+                <>
+                  <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold px-0.5 mt-2.5 mb-1">Skill Building</p>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-1">
+                    {skillItems.map((skill) => (
+                      <CheckRow
+                        key={skill.id}
+                        checked={selectedSkills.includes(skill.id)}
+                        icon={skill.icon}
+                        label={skill.label}
+                        count={skill.count}
+                        onToggle={() => toggleGeneratorSkill(skill.id)}
+                      />
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           )}
         </section>
@@ -413,10 +361,9 @@ export default function GeneratorView() {
                   <p className="text-2xs uppercase tracking-wider text-lime-400 font-bold mb-2">Scene kit</p>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5">
                     {kit.map((item) => {
-                      const Icon = item.Icon || Tag;
                       return (
                         <div key={item.id} className="flex items-start gap-2 rounded-xl border border-gray-800 bg-card px-2.5 py-2">
-                          <Icon className="w-3.5 h-3.5 text-lime-400 mt-0.5 shrink-0" />
+                          <CatalogIcon name={item.icon} className="w-3.5 h-3.5 text-lime-400 mt-0.5 shrink-0" fallback={Tag} />
                           <div className="min-w-0">
                             <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold">{item.label}</p>
                             <p className="text-sm font-bold text-gray-100 leading-snug">
@@ -433,7 +380,7 @@ export default function GeneratorView() {
 
               {skillResults.map((generated) => (
                 <section
-                  key={`${generated.type}-${JSON.stringify(generated.content)}`}
+                  key={generated.id || `${generated.type}-${JSON.stringify(generated.content)}`}
                   className="bg-[#1A1A1A] border border-gray-700 rounded-2xl p-3"
                 >
                   <p className="text-2xs uppercase tracking-wider text-gray-400 font-bold mb-2">{generated.title}</p>
@@ -513,7 +460,7 @@ export default function GeneratorView() {
 
                   {generated.type === 'bank' && (
                     <div>
-                      <p className="text-base font-bold text-gray-100 leading-snug">{displayText(generated.content)}</p>
+                      <p className="text-base font-bold text-lime-200 leading-snug">{displayText(generated.content)}</p>
                       <ExtraCaption extra={rowExtra(generated.content)} />
                     </div>
                   )}

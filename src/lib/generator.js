@@ -1,3 +1,5 @@
+import { DEFAULT_BANK_ICONS, defaultBankIcon } from './icons.js';
+
 export const BANK_CATEGORIES = [
   { id: 'Activities', label: 'Activities' },
   { id: 'Adjectives', label: 'Adjectives' },
@@ -50,7 +52,7 @@ const ASK_FOR_IDS = [
 
 export const ASK_FOR_CATEGORIES = ASK_FOR_IDS.map((id) => BANK_CATEGORIES.find((cat) => cat.id === id)).filter(Boolean);
 
-/** Defaults when Generator.group is blank. Sheet values override these. */
+/** Defaults when Banks.group and Generator.group are blank. */
 const DEFAULT_CATEGORY_GROUP = {
   FUT: 'skill',
   PlayStyle: 'skill',
@@ -108,27 +110,62 @@ export function rowGroup(row) {
   return normalizeGroup(row?.group || row?.section);
 }
 
-function bankMeta(id) {
-  const bank = BANK_CATEGORIES.find((cat) => cat.id === id);
-  return { id, label: bank?.label || id };
+export function findBank(banks, id) {
+  const want = String(id || '').trim().toLowerCase();
+  return asArray(banks).find((bank) => String(bank?.id || '').trim().toLowerCase() === want);
 }
 
-export function groupForCategory(category, rows) {
-  let skill = false;
-  let ask = false;
+function displayGroupLabel(internal) {
+  if (internal === 'skill') return 'Skill Building';
+  if (internal === 'both') return 'Both';
+  return 'Ask-for';
+}
+
+export function defaultBanks() {
+  const rows = BANK_CATEGORIES.map((cat) => ({
+    id: cat.id,
+    label: cat.label,
+    group: displayGroupLabel(DEFAULT_CATEGORY_GROUP[cat.id] || 'ask'),
+    icon: DEFAULT_BANK_ICONS[cat.id] || '',
+  }));
+  rows.push({
+    id: 'CORE',
+    label: 'C.O.R.E.',
+    group: 'Skill Building',
+    icon: DEFAULT_BANK_ICONS.CORE,
+  });
+  return rows;
+}
+
+function bankMeta(id, banks) {
+  const bank = findBank(banks, id);
+  const known = BANK_CATEGORIES.find((cat) => cat.id === id);
+  return {
+    id,
+    label: bank?.label || known?.label || id,
+    icon: bank?.icon || defaultBankIcon(id),
+  };
+}
+
+function applyGroupFlags(group, flags) {
+  if (group === 'skill') flags.skill = true;
+  else if (group === 'ask') flags.ask = true;
+  else if (group === 'both') {
+    flags.skill = true;
+    flags.ask = true;
+  }
+}
+
+export function groupForCategory(category, rows, banks) {
+  const flags = { skill: false, ask: false };
+  applyGroupFlags(normalizeGroup(findBank(banks, category)?.group), flags);
   asArray(rows).forEach((row) => {
     if (!rowCategories(row).includes(category)) return;
-    const group = rowGroup(row);
-    if (group === 'skill') skill = true;
-    else if (group === 'ask') ask = true;
-    else if (group === 'both') {
-      skill = true;
-      ask = true;
-    }
+    applyGroupFlags(rowGroup(row), flags);
   });
-  if (skill && ask) return 'both';
-  if (skill) return 'skill';
-  if (ask) return 'ask';
+  if (flags.skill && flags.ask) return 'both';
+  if (flags.skill) return 'skill';
+  if (flags.ask) return 'ask';
   return DEFAULT_CATEGORY_GROUP[category] || 'ask';
 }
 
@@ -151,37 +188,54 @@ function orderedCategoryIds(counts) {
   return [...known, ...unknown];
 }
 
-export function askForCategoriesFromRows(rows) {
+export function askForCategoriesFromRows(rows, banks) {
   const counts = countedCategories(rows);
   return orderedCategoryIds(counts)
     .filter((id) => {
-      const group = groupForCategory(id, rows);
+      const group = groupForCategory(id, rows, banks);
       return group === 'ask' || group === 'both';
     })
-    .map((id) => ({ ...bankMeta(id), count: counts.get(id) || 0, group: groupForCategory(id, rows) }));
+    .map((id) => {
+      const group = groupForCategory(id, rows, banks);
+      return { ...bankMeta(id, banks), count: counts.get(id) || 0, group };
+    });
 }
 
-export function skillItemsFromRows(rows, prompts = {}) {
+export function skillItemsFromRows(rows, prompts = {}, banks) {
   const counts = countedCategories(rows);
   const items = [];
-  const coreGroup = groupForCategory('CORE', rows);
+  const coreGroup = groupForCategory('CORE', rows, banks);
   if (coreGroup === 'skill' || coreGroup === 'both') {
+    const core = bankMeta('CORE', banks);
     items.push({
       id: 'core',
       category: 'CORE',
-      label: 'C.O.R.E.',
+      label: core.label || 'C.O.R.E.',
+      icon: core.icon || defaultBankIcon('CORE', 'core'),
       count: prompts.core?.characters?.length || counts.get('Characters') || 0,
     });
   }
   const seen = new Set(items.map((item) => item.id));
   orderedCategoryIds(counts).forEach((id) => {
     if (id === 'CORE' || id === 'Core' || id === 'C.O.R.E.' || id === 'Objectives') return;
-    const group = groupForCategory(id, rows);
+    const group = groupForCategory(id, rows, banks);
     if (group !== 'skill' && group !== 'both') return;
     const special = SKILL_ITEM_BY_CATEGORY[id];
+    const meta = bankMeta(id, banks);
     const item = special
-      ? { ...special, category: id, count: counts.get(id) || 0 }
-      : { id: `cat:${id}`, category: id, label: bankMeta(id).label, count: counts.get(id) || 0 };
+      ? {
+        ...special,
+        category: id,
+        icon: meta.icon || defaultBankIcon(id, special.id),
+        count: counts.get(id) || 0,
+      }
+      : {
+        id: `cat:${id}`,
+        category: id,
+        label: meta.label,
+        icon: meta.icon || defaultBankIcon(id),
+        count: counts.get(id) || 0,
+      };
     if (seen.has(item.id)) return;
     seen.add(item.id);
     items.push(item);

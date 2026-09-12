@@ -1,65 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Bell,
-  BellRing,
-  CircleDot,
-  Disc3,
   Drum,
-  Megaphone,
   Plus,
-  Sparkles,
   Star,
-  Triangle,
   Volume2,
-  Wind,
   X,
-  Zap,
 } from 'lucide-react';
 import { playPad, preloadBellSamples } from '../lib/audio.js';
 import { useHoldDing } from '../lib/useHoldDing.js';
 import { SFX_SLOT_COUNT } from '../lib/sfxPad.js';
-
-const ICONS = {
-  bell: Bell,
-  'bell-ring': BellRing,
-  drum: Drum,
-  zap: Zap,
-  'volume-2': Volume2,
-  music: BellRing,
-  gong: Disc3,
-  'disc-3': Disc3,
-  triangle: Triangle,
-  megaphone: Megaphone,
-  sparkles: Sparkles,
-  wind: Wind,
-  whoosh: Wind,
-  'circle-dot': CircleDot,
-  waves: Wind,
-};
-
-function firstEmoji(value) {
-  const match = String(value).match(
-    /\p{Extended_Pictographic}(?:\uFE0F|\u200D\p{Extended_Pictographic}|\p{Emoji_Modifier})*/u,
-  );
-  return match ? match[0] : '';
-}
+import CatalogIcon from './CatalogIcon.jsx';
 
 function SfxIcon({ name, className }) {
-  const raw = String(name || '').trim();
-  const Icon = ICONS[raw.toLowerCase()];
-  if (Icon) return <Icon className={className} />;
-  const emoji = firstEmoji(raw);
-  if (emoji) {
-    return (
-      <span
-        className={`inline-flex items-center justify-center leading-none ${className || ''}`}
-        aria-hidden="true"
-      >
-        {emoji}
-      </span>
-    );
-  }
-  return <Bell className={className} />;
+  return <CatalogIcon name={name} className={className} fallback={Bell} />;
 }
 
 function PadHit({ pad, volume, active, children, className }) {
