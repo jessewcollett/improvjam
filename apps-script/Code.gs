@@ -511,7 +511,9 @@ function upsertSource_(ss, source) {
     if (!current) sheet.getRange(row, col).setValue(source[key]);
   });
   var activeCol = headerIndex_(headers, 'active') + 1;
-  if (activeCol > 0 && created) sheet.getRange(row, activeCol).setValue(true);
+  if (activeCol > 0 && (created || source.id === 'src-encyclopedia' || source.id === 'src-learnimprov' || source.id === 'src-jam-terms')) {
+    sheet.getRange(row, activeCol).setValue(true);
+  }
   return created;
 }
 
@@ -812,6 +814,7 @@ function objectsFrom_(ss, name) {
     });
     return obj;
   }).filter(function (obj) {
+    if (name === TAB_SOURCES) return String(obj.id || '').trim();
     return String(obj.id || obj.term || obj.name || obj.text || '').trim();
   });
 }
