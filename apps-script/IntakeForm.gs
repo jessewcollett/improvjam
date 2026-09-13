@@ -2,18 +2,34 @@
  * Community intake form.
  *
  * Improv Jam → Create intake form
- *   Creates (or reopens) the Google Form, installs onFormSubmit, and stores
- *   GOOGLE_MEDIA_FOLDER_ID. First run asks for Forms + Drive + trigger access.
+ *   Creates (or reopens) the Google Form, installs onFormSubmit on THIS form,
+ *   and seeds GOOGLE_MEDIA_FOLDER_ID. First run asks for Forms + Drive + trigger access.
  *
- * Uploads are moved into the jam media folder and shared as Anyone with the
- * link (file URL, never the folder). Rows append with active=TRUE.
+ * Apps Script cannot create File upload questions. Add those in the Forms
+ * editor (titles must match Q_SFX_FILE / Q_MUSIC_FILE / photo titles).
+ *
+ * On submit, FILE_UPLOAD answers are Drive file IDs. Each file is shared
+ * Anyone-with-the-link VIEWER. The catalog gets the file URL
+ * (https://drive.google.com/file/d/ID/view?usp=sharing), never a folder URL.
+ *
+ * GOOGLE_MEDIA_FOLDER_ID is the parent Forms uploads folder (Set media folder
+ * / move-to). Per-question folders below are docs only.
+ *
  * populateCatalog is never called from here.
  */
 
-var GOOGLE_MEDIA_FOLDER_ID = '1tNfq8wl1-iP0FEMM2fI0xyuDneJggP4L';
 var PROP_MEDIA_FOLDER = 'GOOGLE_MEDIA_FOLDER_ID';
 var PROP_INTAKE_FORM_ID = 'INTAKE_FORM_ID';
 var PROP_INTAKE_FORM_URL = 'INTAKE_FORM_URL';
+// Parent folder Forms created when File upload questions were enabled.
+// Forms/Drive copy-folder IDs can be 70+ characters — do not truncate.
+var GOOGLE_MEDIA_FOLDER_ID = '1Jhjq-er_L6WcMKqKpnRIxhpRWSYc3jeKhN8t-B8FrROGGNEUYNsk6M2bp8rkd0c03zDiHEak';
+var RETIRED_MEDIA_FOLDER_ID = '1tNfq8wl1-iP0FEMM2fI0xyuDneJggP4L';
+// Per-question destination folders (Forms). Move-to uses the parent above.
+var FOLDER_MUSIC_FILE = '1xjebInOLt0PKEJAoRizDVKmwF1B0yFIP_kDF6n6swvm8j0HiwVFP_uo7CfjxrdYJR6-lLfvx';
+var FOLDER_SFX_FILE = '1SVul6ydoAq-pYhi99YGGRGDZ4FEAb6RwuoXsLZ1u8Q5eCaIJSbJpjr7YBiutVpWUOSp43uof';
+var FOLDER_GAME_PHOTO = '1GSJOHn7JRSn0iqgjSk88x9v_ntc0nuu_cwoA6nYqxW0ISDeNPYY_ND02XhSqhnbaMpvmIaav';
+var FOLDER_TERM_PHOTO = '1QOVwaYVOZHb6Otu_4nA1dqeDxfkaVyXWIeshLFq69s0STn_HRzKrhanEGo1hkg1gZKLHwf2a';
 var USER_SUBMIT_SOURCE_ID = 'src-user-submit';
 // Public share URL. Edit (do not show in the public app):
 // https://docs.google.com/forms/d/1Xk6r3Lkq145FA9AdI10W6mHZSheHpL8M5rUDh9LAkHk/edit
@@ -23,7 +39,6 @@ var Q_TYPE = 'What are you submitting?';
 var Q_SUBMITTER = 'Your name (optional)';
 var Q_SFX_NAME = 'Sound name';
 var Q_SFX_FILE = 'SFX file';
-var Q_SFX_URL = 'Or paste an existing Drive / Freesound file link';
 var Q_SFX_ICON = 'Icon (optional)';
 var Q_SFX_CREDIT = 'Credit / license';
 var Q_SFX_CREDIT_URL = 'Credit URL';
@@ -31,7 +46,6 @@ var Q_SFX_TAGS = 'Tags (optional)';
 var Q_SFX_NOTES = 'Notes (optional)';
 var Q_MUSIC_NAME = 'Track name';
 var Q_MUSIC_FILE = 'Music file';
-var Q_MUSIC_URL = 'Or paste an existing Drive file link';
 var Q_MUSIC_CREDIT = 'Artist / credit';
 var Q_MUSIC_CREDIT_URL = 'Credit or source URL';
 var Q_MUSIC_RIGHTS = 'Rights';
@@ -89,6 +103,7 @@ function createIntakeForm() {
       ui.ButtonSet.YES_NO
     );
     if (reuse === ui.Button.YES) {
+      prepareExistingIntakeForm_(existing);
       ensureIntakeTrigger_(existing);
       ensureUserSubmitSource_(existing);
       ui.alert('Intake form', intakeReadyMessage_(existing), ui.ButtonSet.OK);
@@ -123,7 +138,7 @@ function createForm_() {
   var form = FormApp.create('Improv Jam intake');
   form.setDescription(
     'Submit a sound, track, game, suggestion, or glossary term for the jam catalog.\n\n' +
-    'Audio must be a file (mp3, wav, m4a, ogg) under 25MB — not a Drive folder. ' +
+    'Upload the audio file (mp3, wav, m4a, ogg) under 25MB. Do not paste a Drive link. ' +
     'Music needs a credit. Do not upload copyrighted tracks you do not have rights to.\n\n' +
     'You need a Google account (Forms requires sign-in for file uploads).'
   );
@@ -141,8 +156,7 @@ function createForm_() {
 
   var sfxPage = form.addPageBreakItem().setTitle('SFX');
   form.addTextItem().setTitle(Q_SFX_NAME).setRequired(true);
-  addFileUpload_(form, Q_SFX_FILE, 'Audio under 25MB. Not a folder.', 'AUDIO', false);
-  form.addTextItem().setTitle(Q_SFX_URL).setHelpText('Drive file link or Freesound page. Folder links are ignored.');
+  addUploadPlaceholder_(form, Q_SFX_FILE, 'Required File upload in the Forms editor. Audio only, one file, under 25MB. Title must be exactly "' + Q_SFX_FILE + '".');
   form.addTextItem().setTitle(Q_SFX_ICON).setHelpText('drum, bell-ring, or an emoji like 🥁');
   form.addTextItem().setTitle(Q_SFX_CREDIT).setRequired(true).setHelpText('Who made it and the license (CC0, CC BY, original, …).');
   form.addTextItem().setTitle(Q_SFX_CREDIT_URL);
@@ -155,8 +169,7 @@ function createForm_() {
     .setTitle('Credit required')
     .setHelpText('Tracks are accepted with a credit, but we do not silently publish unlabeled commercial music. Only upload recordings you have the right to share.');
   form.addTextItem().setTitle(Q_MUSIC_NAME).setRequired(true);
-  addFileUpload_(form, Q_MUSIC_FILE, 'Audio under 25MB. Not a folder.', 'AUDIO', false);
-  form.addTextItem().setTitle(Q_MUSIC_URL).setHelpText('Drive file share link (Anyone with the link). Folder links are ignored.');
+  addUploadPlaceholder_(form, Q_MUSIC_FILE, 'Required File upload in the Forms editor. Audio only, one file, under 25MB. Title must be exactly "' + Q_MUSIC_FILE + '".');
   form.addTextItem().setTitle(Q_MUSIC_CREDIT).setRequired(true);
   form.addTextItem().setTitle(Q_MUSIC_CREDIT_URL).setRequired(true);
   form.addCheckboxItem()
@@ -179,7 +192,7 @@ function createForm_() {
   form.addTextItem().setTitle(Q_GAME_SKILLS);
   form.addTextItem().setTitle(Q_GAME_SYNONYMS);
   form.addTextItem().setTitle(Q_GAME_SOURCE_URL);
-  addFileUpload_(form, Q_GAME_IMAGE, 'Optional photo. Shared as Anyone with the link.', 'IMAGE', false);
+  addUploadPlaceholder_(form, Q_GAME_IMAGE, 'Optional File upload in the Forms editor. Images only. Title must be exactly "' + Q_GAME_IMAGE + '".');
   form.addPageBreakItem().setGoToPage(FormApp.PageNavigationType.SUBMIT);
 
   var genPage = form.addPageBreakItem().setTitle('Suggestion');
@@ -199,7 +212,7 @@ function createForm_() {
   form.addListItem().setTitle(Q_TERM_CATEGORY).setChoiceValues(TERM_CATEGORIES).setRequired(true);
   form.addParagraphTextItem().setTitle(Q_TERM_DEFINITION).setRequired(true);
   form.addTextItem().setTitle(Q_TERM_SOURCE_URL);
-  addFileUpload_(form, Q_TERM_IMAGE, 'Optional photo. Shared as Anyone with the link.', 'IMAGE', false);
+  addUploadPlaceholder_(form, Q_TERM_IMAGE, 'Optional File upload in the Forms editor. Images only. Title must be exactly "' + Q_TERM_IMAGE + '".');
 
   typeItem.setChoices([
     typeItem.createChoice('SFX', sfxPage),
@@ -216,8 +229,8 @@ function setMediaFolder() {
   var ui = SpreadsheetApp.getUi();
   var current = mediaFolderId_();
   var result = ui.prompt(
-    'Media folder',
-    'Paste the Google Drive folder URL or ID for uploaded SFX, music, and images.\n\nCurrent: ' + current,
+    'Form uploads folder',
+    'Paste the parent Drive folder URL or ID that Google Forms created when you added File upload questions (not a per-question subfolder). Uploaded files are moved there when possible.\n\nCurrent: ' + current,
     ui.ButtonSet.OK_CANCEL
   );
   if (result.getSelectedButton() !== ui.Button.OK) return '';
@@ -228,7 +241,7 @@ function setMediaFolder() {
   }
   DriveApp.getFolderById(id);
   PropertiesService.getScriptProperties().setProperty(PROP_MEDIA_FOLDER, id);
-  ui.alert('Media folder set to ' + id);
+  ui.alert('Form uploads folder set to ' + id);
   return id;
 }
 
@@ -256,8 +269,8 @@ function writeAudioIntake_(ss, answers, type) {
   var credit = textAnswer_(answers, isTrack ? Q_MUSIC_CREDIT : Q_SFX_CREDIT);
   var creditUrl = textAnswer_(answers, isTrack ? Q_MUSIC_CREDIT_URL : Q_SFX_CREDIT_URL);
   if (isTrack && !credit) throw new Error('Music submissions need a credit.');
-  var fileUrl = intakeFileUrl_(answers, isTrack ? Q_MUSIC_FILE : Q_SFX_FILE, isTrack ? Q_MUSIC_URL : Q_SFX_URL);
-  if (!fileUrl) throw new Error('SFX/Music need an uploaded file or a Drive file link (not a folder).');
+  var fileUrl = intakeUploadedFileUrl_(answers, isTrack ? Q_MUSIC_FILE : Q_SFX_FILE);
+  if (!fileUrl) throw new Error('SFX/Music need an uploaded audio file (mp3, wav, m4a, or ogg), not a pasted link.');
   var notes = textAnswer_(answers, isTrack ? Q_MUSIC_NOTES : Q_SFX_NOTES);
   var submitter = submitterNote_(answers);
   var extra = [];
@@ -291,7 +304,7 @@ function writeGameIntake_(ss, answers) {
     description: textAnswer_(answers, Q_GAME_DESCRIPTION),
     sourceIds: USER_SUBMIT_SOURCE_ID,
     source: submitter ? 'Community submission (' + submitter + ')' : 'Community submission',
-    image: intakeFileUrl_(answers, Q_GAME_IMAGE, ''),
+    image: intakeUploadedFileUrl_(answers, Q_GAME_IMAGE),
     setup: textAnswer_(answers, Q_GAME_SETUP),
     howToPlay: textAnswer_(answers, Q_GAME_HOW),
     gimmicks: textAnswer_(answers, Q_GAME_GIMMICKS),
@@ -326,7 +339,7 @@ function writeTermIntake_(ss, answers) {
     category: textAnswer_(answers, Q_TERM_CATEGORY),
     definition: textAnswer_(answers, Q_TERM_DEFINITION),
     sourceIds: USER_SUBMIT_SOURCE_ID,
-    image: intakeFileUrl_(answers, Q_TERM_IMAGE, ''),
+    image: intakeUploadedFileUrl_(answers, Q_TERM_IMAGE),
     sourceUrl: textAnswer_(answers, Q_TERM_SOURCE_URL),
     definitions: '',
     active: true,
@@ -413,13 +426,36 @@ function textAnswer_(map, title) {
   return String(value == null ? '' : value).trim();
 }
 
+function normalizeQuestionTitle_(title) {
+  return String(title || '')
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function titlesLooselyMatch_(a, b) {
+  var left = normalizeQuestionTitle_(a);
+  var right = normalizeQuestionTitle_(b);
+  if (!left || !right) return false;
+  if (left === right) return true;
+  var shorter = left.length <= right.length ? left : right;
+  var longer = left.length <= right.length ? right : left;
+  return shorter.length >= 8 && longer.indexOf(shorter) === 0;
+}
+
 function lookupAnswer_(map, title) {
   if (map[title] != null && map[title] !== '') return map[title];
   var want = String(title).trim().toLowerCase();
   var keys = Object.keys(map);
   var i;
   for (i = 0; i < keys.length; i++) {
-    if (String(keys[i]).trim().toLowerCase() === want) return map[keys[i]];
+    var key = keys[i];
+    if (String(key).trim().toLowerCase() === want || titlesLooselyMatch_(key, title)) {
+      var value = map[key];
+      if (value != null && value !== '') return value;
+    }
   }
   return '';
 }
@@ -433,11 +469,10 @@ function submitterNote_(answers) {
   return '';
 }
 
-function intakeFileUrl_(answers, fileTitle, urlTitle) {
+function intakeUploadedFileUrl_(answers, fileTitle) {
   var uploaded = firstFileId_(lookupAnswer_(answers, fileTitle));
-  if (uploaded) return placeAndShareFile_(uploaded);
-  if (!urlTitle) return '';
-  return asDriveFileUrl_(textAnswer_(answers, urlTitle));
+  if (!uploaded) return '';
+  return placeAndShareFile_(uploaded);
 }
 
 function firstFileId_(value) {
@@ -457,17 +492,9 @@ function extractDriveFileId_(raw) {
   var text = String(raw || '').trim();
   if (!text) return '';
   if (/\/folders\//.test(text)) return '';
-  if (/^[a-zA-Z0-9_-]{20,}$/.test(text) && text.indexOf('/') < 0) return text;
-  var match = text.match(/\/d\/([a-zA-Z0-9_-]{10,})/) || text.match(/[?&]id=([a-zA-Z0-9_-]{10,})/);
-  return match ? match[1] : '';
-}
-
-function asDriveFileUrl_(raw) {
-  var text = String(raw || '').trim();
-  if (!text || /\/folders\//.test(text) || /drive\.google\.com\/drive\/folders/.test(text)) return '';
-  var id = extractDriveFileId_(text);
-  if (id) return 'https://drive.google.com/file/d/' + id + '/view?usp=sharing';
-  if (/^https?:\/\//i.test(text)) return text;
+  var match = text.match(/\/d\/([a-zA-Z0-9_-]+)/) || text.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (match) return match[1];
+  if (/^[a-zA-Z0-9_-]{10,}$/.test(text) && text.indexOf('/') < 0) return text;
   return '';
 }
 
@@ -495,43 +522,79 @@ function placeAndShareFile_(fileId) {
   return 'https://drive.google.com/file/d/' + file.getId() + '/view?usp=sharing';
 }
 
-function addFileUpload_(form, title, help, fileType, required) {
+function addUploadPlaceholder_(form, title, help) {
+  form.addSectionHeaderItem()
+    .setTitle('Add File upload: ' + title)
+    .setHelpText(help + ' Apps Script cannot create File upload questions.');
+}
+
+function prepareExistingIntakeForm_(form) {
+  form.setDescription(
+    'Submit a sound, track, game, suggestion, or glossary term for the jam catalog.\n\n' +
+    'Upload the audio file (mp3, wav, m4a, ogg) under 25MB. Do not paste a Drive link. ' +
+    'Music needs a credit. Do not upload copyrighted tracks you do not have rights to.\n\n' +
+    'You need a Google account (Forms requires sign-in for file uploads).'
+  );
+  try { form.setCollectEmail(true); } catch (err) {}
+  try { form.setRequireLogin(true); } catch (loginErr) {}
+  stripPasteLinkItems_(form);
+}
+
+function stripPasteLinkItems_(form) {
+  var drop = {
+    'or paste an existing drive / freesound file link': true,
+    'or paste an existing drive file link': true,
+  };
+  var uploadTitles = [Q_SFX_FILE, Q_MUSIC_FILE, Q_GAME_IMAGE, Q_TERM_IMAGE, 'Game photo', 'Term Photo', 'Term photo'];
+  var items = form.getItems();
+  var i;
+  for (i = items.length - 1; i >= 0; i--) {
+    var item = items[i];
+    var title = String(item.getTitle() || '').trim().toLowerCase();
+    if (drop[title] || title.indexOf('paste an existing drive') >= 0) {
+      form.deleteItem(item);
+      continue;
+    }
+    if (isUploadTitle_(item.getTitle(), uploadTitles) && !isFileUploadItem_(item)) {
+      form.deleteItem(item);
+    }
+  }
+}
+
+function isUploadTitle_(title, uploadTitles) {
+  var i;
+  for (i = 0; i < uploadTitles.length; i++) {
+    if (titlesLooselyMatch_(title, uploadTitles[i])) return true;
+  }
+  return false;
+}
+
+function isFileUploadItem_(item) {
   try {
-    var item = form.addFileUploadItem()
-      .setTitle(title)
-      .setHelpText(help)
-      .setMaxFiles(1)
-      .setRequired(!!required);
-    try {
-      var types = FormApp.FileType;
-      if (types && fileType && types[fileType]) item.setAllowableFileTypes([types[fileType]]);
-    } catch (typeErr) {}
-    return item;
+    return String(item.getType()) === 'FILE_UPLOAD';
   } catch (err) {
-    form.addTextItem()
-      .setTitle(title)
-      .setHelpText(help + ' Paste a Drive file share link (Anyone with the link), not a folder.')
-      .setRequired(!!required);
-    return null;
+    return false;
   }
 }
 
 function mediaFolderId_() {
-  var props = PropertiesService.getScriptProperties();
-  var stored = parseDriveFolderId_(props.getProperty(PROP_MEDIA_FOLDER) || '');
-  return stored || GOOGLE_MEDIA_FOLDER_ID;
+  var stored = parseDriveFolderId_(PropertiesService.getScriptProperties().getProperty(PROP_MEDIA_FOLDER) || '');
+  if (stored && stored !== RETIRED_MEDIA_FOLDER_ID) return stored;
+  return GOOGLE_MEDIA_FOLDER_ID;
 }
 
 function seedMediaFolderProperty_() {
   var props = PropertiesService.getScriptProperties();
-  if (!String(props.getProperty(PROP_MEDIA_FOLDER) || '').trim()) {
-    props.setProperty(PROP_MEDIA_FOLDER, GOOGLE_MEDIA_FOLDER_ID);
-  }
+  var stored = parseDriveFolderId_(props.getProperty(PROP_MEDIA_FOLDER) || '');
+  if (stored && stored !== RETIRED_MEDIA_FOLDER_ID) return stored;
+  props.setProperty(PROP_MEDIA_FOLDER, GOOGLE_MEDIA_FOLDER_ID);
+  return GOOGLE_MEDIA_FOLDER_ID;
 }
 
 function parseDriveFolderId_(raw) {
   var text = String(raw || '').trim();
   if (!text) return '';
+  // Forms/Drive copy-folder IDs can be 70+ chars. Capture the full ID; do not slice.
   var match = text.match(/\/folders\/([a-zA-Z0-9_-]+)/) || text.match(/[?&]id=([a-zA-Z0-9_-]+)/);
   if (match) return match[1];
   if (/^[a-zA-Z0-9_-]{10,}$/.test(text)) return text;
@@ -549,10 +612,13 @@ function openStoredIntakeForm_() {
 }
 
 function ensureIntakeTrigger_(form) {
+  var formId = form.getId();
   var triggers = ScriptApp.getProjectTriggers();
   var i;
   for (i = 0; i < triggers.length; i++) {
-    if (triggers[i].getHandlerFunction() === 'onIntakeFormSubmit') return;
+    var trigger = triggers[i];
+    if (trigger.getHandlerFunction() !== 'onIntakeFormSubmit') continue;
+    if (trigger.getTriggerSourceId() === formId) return;
   }
   ScriptApp.newTrigger('onIntakeFormSubmit')
     .forForm(form)
@@ -572,11 +638,20 @@ function ensureUserSubmitSource_(form) {
 }
 
 function intakeReadyMessage_(form) {
+  var folder = mediaFolderId_();
   return (
     'Share this form:\n' + form.getPublishedUrl() + '\n\n' +
     'Edit:\n' + form.getEditUrl() + '\n\n' +
-    'Uploads go to Drive folder ' + mediaFolderId_() +
-    ' and are shared as Anyone with the link (file URL, not the folder).\n\n' +
+    'File upload questions must exist in the Forms editor:\n' +
+    '  ' + Q_SFX_FILE + ' (required, audio, under 25MB)\n' +
+    '  ' + Q_MUSIC_FILE + ' (required, audio, under 25MB)\n' +
+    '  Game photo / ' + Q_GAME_IMAGE + ' (optional)\n' +
+    '  Term Photo / ' + Q_TERM_IMAGE + ' (optional)\n\n' +
+    'Uploads are moved to the Forms parent folder ' + folder + ' when possible.\n' +
+    'Each uploaded file is shared as Anyone with the link. The catalog stores the file URL, not the folder.\n\n' +
+    'Linking the form to THIS spreadsheet only creates a Form Responses raw log. ' +
+    'Catalog tabs update from the onIntakeFormSubmit trigger (installed by this menu). ' +
+    'The app does not live-update — tap Sync Data after new submissions.\n\n' +
     'Respondents must sign in with a Google account (required for file uploads).\n' +
     'Music requires a credit. Uncheck active on a row to hide it.\n\n' +
     'Do not run Populate catalog after community submissions — that overwrite would wipe Games/Terms/Generator (Audio is already left alone).'
