@@ -32,17 +32,33 @@ const SAMPLE_STYLES = {
 const sampleRaw = new Map();
 const sampleDecoded = new Map();
 
+function ensureSampleFetch(url) {
+  const href = String(url || '').trim();
+  if (!href || sampleRaw.has(href)) return;
+  const request = fetch(href)
+    .then((res) => {
+      if (!res.ok) throw new Error(`Sample missing (${res.status})`);
+      const type = String(res.headers.get('content-type') || '');
+      if (type.includes('text/html') || type.includes('application/json')) {
+        throw new Error('Sample is not audio');
+      }
+      return res.arrayBuffer();
+    })
+    .catch((error) => {
+      sampleRaw.delete(href);
+      throw error;
+    });
+  sampleRaw.set(href, request);
+}
+
 export function preloadBellSamples() {
-  Object.values(SAMPLE_STYLES).forEach((spec) => {
-    const url = spec.url;
-    if (!url || sampleRaw.has(url)) return;
-    sampleRaw.set(
-      url,
-      fetch(url).then((res) => {
-        if (!res.ok) throw new Error(`Sample missing (${res.status})`);
-        return res.arrayBuffer();
-      }),
-    );
+  Object.values(SAMPLE_STYLES).forEach((spec) => ensureSampleFetch(spec.url));
+}
+
+export function preloadPadSamples(pads = []) {
+  preloadBellSamples();
+  pads.forEach((pad) => {
+    if (pad?.playUrl) ensureSampleFetch(pad.playUrl);
   });
 }
 
@@ -166,21 +182,41 @@ function enterSustain(voice) {
 }
 
 function releaseNow(voice, fade) {
-  if (voice.released) return;
+  if (!voice || voice.released) return;
   voice.released = true;
   const now = voice.ctx.currentTime;
-  const fadeSec = fade ?? voice.releaseFade ?? 0.18;
+  const fadeSec = Math.max(0.02, fade ?? voice.releaseFade ?? 0.18);
   voice.master.gain.cancelScheduledValues(now);
   voice.master.gain.setValueAtTime(Math.max(voice.master.gain.value, 0.0001), now);
   voice.master.gain.exponentialRampToValueAtTime(0.0001, now + fadeSec);
   stopSources(voice, now + fadeSec + 0.03);
+  voice.timeouts.push(
+    setTimeout(() => {
+      activeVoices.delete(voice);
+    }, (fadeSec + 0.05) * 1000),
+  );
+}
+
+function cutNow(voice) {
+  if (!voice) return;
+  voice.released = true;
+  const now = voice.ctx.currentTime;
+  try {
+    voice.master.gain.cancelScheduledValues(now);
+    voice.master.gain.setValueAtTime(0.0001, now);
+  } catch {
+    /* ignore */
+  }
+  stopSources(voice, now);
   activeVoices.delete(voice);
 }
 
 async function loadSample(url) {
   if (sampleDecoded.has(url)) return sampleDecoded.get(url);
-  preloadBellSamples();
-  const pending = sampleRaw.get(url).then((raw) => ctx().decodeAudioData(raw.slice(0)));
+  ensureSampleFetch(url);
+  const rawPromise = sampleRaw.get(url);
+  if (!rawPromise) throw new Error('Sample url missing');
+  const pending = rawPromise.then((raw) => ctx().decodeAudioData(raw.slice(0)));
   sampleDecoded.set(url, pending);
   try {
     return await pending;
@@ -258,7 +294,9 @@ function buildSampleVoice(spec, volume) {
   loadSample(spec.url).then((buffer) => {
     if (voice.released) return;
     attachBuffer(voice, buffer, vol, spec);
-  }).catch(() => {});
+  }).catch((error) => {
+    console.warn('SFX sample failed', spec.url, error);
+  });
   return voice;
 }
 
@@ -459,16 +497,16 @@ export function playDing(style = 'bell', volume = 0.8) {
 
 export function playPad(pad, volume = 0.8) {
   if (!pad) return playDing('bell', volume);
-  if (pad.styleId && (pad.bundled || !pad.playUrl)) {
-    return playDing(pad.styleId, volume);
-  }
-  if (pad.playUrl) {
+  const bundledUrl = pad.styleId ? SAMPLE_STYLES[pad.styleId]?.url : '';
+  const useUrl = pad.playUrl && (!pad.bundled || pad.playUrl !== bundledUrl);
+  if (useUrl) {
     maybeHaptic();
     const voice = buildSampleVoice({ url: pad.playUrl, playThroughOnHold: true, releaseFade: 0.35 }, volume);
     activeVoices.add(voice);
     return voice;
   }
-  return playDing(pad.styleId || pad.id || 'bell', volume);
+  if (pad.styleId) return playDing(pad.styleId, volume);
+  return playDing(pad.id || 'bell', volume);
 }
 
 export function startDing(style = 'bell', volume = 0.8) {
@@ -492,13 +530,42 @@ export function releaseDing(voice, { heldMs = 0 } = {}) {
   releaseNow(voice, voice.releaseFade || (voice.sustaining ? 0.22 : 0.12));
 }
 
+let countInGen = 0;
+
+export const FADE_SECONDS_MIN = 0.5;
+export const FADE_SECONDS_MAX = 10;
+export const FADE_SECONDS_DEFAULT = 1.2;
+
+export function clampFadeSeconds(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return FADE_SECONDS_DEFAULT;
+  return Math.min(FADE_SECONDS_MAX, Math.max(FADE_SECONDS_MIN, Math.round(n * 10) / 10));
+}
+
+export function fadeAllPads(seconds = FADE_SECONDS_DEFAULT) {
+  countInGen += 1;
+  const fadeSec = clampFadeSeconds(seconds);
+  [...activeVoices].forEach((voice) => {
+    if (voice.released) return;
+    releaseNow(voice, fadeSec);
+  });
+}
+
+export function stopAllPads() {
+  countInGen += 1;
+  [...activeVoices].forEach(cutNow);
+}
+
 export function stopAllDings() {
-  [...activeVoices].forEach((voice) => releaseNow(voice, 0.08));
+  stopAllPads();
 }
 
 export async function playCountIn(seconds = 3, style = 'bell', volume = 0.8) {
+  const gen = countInGen + 1;
+  countInGen = gen;
   const beats = Math.max(1, Math.min(8, Number(seconds) || 3));
   for (let i = beats; i > 0; i -= 1) {
+    if (countInGen !== gen) return;
     if (style && typeof style === 'object') playPad(style, volume);
     else playDing(i === 1 ? 'chime' : style, volume);
     await new Promise((r) => setTimeout(r, 700));

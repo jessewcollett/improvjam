@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Bell, Timer, Users, Shuffle, Lightbulb, Coins, Play, Music } from 'lucide-react';
+import { Bell, Timer, Users, Shuffle, Lightbulb, Coins, Music, Minus, Plus, Square } from 'lucide-react';
 import { playCountIn, playPad } from '../lib/audio.js';
 import { mergeSfxPads, resolveDefaultPad, sheetTracks } from '../lib/sfxPad.js';
 import { useHoldDing } from '../lib/useHoldDing.js';
@@ -26,10 +26,57 @@ const TOOLS = [
   { id: 'coin', label: 'Coin', icon: Coins, accent: 'text-amber-300' },
 ];
 
+const PICK_MIN = 1;
+const PICK_MAX = 12;
+
 function formatTime(total) {
   const m = Math.floor(Math.max(total, 0) / 60);
   const s = Math.max(total, 0) % 60;
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+function clampPickCount(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return PICK_MIN;
+  return Math.min(PICK_MAX, Math.max(PICK_MIN, Math.round(n)));
+}
+
+function sampleUnique(list, n) {
+  const copy = [...list];
+  const out = [];
+  const take = Math.min(n, copy.length);
+  for (let i = 0; i < take; i += 1) {
+    const idx = Math.floor(Math.random() * copy.length);
+    out.push(copy.splice(idx, 1)[0]);
+  }
+  return out;
+}
+
+function PickCountChip({ count, onCount }) {
+  const n = clampPickCount(count);
+  return (
+    <div className="inline-flex items-center shrink-0 rounded-xl border border-blue-800/50 bg-[#1A1A1A] overflow-hidden">
+      <button
+        type="button"
+        onClick={() => onCount(n - 1)}
+        disabled={n <= PICK_MIN}
+        className="min-w-11 min-h-11 flex items-center justify-center text-gray-200 disabled:text-gray-600"
+        aria-label="Fewer players"
+      >
+        <Minus className="w-3.5 h-3.5" />
+      </button>
+      <span className="w-6 text-center text-sm font-black tabular-nums text-white">{n}</span>
+      <button
+        type="button"
+        onClick={() => onCount(n + 1)}
+        disabled={n >= PICK_MAX}
+        className="min-w-11 min-h-11 flex items-center justify-center text-gray-200 disabled:text-gray-600"
+        aria-label="More players"
+      >
+        <Plus className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  );
 }
 
 export default function ToolsView() {
@@ -38,8 +85,14 @@ export default function ToolsView() {
   const settings = useAppStore((s) => s.settings);
   const updateSettings = useAppStore((s) => s.updateSettings);
   const sfxSlots = useAppStore((s) => s.sfxSlots);
+  const sfxSlotColors = useAppStore((s) => s.sfxSlotColors);
+  const sfxIconOverrides = useAppStore((s) => s.sfxIconOverrides);
   const setDefaultSfx = useAppStore((s) => s.setDefaultSfx);
   const assignSfxSlot = useAppStore((s) => s.assignSfxSlot);
+  const setSfxSlotCount = useAppStore((s) => s.setSfxSlotCount);
+  const setSfxSlotColor = useAppStore((s) => s.setSfxSlotColor);
+  const setSfxIconOverride = useAppStore((s) => s.setSfxIconOverride);
+  const moveSfxSlot = useAppStore((s) => s.moveSfxSlot);
   useWakeLock(Boolean(settings.keepAwake));
   const [activeTool, setActiveTool] = useState('timer');
   const [seconds, setSeconds] = useState(60);
@@ -50,11 +103,11 @@ export default function ToolsView() {
   const [customMin, setCustomMin] = useState(1);
   const [customSec, setCustomSec] = useState(0);
   const [roster, setRoster] = useState('');
-  const [picked, setPicked] = useState('');
-  const [lastPicked, setLastPicked] = useState('');
+  const [picked, setPicked] = useState([]);
+  const [lastPicked, setLastPicked] = useState([]);
   const [suggestion, setSuggestion] = useState(null);
   const [coin, setCoin] = useState('');
-  const musicRandomRef = useRef(null);
+  const musicControlsRef = useRef({});
 
   const halfSequence = [60, 30, 15, 7];
   const pads = useMemo(() => mergeSfxPads(audioRows), [audioRows]);
@@ -105,11 +158,16 @@ export default function ToolsView() {
     startTimer(value);
   };
 
+  const pickCount = clampPickCount(settings.whosUpCount);
+  const setPickCount = (n) => updateSettings({ whosUpCount: clampPickCount(n) });
+
   const pickPlayer = () => {
-    const pool = players.filter((p) => p !== lastPicked);
-    const source = pool.length ? pool : players;
-    if (!source.length) return;
-    const next = source[Math.floor(Math.random() * source.length)];
+    if (!players.length) return;
+    const n = Math.min(pickCount, players.length);
+    const avoid = new Set(lastPicked);
+    const fresh = players.filter((p) => !avoid.has(p));
+    const pool = fresh.length >= n ? fresh : players;
+    const next = sampleUnique(pool, n);
     setPicked(next);
     setLastPicked(next);
   };
@@ -140,25 +198,15 @@ export default function ToolsView() {
 
   return (
     <div className="h-full min-h-0 overflow-hidden flex flex-col pt-safe relative">
-      <div className="px-4 md:px-6">
-        <div className="flex items-center justify-between mb-3 gap-3">
-          <h1 className="text-2xl font-black font-display text-white tracking-tight">Jam Tools</h1>
+      <div className={`px-4 md:px-6 ${activeTool === 'sfx' ? 'pb-0' : ''}`}>
+        <div className={`flex items-center justify-between gap-3 ${activeTool === 'sfx' ? 'mb-1' : 'mb-3'}`}>
+          <h1 className={`font-black font-display text-white tracking-tight ${activeTool === 'sfx' ? 'text-lg' : 'text-2xl'}`}>Jam Tools</h1>
           <div className="hidden md:flex items-center gap-2">
-            {dingButton('flex px-5 py-2.5 min-w-[88px]')}
-            {activeTool === 'sfx' && (
-              <button
-                type="button"
-                onClick={countIn}
-                className="bg-gray-800 border border-gray-700 text-gray-100 font-bold rounded-2xl min-h-12 px-4 flex items-center justify-center gap-2"
-              >
-                <Play className="w-4 h-4" />
-                {settings.countInBeats}-count
-              </button>
-            )}
+            {activeTool !== 'sfx' ? dingButton('flex px-5 py-2.5 min-w-[88px]') : null}
           </div>
         </div>
 
-        <div className="grid grid-cols-3 lg:grid-cols-6 gap-2 mb-4">
+        <div className={`grid grid-cols-3 lg:grid-cols-6 gap-1 ${activeTool === 'sfx' ? 'mb-1' : 'mb-4'}`}>
           {TOOLS.map((tool) => {
             const Icon = tool.icon;
             const active = activeTool === tool.id;
@@ -167,7 +215,7 @@ export default function ToolsView() {
                 key={tool.id}
                 type="button"
                 onClick={() => setActiveTool(tool.id)}
-                className={`flex-1 min-h-14 rounded-2xl border flex flex-col items-center justify-center gap-1 ${
+                className={`${activeTool === 'sfx' ? 'min-h-11' : 'min-h-14'} rounded-2xl border flex flex-col items-center justify-center gap-0.5 ${
                   active ? 'bg-gray-800 border-gray-500 text-white' : 'bg-[#1A1A1A] border-gray-800 text-gray-400'
                 }`}
                 aria-pressed={active}
@@ -180,11 +228,20 @@ export default function ToolsView() {
         </div>
       </div>
 
-      <div className={`${activeTool === 'music' ? 'flex-1 min-h-0 px-4 md:px-6 pb-2 md:pb-nav flex flex-col overflow-hidden' : 'flex-1 overflow-y-auto scrollbar-hide px-4 md:px-6 pb-6 md:pb-nav'}`}>
+      <div
+        className={
+          activeTool === 'sfx'
+            ? 'flex-1 min-h-0 px-1 flex flex-col overflow-hidden'
+            : activeTool === 'music'
+              ? 'flex-1 min-h-0 px-4 md:px-6 pb-2 md:pb-nav flex flex-col overflow-hidden'
+              : 'flex-1 overflow-y-auto scrollbar-hide px-4 md:px-6 pb-6 md:pb-nav'
+        }
+      >
         {activeTool === 'sfx' && (
           <SfxPad
             pads={pads}
             slots={sfxSlots}
+            colors={sfxSlotColors}
             defaultPad={defaultPad}
             volume={settings.bellVolume}
             countInBeats={settings.countInBeats}
@@ -192,12 +249,20 @@ export default function ToolsView() {
             onSetDefault={setDefaultSfx}
             onVolume={(bellVolume) => updateSettings({ bellVolume })}
             onCountInBeats={(countInBeats) => updateSettings({ countInBeats })}
+            onSlotCount={setSfxSlotCount}
+            onSlotColor={setSfxSlotColor}
+            iconOverrides={sfxIconOverrides}
+            onIconOverride={setSfxIconOverride}
+            onMoveSlot={moveSfxSlot}
+            fadeSeconds={settings.fadeSeconds}
+            dingHold={holdHeaderDing}
+            onCountIn={countIn}
           />
         )}
 
         {activeTool === 'music' && (
           <div className="flex-1 min-h-0">
-            <MusicPlayer tracks={tracks} randomRef={musicRandomRef} />
+            <MusicPlayer tracks={tracks} controlsRef={musicControlsRef} fadeSeconds={settings.fadeSeconds} />
           </div>
         )}
 
@@ -302,11 +367,22 @@ export default function ToolsView() {
               placeholder="Names, comma or line separated"
               className="w-full bg-gray-900 border border-gray-700 rounded-xl p-3 text-sm mb-3 min-h-24 md:min-h-32"
             />
-            <button type="button" onClick={pickPlayer} className="hidden md:flex w-full bg-blue-600 text-white font-bold py-3 rounded-xl min-h-12 items-center justify-center gap-2">
-              <Shuffle className="w-4 h-4" />
-              Pick next player
-            </button>
-            {picked && <p className="text-center text-2xl font-black font-display mt-3 text-blue-200">{picked}</p>}
+            <div className="hidden md:flex items-center gap-2">
+              <PickCountChip count={pickCount} onCount={setPickCount} />
+              <button type="button" onClick={pickPlayer} className="flex-1 bg-blue-600 text-white font-bold py-3 rounded-xl min-h-12 flex items-center justify-center gap-2">
+                <Shuffle className="w-4 h-4" />
+                Pick
+              </button>
+            </div>
+            {picked.length > 0 && (
+              <div className="mt-3 space-y-1">
+                {picked.map((name, i) => (
+                  <p key={`${name}-${i}`} className="text-center text-2xl font-black font-display text-blue-200">
+                    {name}
+                  </p>
+                ))}
+              </div>
+            )}
           </section>
         )}
 
@@ -348,28 +424,36 @@ export default function ToolsView() {
         )}
       </div>
 
+      {activeTool !== 'sfx' ? (
       <ActionDock>
         <div className="flex gap-2">
           {dingButton('px-5 min-w-[88px]')}
           {activeTool === 'music' && (
-            <button
-              type="button"
-              onClick={() => musicRandomRef.current?.()}
-              className="flex-1 bg-fuchsia-700 text-white font-bold rounded-xl min-h-12 flex items-center justify-center gap-2"
-            >
-              <Shuffle className="w-4 h-4" />
-              Random
-            </button>
-          )}
-          {activeTool === 'sfx' && (
-            <button
-              type="button"
-              onClick={countIn}
-              className="flex-1 bg-gray-800 border border-gray-700 text-gray-100 font-bold rounded-xl min-h-12 flex items-center justify-center gap-2"
-            >
-              <Play className="w-4 h-4" />
-              {settings.countInBeats}-count
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => musicControlsRef.current?.fade?.()}
+                className="flex-1 bg-[#1A1A1A] border border-fuchsia-800/60 text-fuchsia-200 font-bold rounded-xl min-h-12"
+              >
+                Fade
+              </button>
+              <button
+                type="button"
+                onClick={() => musicControlsRef.current?.stop?.()}
+                className="flex-1 bg-red-950/40 border border-red-800/60 text-red-200 font-bold rounded-xl min-h-12 inline-flex items-center justify-center gap-1.5"
+              >
+                <Square className="w-3.5 h-3.5 fill-current" />
+                Stop
+              </button>
+              <button
+                type="button"
+                onClick={() => musicControlsRef.current?.random?.()}
+                className="flex-1 bg-fuchsia-700 text-white font-bold rounded-xl min-h-12 flex items-center justify-center gap-2"
+              >
+                <Shuffle className="w-4 h-4" />
+                Random
+              </button>
+            </>
           )}
           {activeTool === 'timer' && (
             <button
@@ -381,14 +465,17 @@ export default function ToolsView() {
             </button>
           )}
           {activeTool === 'whosup' && (
-            <button
-              type="button"
-              onClick={pickPlayer}
-              className="flex-1 bg-blue-600 text-white font-bold rounded-xl min-h-12 flex items-center justify-center gap-2"
-            >
-              <Shuffle className="w-4 h-4" />
-              Pick
-            </button>
+            <>
+              <PickCountChip count={pickCount} onCount={setPickCount} />
+              <button
+                type="button"
+                onClick={pickPlayer}
+                className="flex-1 bg-blue-600 text-white font-bold rounded-xl min-h-12 flex items-center justify-center gap-2"
+              >
+                <Shuffle className="w-4 h-4" />
+                Pick
+              </button>
+            </>
           )}
           {activeTool === 'hat' && (
             <button
@@ -410,6 +497,7 @@ export default function ToolsView() {
           )}
         </div>
       </ActionDock>
+      ) : null}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Dices, BookMarked, ListFilter, Check, X, Star, ListPlus, CheckCircle, Folder } from 'lucide-react';
+import { Dices, BookMarked, ListFilter, ArrowUpDown, Check, X, Star, ListPlus, CheckCircle, Folder } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
 import { localDateString, useAppStore } from '../store/useAppStore.js';
 import { splitList } from '../lib/generator.js';
@@ -44,6 +44,25 @@ function modeLabel(mode) {
   if (mode === 'in') return 'in set';
   if (mode === 'out') return 'not in set';
   return 'all';
+}
+
+const SORT_OPTIONS = [
+  { id: 'name', label: 'Name' },
+  { id: 'category', label: 'Category' },
+  { id: 'catalog', label: 'Catalog' },
+];
+
+function itemName(item, viewType) {
+  return String(viewType === 'terms' ? item.term : item.name || '').toLowerCase();
+}
+
+function compareItems(a, b, sortBy, viewType) {
+  if (sortBy === 'catalog') return 0;
+  if (sortBy === 'category') {
+    const cat = (itemCategories(a)[0] || '').localeCompare(itemCategories(b)[0] || '');
+    if (cat) return cat;
+  }
+  return itemName(a, viewType).localeCompare(itemName(b, viewType));
 }
 
 function Chip({ active, onClick, children }) {
@@ -104,7 +123,11 @@ export default function LibraryView() {
   const [setModes, setSetModes] = useState({});
   const [customMenuOpen, setCustomMenuOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [sortOpen, setSortOpen] = useState(false);
   const viewType = settings.libraryView === 'terms' ? 'terms' : 'games';
+  const sortBy = SORT_OPTIONS.some((opt) => opt.id === settings.librarySort)
+    ? settings.librarySort
+    : 'name';
 
   const setViewType = (next) => updateSettings({ libraryView: next });
 
@@ -168,18 +191,20 @@ export default function LibraryView() {
     const q = searchTerm.toLowerCase();
     const inIds = activeSetModes.filter(([, mode]) => mode === 'in').map(([id]) => id);
     const outIds = activeSetModes.filter(([, mode]) => mode === 'out').map(([id]) => id);
-    return data.games.filter((game) => {
-      const cats = itemCategories(game);
-      const tags = splitList(game.tags);
-      const skills = splitList(game.lifeSkills);
-      const hay = [game.name, game.description, ...tags, ...skills, ...cats].join(' ').toLowerCase();
-      const matchesSearch = !q || hay.includes(q);
-      const matchesFilter = !gameFilters.length || gameFilters.some((cat) => cats.includes(cat));
-      const matchesInSet = inIds.every((setId) => idsInSet(lists, setId).includes(game.id));
-      const matchesNotInSet = outIds.every((setId) => !idsInSet(lists, setId).includes(game.id));
-      return matchesSearch && matchesFilter && matchesInSet && matchesNotInSet;
-    });
-  }, [data.games, searchTerm, gameFilters, setModes, lists]);
+    return data.games
+      .filter((game) => {
+        const cats = itemCategories(game);
+        const tags = splitList(game.tags);
+        const skills = splitList(game.lifeSkills);
+        const hay = [game.name, game.description, ...tags, ...skills, ...cats].join(' ').toLowerCase();
+        const matchesSearch = !q || hay.includes(q);
+        const matchesFilter = !gameFilters.length || gameFilters.some((cat) => cats.includes(cat));
+        const matchesInSet = inIds.every((setId) => idsInSet(lists, setId).includes(game.id));
+        const matchesNotInSet = outIds.every((setId) => !idsInSet(lists, setId).includes(game.id));
+        return matchesSearch && matchesFilter && matchesInSet && matchesNotInSet;
+      })
+      .sort((a, b) => compareItems(a, b, sortBy, 'games'));
+  }, [data.games, searchTerm, gameFilters, setModes, lists, sortBy]);
 
   const filteredTerms = useMemo(() => {
     const q = searchTerm.toLowerCase();
@@ -190,8 +215,8 @@ export default function LibraryView() {
         const matchesFilter = !termFilters.length || termFilters.some((cat) => cats.includes(cat));
         return matchesSearch && matchesFilter;
       })
-      .sort((a, b) => a.term.localeCompare(b.term));
-  }, [data.terms, searchTerm, termFilters]);
+      .sort((a, b) => compareItems(a, b, sortBy, 'terms'));
+  }, [data.terms, searchTerm, termFilters, sortBy]);
 
   return (
     <div className="h-full flex flex-col pt-safe px-4 md:px-6">
@@ -237,7 +262,9 @@ export default function LibraryView() {
             onClick={() => setViewType('games')}
           >
             <Dices className="w-4 h-4 mr-2 shrink-0" />
-            <span className="text-center leading-tight">Games ({data.games.length})</span>
+            <span className="text-center leading-tight">
+              Games{settings.showStats !== false ? ` (${data.games.length})` : ''}
+            </span>
           </button>
           <button
             type="button"
@@ -247,7 +274,9 @@ export default function LibraryView() {
             onClick={() => setViewType('terms')}
           >
             <BookMarked className="w-4 h-4 mr-2 shrink-0" />
-            <span className="text-center leading-tight">Glossary ({data.terms.length})</span>
+            <span className="text-center leading-tight">
+              Glossary{settings.showStats !== false ? ` (${data.terms.length})` : ''}
+            </span>
           </button>
         </div>
 
@@ -256,6 +285,7 @@ export default function LibraryView() {
             type="button"
             onClick={() => {
               setFiltersOpen((v) => !v);
+              setSortOpen(false);
               setCustomMenuOpen(false);
             }}
             className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-bold min-h-11 border ${
@@ -273,6 +303,23 @@ export default function LibraryView() {
               </span>
             ) : null}
           </button>
+          <button
+            type="button"
+            onClick={() => {
+              setSortOpen((v) => !v);
+              setFiltersOpen(false);
+              setCustomMenuOpen(false);
+            }}
+            className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-bold min-h-11 border ${
+              sortOpen
+                ? 'bg-blue-600/20 text-blue-200 border-blue-400'
+                : 'bg-gray-800 text-gray-300 border-gray-700'
+            }`}
+            aria-expanded={sortOpen}
+          >
+            <ArrowUpDown className="w-4 h-4" />
+            Sort
+          </button>
           {filterActive ? (
             <button
               type="button"
@@ -289,6 +336,23 @@ export default function LibraryView() {
             </span>
           ) : null}
         </div>
+
+        {sortOpen && (
+          <div className="mt-3">
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Sort by</p>
+            <div className="flex flex-wrap gap-2">
+              {SORT_OPTIONS.map((opt) => (
+                <Chip
+                  key={opt.id}
+                  active={sortBy === opt.id}
+                  onClick={() => updateSettings({ librarySort: opt.id })}
+                >
+                  {opt.label}
+                </Chip>
+              ))}
+            </div>
+          </div>
+        )}
 
         {filtersOpen && (
           <div className="mt-3">

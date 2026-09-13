@@ -20,7 +20,20 @@ function driveId(value) {
   return match ? match[1] : '';
 }
 
-function guessType(buffer) {
+const EXT_TYPES = {
+  wav: 'audio/wav',
+  mp3: 'audio/mpeg',
+  m4a: 'audio/mp4',
+  ogg: 'audio/ogg',
+  aac: 'audio/aac',
+};
+
+function typeFromName(name) {
+  const match = String(name || '').toLowerCase().match(/\.([a-z0-9]+)(?:["'\s;?#]|$)/);
+  return (match && EXT_TYPES[match[1]]) || '';
+}
+
+function guessType(buffer, names = []) {
   if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return 'image/jpeg';
   if (buffer.length >= 8 && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) {
     return 'image/png';
@@ -28,8 +41,19 @@ function guessType(buffer) {
   if (buffer.length >= 6 && buffer.slice(0, 6).toString() === 'GIF87a') return 'image/gif';
   if (buffer.length >= 6 && buffer.slice(0, 6).toString() === 'GIF89a') return 'image/gif';
   if (buffer.length >= 12 && buffer.slice(8, 12).toString() === 'WEBP') return 'image/webp';
+  if (
+    buffer.length >= 12
+    && buffer.slice(0, 4).toString() === 'RIFF'
+    && buffer.slice(8, 12).toString() === 'WAVE'
+  ) {
+    return 'audio/wav';
+  }
   if (buffer.length >= 3 && buffer.slice(0, 3).toString() === 'ID3') return 'audio/mpeg';
   if (buffer.length >= 2 && buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0) return 'audio/mpeg';
+  for (const name of names) {
+    const fromExt = typeFromName(name);
+    if (fromExt) return fromExt;
+  }
   return 'application/octet-stream';
 }
 
@@ -94,7 +118,9 @@ export default async function handler(req, res) {
       res.status(413).json({ error: 'File too large' });
       return;
     }
-    res.setHeader('Content-Type', type && !type.includes('octet-stream') ? type : guessType(buffer));
+    const disposition = upstream.headers.get('content-disposition') || '';
+    const guessed = guessType(buffer, [queryUrl, target, disposition]);
+    res.setHeader('Content-Type', type && !type.includes('octet-stream') ? type : guessed);
     res.setHeader('Cache-Control', 'public, max-age=3600');
     res.status(200).send(buffer);
   } catch (error) {

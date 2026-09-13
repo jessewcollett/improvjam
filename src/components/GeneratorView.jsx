@@ -9,6 +9,7 @@ import {
   Tag,
   Minus,
   Plus,
+  X,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore } from '../store/useAppStore.js';
@@ -29,7 +30,7 @@ function clampDrawCount(value) {
   return Math.min(DRAW_MAX, Math.max(DRAW_MIN, Math.round(n)));
 }
 
-function DrawChip({ icon, label, count, onCount }) {
+function DrawChip({ icon, label, count, onCount, onRemove }) {
   const n = clampDrawCount(count);
   return (
     <div className="inline-flex items-center shrink-0 rounded-xl border border-lime-800/50 bg-[#1A1A1A] pl-2 overflow-hidden">
@@ -53,6 +54,14 @@ function DrawChip({ icon, label, count, onCount }) {
         aria-label={`More ${label}`}
       >
         <Plus className="w-3.5 h-3.5" />
+      </button>
+      <button
+        type="button"
+        onClick={onRemove}
+        className="min-w-11 min-h-11 flex items-center justify-center text-gray-400 hover:text-red-400 border-l border-lime-800/40"
+        aria-label={`Remove ${label}`}
+      >
+        <X className="w-3.5 h-3.5" />
       </button>
     </div>
   );
@@ -99,19 +108,21 @@ function CheckRow({ checked, icon, label, count, onToggle }) {
     >
       <CatalogIcon name={icon} className={`w-3.5 h-3.5 shrink-0 ${checked ? 'text-lime-400' : 'text-gray-500'}`} fallback={Tag} />
       <span className="flex-1 text-xs font-bold leading-tight text-left">{label}</span>
-      <span className={`text-2xs tabular-nums shrink-0 ${checked ? 'text-lime-300/80' : 'text-gray-500'}`}>{count}</span>
+      {count != null ? (
+        <span className={`text-2xs tabular-nums shrink-0 ${checked ? 'text-lime-300/80' : 'text-gray-500'}`}>{count}</span>
+      ) : null}
     </button>
   );
 }
 
-function BankRow({ cat, checked, favorited, onToggle, onFavorite }) {
+function BankRow({ cat, checked, favorited, showStats, onToggle, onFavorite }) {
   return (
     <div className="flex items-center gap-0.5 min-w-0">
       <CheckRow
         checked={checked}
         icon={cat.icon}
         label={cat.label}
-        count={cat.count}
+        count={showStats ? cat.count : undefined}
         onToggle={onToggle}
       />
       <button
@@ -141,6 +152,7 @@ export default function GeneratorView() {
   const toggleGeneratorSkill = useAppStore((s) => s.toggleGeneratorSkill);
   const drawCounts = useAppStore((s) => s.generatorDrawCounts) || {};
   const setGeneratorDrawCount = useAppStore((s) => s.setGeneratorDrawCount);
+  const showStats = useAppStore((s) => s.settings.showStats) !== false;
   const countFor = (id) => clampDrawCount(drawCounts[id] ?? 1);
   const [locks, setLocks] = useState({ c: false, o: false, r: false, e: false });
   const [kit, setKit] = useState(null);
@@ -330,6 +342,10 @@ export default function GeneratorView() {
               label={item.label}
               count={countFor(item.id)}
               onCount={(n) => setGeneratorDrawCount(item.id, n)}
+              onRemove={() => {
+                if (selectedIds.includes(item.id)) toggleGeneratorBank(item.id);
+                else toggleGeneratorSkill(item.id);
+              }}
             />
           ))}
         </div>
@@ -369,9 +385,14 @@ export default function GeneratorView() {
             <div className="text-left min-w-0">
               <h2 className="text-base font-black font-display text-white leading-tight">Ask for…</h2>
               <p className="text-xs text-gray-500 leading-snug">
-                {selectedCats.length + selectedSkillItems.length} selected
-                {favoriteCats.length ? ` · ${favoriteCats.length} favorite${favoriteCats.length === 1 ? '' : 's'}` : ''}
-                {' · '}{selectedSummary}
+                {showStats ? (
+                  <>
+                    {selectedCats.length + selectedSkillItems.length} selected
+                    {favoriteCats.length ? ` · ${favoriteCats.length} favorite${favoriteCats.length === 1 ? '' : 's'}` : ''}
+                    {' · '}
+                  </>
+                ) : null}
+                {selectedSummary}
               </p>
             </div>
             <ChevronDown className={`w-5 h-5 text-gray-500 shrink-0 transition-transform ${banksOpen ? 'rotate-180' : ''}`} />
@@ -389,6 +410,7 @@ export default function GeneratorView() {
                         cat={cat}
                         checked={selectedIds.includes(cat.id)}
                         favorited
+                        showStats={showStats}
                         onToggle={() => toggleGeneratorBank(cat.id)}
                         onFavorite={() => toggleGeneratorBankFavorite(cat.id)}
                       />
@@ -408,6 +430,7 @@ export default function GeneratorView() {
                         cat={cat}
                         checked={selectedIds.includes(cat.id)}
                         favorited={false}
+                        showStats={showStats}
                         onToggle={() => toggleGeneratorBank(cat.id)}
                         onFavorite={() => toggleGeneratorBankFavorite(cat.id)}
                       />
@@ -425,7 +448,7 @@ export default function GeneratorView() {
                         checked={selectedSkills.includes(skill.id)}
                         icon={skill.icon}
                         label={skill.label}
-                        count={skill.count}
+                        count={showStats ? skill.count : undefined}
                         onToggle={() => toggleGeneratorSkill(skill.id)}
                       />
                     ))}
@@ -582,7 +605,7 @@ export default function GeneratorView() {
           >
             <span className="truncate">
               Search selected banks
-              {selectedRows.length ? ` (${selectedRows.length})` : ''}
+              {showStats && selectedRows.length ? ` (${selectedRows.length})` : ''}
             </span>
             <ChevronDown className={`w-4 h-4 text-gray-500 shrink-0 transition-transform ${catalogueOpen ? 'rotate-180' : ''}`} />
           </button>
@@ -603,10 +626,14 @@ export default function GeneratorView() {
                 <p className="text-sm text-gray-500">No rows yet. Add some in the Generator tab.</p>
               ) : (
                 <>
-                  <p className="text-xs text-gray-500 mb-2">
-                    {filteredCatalogue.length} match{filteredCatalogue.length === 1 ? '' : 'es'}
-                    {filteredCatalogue.length > CATALOGUE_CAP ? ` · showing ${CATALOGUE_CAP}` : ''}
-                  </p>
+                  {showStats ? (
+                    <p className="text-xs text-gray-500 mb-2">
+                      {filteredCatalogue.length} match{filteredCatalogue.length === 1 ? '' : 'es'}
+                      {filteredCatalogue.length > CATALOGUE_CAP ? ` · showing ${CATALOGUE_CAP}` : ''}
+                    </p>
+                  ) : filteredCatalogue.length > CATALOGUE_CAP ? (
+                    <p className="text-xs text-gray-500 mb-2">Showing {CATALOGUE_CAP}</p>
+                  ) : null}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5">
                     {visibleCatalogue.map((row) => (
                       <button

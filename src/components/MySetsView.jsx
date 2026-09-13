@@ -17,6 +17,7 @@ import SyncButton from './SyncButton.jsx';
 export default function MySetsView() {
   const data = useAppStore((s) => s.data);
   const lists = useAppStore((s) => s.lists);
+  const showStats = useAppStore((s) => s.settings.showStats) !== false;
   const clearList = useAppStore((s) => s.clearList);
   const createCustomSet = useAppStore((s) => s.createCustomSet);
   const deleteCustomSet = useAppStore((s) => s.deleteCustomSet);
@@ -123,7 +124,7 @@ export default function MySetsView() {
                   <div key={set.id} className="bg-[#1A1A1A] border border-gray-800 rounded-xl p-4 flex justify-between items-center">
                     <button type="button" onClick={() => setActiveCustomSetId(set.id)} className="flex-1 text-left min-h-11">
                       <h3 className="font-bold text-gray-200 text-lg">{set.name}</h3>
-                      <p className="text-xs text-gray-500">{set.games.length} games</p>
+                      {showStats ? <p className="text-xs text-gray-500">{set.games.length} games</p> : null}
                     </button>
                     {confirmDeleteSet === set.id ? (
                       <div className="flex items-center gap-2">

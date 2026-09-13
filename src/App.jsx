@@ -6,7 +6,6 @@ import GeneratorView from './components/GeneratorView.jsx';
 import ToolsView from './components/ToolsView.jsx';
 import MySetsView from './components/MySetsView.jsx';
 import SettingsView from './components/SettingsView.jsx';
-import { SHEETS_URL } from './lib/sheets.js';
 import { applyTheme } from './lib/theme.js';
 import { useAppStore } from './store/useAppStore.js';
 
@@ -31,9 +30,7 @@ export default function App() {
   }, [settings.theme, settings.reducedMotion, settings.hapticDing]);
 
   useEffect(() => {
-    if (!SHEETS_URL && !import.meta.env.PROD) return undefined;
     syncFromSheet().catch(() => {});
-    return undefined;
   }, [syncFromSheet]);
 
   return (

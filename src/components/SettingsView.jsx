@@ -3,11 +3,18 @@ import {
   BookOpen,
   ChevronDown,
   Info,
+  Minus,
   Monitor,
   Palette,
+  Plus,
   RefreshCw,
 } from 'lucide-react';
 import { canWakeLock } from '../lib/useWakeLock.js';
+import {
+  clampFadeSeconds,
+  FADE_SECONDS_MAX,
+  FADE_SECONDS_MIN,
+} from '../lib/audio.js';
 import { useAppStore } from '../store/useAppStore.js';
 import SyncButton from './SyncButton.jsx';
 
@@ -84,6 +91,7 @@ export default function SettingsView() {
   const syncError = useAppStore((s) => s.syncError);
   const sources = useAppStore((s) => s.data.sources) || [];
   const canHaptic = typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function';
+  const fadeSeconds = clampFadeSeconds(settings.fadeSeconds);
 
   return (
     <div className="h-full flex flex-col pt-safe px-4 md:px-6 pb-nav overflow-y-auto scrollbar-hide">
@@ -121,7 +129,7 @@ export default function SettingsView() {
       <SettingsSection
         title="Info"
         icon={Info}
-        summary={`${sources.length} sources · how sync works`}
+        summary={settings.showStats !== false ? `${sources.length} sources · how sync works` : 'How sync works'}
         accent="text-blue-400"
       >
         <p className="text-sm text-gray-400 mb-3">
@@ -132,8 +140,9 @@ export default function SettingsView() {
           Audio credits live on the Audio tab (credit, creditUrl). SFX icons use the icon column (drum, bell-ring,
           or an emoji like 🥁). Tracks use the tags column only — no genre column
           (Pop, 80s, Underscore — comma or pipe separated), and you can also tag on this device in Music.
-          Game and glossary photos use the image column (Drive share link, Anyone with the link). Drive
-          files must be Anyone with the link. Improv Jam → Update tabs adds missing columns (tags, image,
+          Game and glossary photos use the image column (Drive share link, Anyone with the link). Audio
+          url must be a Drive file share link (not a folder), Anyone with the link → Viewer, under 25MB.
+          Improv Jam → Update tabs adds missing columns (tags, image,
           Generator group) and creates the Icons and Banks tabs without overwriting rows.
         </p>
         <p className="text-xs text-gray-500 mb-3">
@@ -143,7 +152,9 @@ export default function SettingsView() {
         </p>
         <p className="text-xs text-gray-500 mb-3">
           {lastSynced ? `Last synced ${new Date(lastSynced).toLocaleString()}` : 'Not synced yet'}
-          {` · ${sources.length} source${sources.length === 1 ? '' : 's'}`}
+          {settings.showStats !== false
+            ? ` · ${sources.length} source${sources.length === 1 ? '' : 's'}`
+            : ''}
         </p>
         <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2 flex items-center gap-1.5">
           <BookOpen className="w-3.5 h-3.5" />
@@ -214,7 +225,7 @@ export default function SettingsView() {
       <SettingsSection
         title="Rehearsal"
         icon={Monitor}
-        summary="Library default, wake lock, haptic"
+        summary="Library default, stats, fade, wake lock, haptic"
       >
         <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Default Library view</p>
         <div className="grid grid-cols-2 gap-2 mb-3">
@@ -232,6 +243,12 @@ export default function SettingsView() {
           </ChoiceButton>
         </div>
         <ToggleRow
+          label="Show stats"
+          hint="How many games, bank rows, and list items. Turn off for a cleaner jam view."
+          checked={settings.showStats !== false}
+          onChange={(showStats) => updateSettings({ showStats })}
+        />
+        <ToggleRow
           label="Keep screen awake in Tools"
           hint={canWakeLock() ? 'Uses the Screen Wake Lock API while Jam Tools is open.' : 'Wake Lock is not available in this browser.'}
           checked={Boolean(settings.keepAwake)}
@@ -245,6 +262,41 @@ export default function SettingsView() {
           onChange={(hapticDing) => updateSettings({ hapticDing })}
           disabled={!canHaptic}
         />
+        <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 mt-3">Fade time</p>
+        <p className="text-xs text-gray-500 mb-2">How long Fade takes on SFX and Music.</p>
+        <div className="inline-flex items-center rounded-xl border border-gray-700 bg-[#1A1A1A] overflow-hidden">
+          <button
+            type="button"
+            onClick={() => updateSettings({ fadeSeconds: clampFadeSeconds(fadeSeconds - 0.5) })}
+            disabled={fadeSeconds <= FADE_SECONDS_MIN}
+            className="min-w-11 min-h-11 flex items-center justify-center text-gray-200 disabled:text-gray-600"
+            aria-label="Shorter fade"
+          >
+            <Minus className="w-3.5 h-3.5" />
+          </button>
+          <label className="flex items-center gap-1 px-1">
+            <input
+              type="number"
+              min={FADE_SECONDS_MIN}
+              max={FADE_SECONDS_MAX}
+              step="0.1"
+              value={fadeSeconds}
+              onChange={(e) => updateSettings({ fadeSeconds: clampFadeSeconds(e.target.value) })}
+              className="w-14 min-h-11 bg-transparent text-center text-sm font-black tabular-nums text-white focus:outline-none"
+              aria-label="Fade seconds"
+            />
+            <span className="text-xs font-bold text-gray-400 pr-1">sec</span>
+          </label>
+          <button
+            type="button"
+            onClick={() => updateSettings({ fadeSeconds: clampFadeSeconds(fadeSeconds + 0.5) })}
+            disabled={fadeSeconds >= FADE_SECONDS_MAX}
+            className="min-w-11 min-h-11 flex items-center justify-center text-gray-200 disabled:text-gray-600"
+            aria-label="Longer fade"
+          >
+            <Plus className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </SettingsSection>
       </div>
     </div>

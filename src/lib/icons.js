@@ -184,3 +184,21 @@ export function firstEmoji(value) {
 export function defaultBankIcon(category, skillId) {
   return DEFAULT_BANK_ICONS[category] || SKILL_DEFAULT_ICONS[skillId] || '';
 }
+
+const SKIP_ICON_IDS = new Set(['gong', 'whoosh', 'waves', 'any-emoji']);
+
+export const PAD_ICON_CHOICES = [
+  ...ICON_CATALOG.filter((row) => row.kind === 'lucide' && !SKIP_ICON_IDS.has(row.id)).map((row) => row.id),
+  '🔔',
+  '🥁',
+  '🚽',
+  '📞',
+  '⛈️',
+  '💥',
+  '🚪',
+  '🦗',
+  '📯',
+  '❤️',
+  '🚿',
+  '🎵',
+];

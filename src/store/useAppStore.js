@@ -3,7 +3,13 @@ import { persist } from 'zustand/middleware';
 import fallback from '../data/mockData.json';
 import { fetchSheetData, normalizePayload } from '../lib/sheets.js';
 import { normalizeMusicTags, tagsForTrack, toggleTagList } from '../lib/music.js';
-import { defaultSfxSlots, normalizeSfxSlots } from '../lib/sfxPad.js';
+import {
+  defaultSfxSlots,
+  normalizeSfxSlots,
+  normalizeSfxSlotColors,
+  clampSfxSlotCount,
+  clampPadColor,
+} from '../lib/sfxPad.js';
 
 const bundled = normalizePayload(fallback);
 
@@ -31,6 +37,10 @@ export const defaultSettings = {
   libraryView: 'games',
   keepAwake: false,
   hapticDing: false,
+  fadeSeconds: 1.2,
+  showStats: true,
+  whosUpCount: 1,
+  librarySort: 'name',
 };
 
 export const defaultGeneratorBanks = ['Locations', 'Relationships', 'Objects'];
@@ -68,6 +78,8 @@ export const useAppStore = create(
       sfxHidden: [],
       sfxOrder: [],
       sfxSlots: defaultSfxSlots,
+      sfxSlotColors: normalizeSfxSlotColors([], defaultSfxSlots.length),
+      sfxIconOverrides: {},
       musicTags: {},
 
       updateSettings: (partial) => {
@@ -105,6 +117,57 @@ export const useAppStore = create(
           if (index < 0 || index >= slots.length) return {};
           slots[index] = soundId || null;
           return { sfxSlots: slots };
+        });
+      },
+
+      setSfxSlotCount: (count) => {
+        const n = clampSfxSlotCount(count);
+        set((state) => {
+          const current = normalizeSfxSlots(state.sfxSlots, state.sfxOrder, state.sfxHidden);
+          const colors = normalizeSfxSlotColors(state.sfxSlotColors, current.length);
+          if (n === current.length) return {};
+          if (n > current.length) {
+            return {
+              sfxSlots: [...current, ...Array(n - current.length).fill(null)],
+              sfxSlotColors: [...colors, ...Array(n - current.length).fill('slate')],
+            };
+          }
+          return { sfxSlots: current.slice(0, n), sfxSlotColors: colors.slice(0, n) };
+        });
+      },
+
+      setSfxSlotColor: (index, colorId) => {
+        set((state) => {
+          const slots = normalizeSfxSlots(state.sfxSlots, state.sfxOrder, state.sfxHidden);
+          if (index < 0 || index >= slots.length) return {};
+          const colors = normalizeSfxSlotColors(state.sfxSlotColors, slots.length);
+          colors[index] = clampPadColor(colorId);
+          return { sfxSlotColors: colors };
+        });
+      },
+
+      setSfxIconOverride: (soundId, icon) => {
+        const id = String(soundId || '').trim();
+        if (!id) return;
+        set((state) => {
+          const next = { ...(state.sfxIconOverrides || {}) };
+          const val = String(icon || '').trim();
+          if (!val) delete next[id];
+          else next[id] = val;
+          return { sfxIconOverrides: next };
+        });
+      },
+
+      moveSfxSlot: (from, to) => {
+        set((state) => {
+          const slots = normalizeSfxSlots(state.sfxSlots, state.sfxOrder, state.sfxHidden);
+          const colors = normalizeSfxSlotColors(state.sfxSlotColors, slots.length);
+          if (from === to || from < 0 || to < 0 || from >= slots.length || to >= slots.length) return {};
+          const [slot] = slots.splice(from, 1);
+          const [color] = colors.splice(from, 1);
+          slots.splice(to, 0, slot);
+          colors.splice(to, 0, color);
+          return { sfxSlots: slots, sfxSlotColors: colors };
         });
       },
 
@@ -264,6 +327,8 @@ export const useAppStore = create(
         sfxHidden: state.sfxHidden,
         sfxOrder: state.sfxOrder,
         sfxSlots: state.sfxSlots,
+        sfxSlotColors: state.sfxSlotColors,
+        sfxIconOverrides: state.sfxIconOverrides,
         musicTags: state.musicTags,
       }),
       merge: (persisted, current) => ({
@@ -290,6 +355,14 @@ export const useAppStore = create(
         sfxHidden: Array.isArray(persisted?.sfxHidden) ? persisted.sfxHidden : current.sfxHidden,
         sfxOrder: Array.isArray(persisted?.sfxOrder) ? persisted.sfxOrder : current.sfxOrder,
         sfxSlots: normalizeSfxSlots(persisted?.sfxSlots, persisted?.sfxOrder, persisted?.sfxHidden),
+        sfxSlotColors: normalizeSfxSlotColors(
+          persisted?.sfxSlotColors,
+          normalizeSfxSlots(persisted?.sfxSlots, persisted?.sfxOrder, persisted?.sfxHidden).length,
+        ),
+        sfxIconOverrides:
+          persisted?.sfxIconOverrides && typeof persisted.sfxIconOverrides === 'object' && !Array.isArray(persisted.sfxIconOverrides)
+            ? persisted.sfxIconOverrides
+            : current.sfxIconOverrides,
         musicTags: normalizeMusicTags(persisted?.musicTags),
       }),
     },

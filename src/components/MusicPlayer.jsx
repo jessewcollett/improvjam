@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, ListFilter, Music, Pause, Play, Repeat, Shuffle, Volume2, X } from 'lucide-react';
+import { ArrowUpDown, Check, ListFilter, Music, Pause, Play, Repeat, Shuffle, Square, Volume2, X } from 'lucide-react';
+import { clampFadeSeconds } from '../lib/audio.js';
 import { UNTAGGED_FILTER, tagsForTrack, uniqueTags } from '../lib/music.js';
 import { useAppStore } from '../store/useAppStore.js';
 
@@ -72,6 +73,8 @@ function Chip({ active, onClick, children }) {
 function MusicFilters({
   filtersOpen,
   onToggleOpen,
+  sortOpen,
+  onToggleSort,
   tagFilters,
   tagOptions,
   sortBy,
@@ -104,6 +107,19 @@ function MusicFilters({
             </span>
           ) : null}
         </button>
+        <button
+          type="button"
+          onClick={onToggleSort}
+          className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-bold min-h-11 border ${
+            sortOpen
+              ? 'bg-fuchsia-600/20 text-fuchsia-200 border-fuchsia-400'
+              : 'bg-gray-800 text-gray-300 border-gray-700'
+          }`}
+          aria-expanded={sortOpen}
+        >
+          <ArrowUpDown className="w-4 h-4" />
+          Sort
+        </button>
         {filterActive ? (
           <button
             type="button"
@@ -114,15 +130,15 @@ function MusicFilters({
             Clear filters
           </button>
         ) : null}
-        {summary.length && !filtersOpen ? (
+        {summary.length && !filtersOpen && !sortOpen ? (
           <span className="text-xs font-semibold text-fuchsia-300 min-w-0">{summary.join(' · ')}</span>
         ) : null}
       </div>
 
-      {filtersOpen ? (
+      {sortOpen ? (
         <div className="mt-3">
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Sort</p>
-          <div className="flex flex-wrap gap-2 mb-3">
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Sort by</p>
+          <div className="flex flex-wrap gap-2">
             <Chip active={sortBy === 'name'} onClick={() => onSort('name')}>
               Name
             </Chip>
@@ -130,6 +146,11 @@ function MusicFilters({
               Tag
             </Chip>
           </div>
+        </div>
+      ) : null}
+
+      {filtersOpen ? (
+        <div className="mt-3">
           <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Tags</p>
           <div className="flex flex-wrap gap-2">
             <Chip
@@ -154,11 +175,13 @@ function MusicFilters({
   );
 }
 
-export default function MusicPlayer({ tracks, randomRef }) {
+export default function MusicPlayer({ tracks, randomRef, controlsRef, fadeSeconds }) {
   const musicTags = useAppStore((s) => s.musicTags);
   const toggleMusicTag = useAppStore((s) => s.toggleMusicTag);
   const audioRef = useRef(null);
   const autoplayRef = useRef(false);
+  const fadeTokenRef = useRef(0);
+  const volumeRef = useRef(0.85);
   const [activeId, setActiveId] = useState(tracks[0]?.id || '');
   const [playing, setPlaying] = useState(false);
   const [loop, setLoop] = useState(false);
@@ -170,7 +193,9 @@ export default function MusicPlayer({ tracks, randomRef }) {
   const [customTag, setCustomTag] = useState('');
   const [tagging, setTagging] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [sortOpen, setSortOpen] = useState(false);
   const [volumeOpen, setVolumeOpen] = useState(false);
+  volumeRef.current = volume;
 
   const taggedTracks = useMemo(
     () => tracks.map((track) => ({ ...track, displayTags: tagsForTrack(track, musicTags) })),
@@ -214,6 +239,7 @@ export default function MusicPlayer({ tracks, randomRef }) {
     if (!node) return undefined;
     node.loop = loop;
     node.volume = volume;
+    fadeTokenRef.current += 1;
     const onTime = () => setCurrent(node.currentTime || 0);
     const onMeta = () => setDuration(node.duration || 0);
     const onEnd = () => setPlaying(false);
@@ -230,9 +256,11 @@ export default function MusicPlayer({ tracks, randomRef }) {
   useEffect(() => {
     const node = audioRef.current;
     if (!node || !active?.playUrl) return;
+    fadeTokenRef.current += 1;
     const shouldPlay = autoplayRef.current;
     autoplayRef.current = false;
     node.pause();
+    node.volume = volumeRef.current;
     node.src = active.playUrl;
     node.load();
     setCurrent(0);
@@ -246,9 +274,55 @@ export default function MusicPlayer({ tracks, randomRef }) {
       .catch(() => setPlaying(false));
   }, [active?.playUrl]);
 
+  const stopNow = useCallback(() => {
+    fadeTokenRef.current += 1;
+    const node = audioRef.current;
+    if (!node) return;
+    node.pause();
+    try {
+      node.currentTime = 0;
+    } catch {
+      /* ignore */
+    }
+    node.volume = volumeRef.current;
+    setPlaying(false);
+    setCurrent(0);
+  }, []);
+
+  const fadeOut = useCallback(() => {
+    const node = audioRef.current;
+    if (!node) return;
+    const token = fadeTokenRef.current + 1;
+    fadeTokenRef.current = token;
+    const startVol = Math.max(node.volume || volumeRef.current || 0, 0.0001);
+    const start = performance.now();
+    const durationMs = clampFadeSeconds(fadeSeconds) * 1000;
+    const tick = (now) => {
+      if (token !== fadeTokenRef.current) return;
+      const t = Math.min(1, (now - start) / durationMs);
+      node.volume = startVol * (1 - t);
+      if (t < 1) {
+        requestAnimationFrame(tick);
+        return;
+      }
+      node.pause();
+      try {
+        node.currentTime = 0;
+      } catch {
+        /* ignore */
+      }
+      node.volume = volumeRef.current;
+      setPlaying(false);
+      setCurrent(0);
+    };
+    requestAnimationFrame(tick);
+  }, [fadeSeconds]);
+
   const toggle = async () => {
     const node = audioRef.current;
     if (!node || !active?.playUrl) return;
+    fadeTokenRef.current += 1;
+    node.volume = volumeRef.current;
     if (playing) {
       node.pause();
       setPlaying(false);
@@ -278,12 +352,14 @@ export default function MusicPlayer({ tracks, randomRef }) {
   }, [visibleTracks, active]);
 
   useEffect(() => {
-    if (!randomRef) return undefined;
-    randomRef.current = playRandom;
+    const controls = { random: playRandom, fade: fadeOut, stop: stopNow };
+    if (randomRef) randomRef.current = playRandom;
+    if (controlsRef) controlsRef.current = controls;
     return () => {
-      randomRef.current = null;
+      if (randomRef) randomRef.current = null;
+      if (controlsRef) controlsRef.current = null;
     };
-  }, [randomRef, playRandom]);
+  }, [randomRef, controlsRef, playRandom, fadeOut, stopNow]);
 
   const toggleFilter = (tag) => {
     setTagFilters((current) =>
@@ -327,7 +403,15 @@ export default function MusicPlayer({ tracks, randomRef }) {
         <div className="flex-1 min-h-0 min-w-0 flex flex-col">
           <MusicFilters
             filtersOpen={filtersOpen}
-            onToggleOpen={() => setFiltersOpen((v) => !v)}
+            onToggleOpen={() => {
+              setFiltersOpen((v) => !v);
+              setSortOpen(false);
+            }}
+            sortOpen={sortOpen}
+            onToggleSort={() => {
+              setSortOpen((v) => !v);
+              setFiltersOpen(false);
+            }}
             tagFilters={tagFilters}
             tagOptions={tagOptions}
             sortBy={sortBy}
@@ -437,6 +521,23 @@ export default function MusicPlayer({ tracks, randomRef }) {
             aria-label="Volume"
           >
             <Volume2 className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="grid grid-cols-2 gap-1.5 mb-1">
+          <button
+            type="button"
+            onClick={fadeOut}
+            className="min-h-11 rounded-xl border border-fuchsia-800/60 bg-[#1A1A1A] text-fuchsia-200 font-bold"
+          >
+            Fade
+          </button>
+          <button
+            type="button"
+            onClick={stopNow}
+            className="min-h-11 rounded-xl border border-red-800/60 bg-red-950/40 text-red-200 font-bold inline-flex items-center justify-center gap-1.5"
+          >
+            <Square className="w-3.5 h-3.5 fill-current" />
+            Stop
           </button>
         </div>
 

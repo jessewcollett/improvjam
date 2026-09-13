@@ -5,6 +5,7 @@ export default function SearchField({
   onChange,
   placeholder,
   ringClass = 'focus:ring-blue-500',
+  compact = false,
 }) {
   return (
     <div className="relative">
@@ -14,7 +15,7 @@ export default function SearchField({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className={`block w-full pl-10 ${value ? 'pr-11' : 'pr-3'} py-3 border border-gray-700 rounded-xl bg-[#1A1A1A] text-gray-300 placeholder-gray-500 focus:outline-none focus:ring-2 ${ringClass}`}
+        className={`block w-full pl-10 ${value ? 'pr-11' : 'pr-3'} ${compact ? 'py-2' : 'py-3'} border border-gray-700 rounded-xl bg-[#1A1A1A] text-gray-300 placeholder-gray-500 focus:outline-none focus:ring-2 ${ringClass}`}
       />
       {value ? (
         <button
