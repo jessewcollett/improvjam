@@ -175,15 +175,15 @@ export default function SfxPad({
     onEmptyTap: openPicker,
     onPlayStart: (index) => {
       if (voiceRef.current) {
-        releaseDing(voiceRef.current, { heldMs: 0 });
+        releaseDing(voiceRef.current, { heldMs: 0, cut: !voiceRef.current.oneShot });
         voiceRef.current = null;
       }
       const pad = gridLive.current[index];
       if (pad) voiceRef.current = startPad(pad, volumeRef.current);
     },
-    onPlayRelease: () => {
+    onPlayRelease: ({ heldMs = 0, cut = false } = {}) => {
       if (!voiceRef.current) return;
-      releaseDing(voiceRef.current, { heldMs: 400 });
+      releaseDing(voiceRef.current, { heldMs, cut });
       voiceRef.current = null;
     },
   });

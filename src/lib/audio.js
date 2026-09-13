@@ -108,6 +108,7 @@ function createVoice(audio, tapMs, sustainLevel) {
     released: false,
     sustaining: false,
     letTapFinish: false,
+    oneShot: false,
     onSustain: null,
     releaseFade: 0.18,
   };
@@ -291,6 +292,7 @@ function buildSampleVoice(spec, volume) {
   const tapMs = spec.tapDuration ? spec.tapDuration * 1000 : 2500;
   const voice = createVoice(ctx(), tapMs, 0.55 * vol);
   voice.releaseFade = spec.releaseFade || 0.18;
+  voice.oneShot = Boolean(spec.oneShot);
   loadSample(spec.url).then((buffer) => {
     if (voice.released) return;
     attachBuffer(voice, buffer, vol, spec);
@@ -305,7 +307,12 @@ function buildVoice(style, volume) {
   const vol = clampVolume(volume);
   const id = normalizeStyle(style);
   const sampleSpec = SAMPLE_STYLES[id];
-  if (sampleSpec) return buildSampleVoice(sampleSpec, volume);
+  if (sampleSpec) {
+    return buildSampleVoice({
+      ...sampleSpec,
+      oneShot: !sampleSpec.playThroughOnHold,
+    }, volume);
+  }
 
   if (id === 'buzz') {
     const voice = createVoice(audio, 360, 0.12 * vol);
@@ -501,7 +508,13 @@ export function playPad(pad, volume = 0.8) {
   const useUrl = pad.playUrl && (!pad.bundled || pad.playUrl !== bundledUrl);
   if (useUrl) {
     maybeHaptic();
-    const voice = buildSampleVoice({ url: pad.playUrl, playThroughOnHold: true, releaseFade: 0.35 }, volume);
+    const loopHold = Boolean(SAMPLE_STYLES[pad.styleId]?.playThroughOnHold);
+    const voice = buildSampleVoice({
+      url: pad.playUrl,
+      playThroughOnHold: loopHold,
+      oneShot: !loopHold,
+      releaseFade: 0.35,
+    }, volume);
     activeVoices.add(voice);
     return voice;
   }
@@ -517,13 +530,15 @@ export function startDing(style = 'bell', volume = 0.8) {
 
 export function startPad(pad, volume = 0.8) {
   const voice = playPad(pad, volume);
-  voice.timeouts.push(setTimeout(() => enterSustain(voice), HOLD_CATCH_MS));
+  if (!voice.oneShot) {
+    voice.timeouts.push(setTimeout(() => enterSustain(voice), HOLD_CATCH_MS));
+  }
   return voice;
 }
 
-export function releaseDing(voice, { heldMs = 0 } = {}) {
+export function releaseDing(voice, { heldMs = 0, cut = false } = {}) {
   if (!voice || voice.released) return;
-  if (heldMs < HOLD_CATCH_MS && !voice.sustaining) {
+  if (!cut && (voice.oneShot || (heldMs < HOLD_CATCH_MS && !voice.sustaining))) {
     voice.letTapFinish = true;
     return;
   }

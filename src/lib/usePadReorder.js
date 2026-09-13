@@ -49,7 +49,10 @@ export function usePadReorder({
     if (!p || p.dragging) return;
     p.dragging = true;
     p.armed = true;
-    metaRef.current.onPlayRelease?.();
+    metaRef.current.onPlayRelease?.({
+      heldMs: performance.now() - p.start.t,
+      cut: true,
+    });
     setDragging(true);
     setDragFrom(p.index);
     setDragOver(p.index);
@@ -60,7 +63,10 @@ export function usePadReorder({
     const p = pointerRef.current;
     pointerRef.current = null;
     clearHold();
-    metaRef.current.onPlayRelease?.();
+    metaRef.current.onPlayRelease?.({
+      heldMs: p ? performance.now() - p.start.t : 0,
+      cut: Boolean(cancelled || p?.dragging),
+    });
     const { cols: c, rows: r, slotCount: n } = metaRef.current;
     const over = event
       ? padIndexAt(event.clientX, event.clientY, gridRef.current, c, r, n)
@@ -77,14 +83,18 @@ export function usePadReorder({
 
   useEffect(() => () => {
     clearHold();
-    metaRef.current.onPlayRelease?.();
+    metaRef.current.onPlayRelease?.({ cut: true, heldMs: 0 });
   }, [clearHold]);
 
   const bindPad = useCallback((index, hasPad) => ({
     onPointerDown: (event) => {
       if (event.pointerType === 'mouse' && event.button !== 0) return;
       event.preventDefault();
-      event.currentTarget.setPointerCapture?.(event.pointerId);
+      try {
+        event.currentTarget.setPointerCapture?.(event.pointerId);
+      } catch {
+        /* untrusted or already-released pointers still need tap/hold handling */
+      }
       clearHold();
       pointerRef.current = {
         index,
