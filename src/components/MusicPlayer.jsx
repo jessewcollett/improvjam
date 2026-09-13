@@ -384,8 +384,7 @@ export default function MusicPlayer({ tracks, randomRef, controlsRef, fadeSecond
           Music
         </h2>
         <p className="text-sm text-gray-400">
-          Add rows tagged Track in the Google Sheet Audio tab, then Sync Data. Paste a Drive share link
-          (Anyone with the link), a credit, and optional tags (Pop, 80s, Underscore).
+          No tracks yet. Submit music from Settings, or sync the catalog.
         </p>
       </section>
     );

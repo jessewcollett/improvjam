@@ -1,16 +1,18 @@
 import { useState } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, ExternalLink } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { termClass } from '../lib/categoryStyles.js';
 import { splitList } from '../lib/generator.js';
 import CatalogImage from './CatalogImage.jsx';
 import { ItemSource } from './SourceCitation.jsx';
+import { trustedSourceUrl } from '../lib/sheets.js';
 import { useAppStore } from '../store/useAppStore.js';
 
 export default function TermCard({ termData, onCategoryClick }) {
   const sources = useAppStore((s) => s.data.sources);
   const [expanded, setExpanded] = useState(false);
   const categories = termData.categories?.length ? termData.categories : splitList(termData.category);
+  const originalHref = trustedSourceUrl(termData, sources);
 
   return (
     <div className="bg-card border border-gray-800 rounded-xl overflow-hidden h-full">
@@ -48,6 +50,20 @@ export default function TermCard({ termData, onCategoryClick }) {
             <div className="px-3 pb-3">
               <CatalogImage src={termData.imageSrc || termData.image} alt={termData.term} />
               <p className="text-sm text-gray-400 leading-relaxed mb-2">{termData.definition}</p>
+              {termData.definitions ? (
+                <p className="text-sm text-gray-400 leading-relaxed mb-2 whitespace-pre-wrap">{termData.definitions}</p>
+              ) : null}
+              {originalHref ? (
+                <a
+                  href={originalHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center text-2xs text-blue-400 mb-2 min-h-9"
+                >
+                  Open original
+                  <ExternalLink className="w-3 h-3 ml-1 opacity-70" />
+                </a>
+              ) : null}
               <ItemSource item={termData} sources={sources} />
             </div>
           </motion.div>

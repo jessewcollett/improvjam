@@ -2,6 +2,7 @@ import { useState } from 'react';
 import {
   BookOpen,
   ChevronDown,
+  ExternalLink,
   Info,
   Minus,
   Monitor,
@@ -15,6 +16,7 @@ import {
   FADE_SECONDS_MAX,
   FADE_SECONDS_MIN,
 } from '../lib/audio.js';
+import { INTAKE_FORM_URL } from '../lib/sheets.js';
 import { useAppStore } from '../store/useAppStore.js';
 import SyncButton from './SyncButton.jsx';
 
@@ -129,59 +131,59 @@ export default function SettingsView() {
       <SettingsSection
         title="Info"
         icon={Info}
-        summary={settings.showStats !== false ? `${sources.length} sources · how sync works` : 'How sync works'}
+        summary={settings.showStats !== false ? `${sources.length} sources` : 'Catalog sources'}
         accent="text-blue-400"
       >
-        <p className="text-sm text-gray-400 mb-3">
-          Edit the Google Sheet, then tap Sync Data. Games, glossary, generator banks, and Audio (SFX / Track)
-          refresh here. To Play, Favorites, Played, custom sets, and hidden SFX pads stay on this device.
-        </p>
-        <p className="text-xs text-gray-500 mb-3">
-          Audio credits live on the Audio tab (credit, creditUrl). SFX icons use the icon column (drum, bell-ring,
-          or an emoji like 🥁). Tracks use the tags column only — no genre column
-          (Pop, 80s, Underscore — comma or pipe separated), and you can also tag on this device in Music.
-          Game and glossary photos use the image column (Drive share link, Anyone with the link). Audio
-          url must be a Drive file share link (not a folder), Anyone with the link → Viewer, under 25MB.
-          Improv Jam → Update tabs adds missing columns (tags, image,
-          Generator group) and creates the Icons and Banks tabs without overwriting rows.
-        </p>
-        <p className="text-xs text-gray-500 mb-3">
-          Generator categories live on the Banks tab: set group to Ask-for, Skill Building, or Both, and
-          icon to a keyword from the Icons tab (footprints, drum, sparkles) or any emoji. Leave Generator
-          group blank to use the Banks value; fill a row to override that category.
-        </p>
         <p className="text-xs text-gray-500 mb-3">
           {lastSynced ? `Last synced ${new Date(lastSynced).toLocaleString()}` : 'Not synced yet'}
           {settings.showStats !== false
             ? ` · ${sources.length} source${sources.length === 1 ? '' : 's'}`
             : ''}
         </p>
+        <p className="text-xs text-gray-500 mb-3">
+          Encyclopedia and Learn Improv content is used with attribution. Learn Improv is CC BY-SA 4.0.
+        </p>
+        <div className="mb-4 pb-3 border-b border-gray-800">
+          <a
+            href={INTAKE_FORM_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center min-h-11 text-sm font-bold text-blue-400 hover:text-blue-300"
+          >
+            Submit to the catalog
+            <ExternalLink className="w-3.5 h-3.5 ml-1.5 opacity-70" />
+          </a>
+          <p className="text-xs text-gray-500 leading-snug">
+            Games, terms, SFX, music, or suggestions. Google sign-in is required to submit.
+          </p>
+        </div>
         <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2 flex items-center gap-1.5">
           <BookOpen className="w-3.5 h-3.5" />
           Sources
         </h3>
-        <p className="text-xs text-gray-500 mb-2">Edit URLs in the Google Sheet Sources tab, then sync.</p>
         {sources.length ? (
           <ul className="space-y-2">
             {sources.map((source) => (
-              <li key={source.id} className="text-xs text-gray-300">
-                <span className="font-semibold text-gray-100">{source.name}</span>
+              <li key={source.id || source.name} className="text-xs text-gray-300">
                 {source.url ? (
-                  <>
-                    {' · '}
-                    <a href={source.url} target="_blank" rel="noopener noreferrer" className="text-blue-400 break-all">
-                      {source.url}
-                    </a>
-                  </>
+                  <a
+                    href={source.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center font-semibold text-blue-400 hover:text-blue-300"
+                  >
+                    {source.name || 'Open source'}
+                    <ExternalLink className="w-3 h-3 ml-1 opacity-70" />
+                  </a>
                 ) : (
-                  <span className="text-gray-500"> · add a link in the sheet</span>
+                  <span className="font-semibold text-gray-100">{source.name}</span>
                 )}
                 {source.note ? <p className="text-gray-500 mt-0.5">{source.note}</p> : null}
               </li>
             ))}
           </ul>
         ) : (
-          <p className="text-xs text-gray-500">No sources yet. Sync the sheet or run Populate catalog.</p>
+          <p className="text-xs text-gray-500">No sources yet. Sync the catalog.</p>
         )}
       </SettingsSection>
 

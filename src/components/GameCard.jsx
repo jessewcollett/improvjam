@@ -8,6 +8,7 @@ import {
   ChevronRight,
   CheckSquare,
   Square,
+  ExternalLink,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore } from '../store/useAppStore.js';
@@ -15,6 +16,7 @@ import { categoryClass } from '../lib/categoryStyles.js';
 import { splitList } from '../lib/generator.js';
 import CatalogImage from './CatalogImage.jsx';
 import { ItemSource } from './SourceCitation.jsx';
+import { trustedSourceUrl } from '../lib/sheets.js';
 
 function iconClass(active, on) {
   return `flex items-center justify-center w-9 h-9 rounded-lg shrink-0 ${
@@ -37,6 +39,7 @@ export default function GameCard({ game, onCategoryClick }) {
   const tags = splitList(game.tags);
   const lifeSkills = splitList(game.lifeSkills);
   const visibleTags = tags.slice(0, expanded ? tags.length : 2);
+  const originalHref = trustedSourceUrl(game, sources);
 
   const customSetMenu = (
     <div className="absolute top-full right-0 mt-1 w-52 bg-[#121212] border border-gray-700 rounded-xl shadow-2xl overflow-hidden z-20">
@@ -179,6 +182,41 @@ export default function GameCard({ game, onCategoryClick }) {
               )}
 
               <p className="text-sm text-gray-300 leading-relaxed mb-2">{game.description}</p>
+              {[
+                ['Setup', game.setup],
+                ['How to play', game.howToPlay],
+                ['Gimmicks', game.gimmicks],
+              ].map(([label, text]) => (
+                text ? (
+                  <div key={label} className="mb-2">
+                    <p className="text-2xs font-bold uppercase tracking-wider text-gray-500 mb-0.5">{label}</p>
+                    <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-wrap">{text}</p>
+                  </div>
+                ) : null
+              ))}
+              {game.synonyms?.length ? (
+                <p className="text-sm text-gray-400 mb-2">
+                  <span className="text-2xs font-bold uppercase tracking-wider text-gray-500 mr-1">Also called</span>
+                  {game.synonyms.join(', ')}
+                </p>
+              ) : null}
+              {game.variations?.length ? (
+                <p className="text-sm text-gray-400 mb-2">
+                  <span className="text-2xs font-bold uppercase tracking-wider text-gray-500 mr-1">Variations</span>
+                  {game.variations.join(', ')}
+                </p>
+              ) : null}
+              {originalHref ? (
+                <a
+                  href={originalHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center text-2xs text-blue-400 mb-2 min-h-9"
+                >
+                  Open original
+                  <ExternalLink className="w-3 h-3 ml-1 opacity-70" />
+                </a>
+              ) : null}
               <ItemSource item={game} sources={sources} />
             </div>
           </motion.div>

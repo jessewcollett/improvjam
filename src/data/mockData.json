@@ -35567,13 +35567,19 @@
       "id": "src-jam-terms",
       "name": "Improv Jam Terms",
       "url": "",
-      "note": "Teaching notes from Improv-Terms.pdf — essentials, games, and pitfalls used in rehearsal. Add a public URL here if you post the PDF."
+      "note": "Teaching notes from Improv-Terms.pdf — essentials, games, and pitfalls used in rehearsal."
     },
     {
       "id": "src-encyclopedia",
       "name": "Improv Encyclopedia",
       "url": "https://improvencyclopedia.org/Download.html",
       "note": "Version 2.0.6 catalog entries. Free to use with attribution to improvencyclopedia.org."
+    },
+    {
+      "id": "src-learnimprov",
+      "name": "Learn Improv",
+      "url": "https://www.learnimprov.com/",
+      "note": "CC BY-SA 4.0. https://www.learnimprov.com/about/legal/"
     }
   ],
   "audio": []

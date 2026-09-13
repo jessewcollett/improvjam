@@ -4,14 +4,46 @@ import { playbackUrl } from './mediaUrl.js';
 import { sheetAudioTags } from './music.js';
 
 export const SHEETS_URL = import.meta.env.VITE_SHEETS_URL || '';
+export const INTAKE_FORM_URL =
+  'https://docs.google.com/forms/d/e/1FAIpQLScoQ1oUaXuDKDReAzZE4l105L7QyT-AC_GrMiF-XGQQAL7ghg/viewform';
+
+export const ATTRIBUTION_SOURCE_IDS = ['src-jam-terms', 'src-encyclopedia', 'src-learnimprov'];
+
+const DEFAULT_ATTRIBUTION_SOURCES = [
+  {
+    id: 'src-jam-terms',
+    name: 'Improv Jam Terms',
+    url: '',
+    note: 'Teaching notes used in rehearsal.',
+  },
+  {
+    id: 'src-encyclopedia',
+    name: 'Improv Encyclopedia',
+    url: 'https://improvencyclopedia.org/Download.html',
+    note: 'Version 2.0.6 catalog entries. Free to use with attribution to improvencyclopedia.org.',
+  },
+  {
+    id: 'src-learnimprov',
+    name: 'Learn Improv',
+    url: 'https://www.learnimprov.com/',
+    note: 'CC BY-SA 4.0. https://www.learnimprov.com/about/legal/',
+  },
+];
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
 function isEnabled(value) {
+  if (value === false || value === 0) return false;
   const raw = String(value ?? '').trim().toLowerCase();
-  return raw === '' || raw === 'true' || raw === 'yes' || raw === '1';
+  if (raw === 'false' || raw === 'no' || raw === '0' || raw === 'off') return false;
+  return true;
+}
+
+function keepActive(row) {
+  if (!row) return false;
+  return isEnabled(row.active ?? row.enabled);
 }
 
 function normalizeKind(value) {
@@ -35,7 +67,7 @@ export function normalizeAudio(row) {
     creditUrl: String(row?.creditUrl || row?.crediturl || '').trim(),
     notes: String(row?.notes || '').trim(),
     tags: sheetAudioTags(row),
-    enabled: isEnabled(row?.enabled),
+    enabled: isEnabled(row?.active ?? row?.enabled),
   };
 }
 
@@ -50,6 +82,13 @@ function normalizeGame(game) {
     sourceIds: splitList(game?.sourceIds),
     image: String(game?.image || '').trim(),
     imageSrc: playbackUrl(game?.image),
+    setup: String(game?.setup || '').trim(),
+    howToPlay: String(game?.howToPlay || '').trim(),
+    gimmicks: String(game?.gimmicks || '').trim(),
+    variations: splitList(game?.variations),
+    synonyms: splitList(game?.synonyms),
+    relatedIds: splitList(game?.relatedIds),
+    sourceUrl: String(game?.sourceUrl || '').trim(),
   };
 }
 
@@ -62,6 +101,8 @@ function normalizeTerm(term) {
     sourceIds: splitList(term?.sourceIds),
     image: String(term?.image || '').trim(),
     imageSrc: playbackUrl(term?.image),
+    sourceUrl: String(term?.sourceUrl || '').trim(),
+    definitions: String(term?.definitions || '').trim(),
   };
 }
 
@@ -101,20 +142,63 @@ function normalizeIconRow(row) {
   };
 }
 
+function hrefOrEmpty(value) {
+  const raw = String(value || '').trim();
+  if (!raw || !/^https?:\/\//i.test(raw)) return '';
+  return raw;
+}
+
+function normalizeSource(row) {
+  const id = String(row?.id || '').trim();
+  if (!id) return null;
+  return {
+    id,
+    name: String(row?.name || id).trim(),
+    url: hrefOrEmpty(row?.url),
+    note: String(row?.note || '').trim(),
+    active: isEnabled(row?.active ?? row?.enabled),
+  };
+}
+
+function mergeCatalogSources(primary, fallbackSources) {
+  const byId = new Map();
+  asArray(primary).forEach((row) => {
+    const src = normalizeSource(row);
+    if (src) byId.set(src.id, src);
+  });
+  [...asArray(fallbackSources), ...DEFAULT_ATTRIBUTION_SOURCES].forEach((row) => {
+    const src = normalizeSource(row);
+    if (src && !byId.has(src.id) && ATTRIBUTION_SOURCE_IDS.includes(src.id)) {
+      byId.set(src.id, { ...src, active: true });
+    }
+  });
+  return [...byId.values()]
+    .filter((src) => src.active || ATTRIBUTION_SOURCE_IDS.includes(src.id))
+    .sort((a, b) => {
+      const ai = ATTRIBUTION_SOURCE_IDS.indexOf(a.id);
+      const bi = ATTRIBUTION_SOURCE_IDS.indexOf(b.id);
+      if (ai === -1 && bi === -1) return String(a.name).localeCompare(String(b.name));
+      if (ai === -1) return 1;
+      if (bi === -1) return -1;
+      return ai - bi;
+    });
+}
+
 export function normalizePayload(raw) {
   if (!raw || typeof raw !== 'object') {
     return {
       ...fallback,
-      games: asArray(fallback.games).map(normalizeGame),
-      terms: withTermIds(fallback.terms).map(normalizeTerm),
+      games: asArray(fallback.games).map(normalizeGame).filter(keepActive),
+      terms: withTermIds(fallback.terms).map(normalizeTerm).filter(keepActive),
       generator: asArray(fallback.generator).length
-        ? fallback.generator.map(normalizeGeneratorRow)
+        ? fallback.generator.map(normalizeGeneratorRow).filter(keepActive)
         : rowsFromPrompts(fallback.prompts),
-      banks: asArray(fallback.banks).map(normalizeBank).filter(Boolean).length
-        ? asArray(fallback.banks).map(normalizeBank).filter(Boolean)
+      banks: asArray(fallback.banks).map(normalizeBank).filter(Boolean).filter(keepActive).length
+        ? asArray(fallback.banks).map(normalizeBank).filter(Boolean).filter(keepActive)
         : defaultBanks(),
-      icons: asArray(fallback.icons).map(normalizeIconRow).filter(Boolean),
-      audio: asArray(fallback.audio).map(normalizeAudio).filter(Boolean),
+      icons: asArray(fallback.icons).map(normalizeIconRow).filter(Boolean).filter(keepActive),
+      sources: mergeCatalogSources(fallback.sources, fallback.sources),
+      audio: asArray(fallback.audio).map(normalizeAudio).filter(Boolean).filter((row) => row.enabled),
     };
   }
 
@@ -123,19 +207,19 @@ export function normalizePayload(raw) {
     : asArray(fallback.generator).length
       ? fallback.generator
       : rowsFromPrompts(raw.prompts || fallback.prompts)
-  ).map(normalizeGeneratorRow);
+  ).map(normalizeGeneratorRow).filter(keepActive);
 
-  const banks = asArray(raw.banks).map(normalizeBank).filter(Boolean);
+  const banks = asArray(raw.banks).map(normalizeBank).filter(Boolean).filter(keepActive);
 
   return {
-    games: (asArray(raw.games).length ? raw.games : fallback.games).map(normalizeGame),
-    terms: withTermIds(asArray(raw.terms).length ? raw.terms : fallback.terms).map(normalizeTerm),
-    sources: asArray(raw.sources).length ? raw.sources : fallback.sources,
+    games: (asArray(raw.games).length ? raw.games : fallback.games).map(normalizeGame).filter(keepActive),
+    terms: withTermIds(asArray(raw.terms).length ? raw.terms : fallback.terms).map(normalizeTerm).filter(keepActive),
+    sources: mergeCatalogSources(asArray(raw.sources).length ? raw.sources : fallback.sources, fallback.sources),
     generator,
     banks: banks.length ? banks : defaultBanks(),
-    icons: asArray(raw.icons).map(normalizeIconRow).filter(Boolean),
+    icons: asArray(raw.icons).map(normalizeIconRow).filter(Boolean).filter(keepActive),
     prompts: promptsFromRows(generator, fallback.prompts),
-    audio: asArray(raw.audio).map(normalizeAudio).filter(Boolean),
+    audio: asArray(raw.audio).map(normalizeAudio).filter(Boolean).filter((row) => row.enabled),
   };
 }
 
@@ -184,18 +268,67 @@ export function sourceById(sources, id) {
   return asArray(sources).find((s) => s.id === id);
 }
 
+function urlHost(value) {
+  try {
+    return new URL(value).hostname.replace(/^www\./, '').toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+export function urlBelongsToSource(url, source) {
+  const href = hrefOrEmpty(url);
+  if (!href || !source) return false;
+  const hrefHost = urlHost(href);
+  const sourceHost = urlHost(source.url);
+  if (!hrefHost) return false;
+  if (sourceHost && (hrefHost === sourceHost || hrefHost.endsWith(`.${sourceHost}`))) return true;
+  if (source.id === 'src-learnimprov' && hrefHost.endsWith('learnimprov.com')) return true;
+  if (source.id === 'src-encyclopedia' && hrefHost.endsWith('improvencyclopedia.org')) return true;
+  return false;
+}
+
+export function itemSourceLinks(item, sources) {
+  const catalog = asArray(sources);
+  const pageUrl = hrefOrEmpty(item?.sourceUrl);
+  const ids = splitList(item?.sourceIds);
+  const seen = new Set();
+  const links = [];
+
+  ids.forEach((id) => {
+    if (seen.has(id)) return;
+    seen.add(id);
+    const src = sourceById(catalog, id);
+    const name = src?.name || id;
+    let href = '';
+    if (pageUrl && src && urlBelongsToSource(pageUrl, src)) href = pageUrl;
+    else if (src?.url) href = src.url;
+    links.push({ id, name, href });
+  });
+
+  return links;
+}
+
+export function trustedSourceUrl(item, sources) {
+  const pageUrl = hrefOrEmpty(item?.sourceUrl);
+  if (!pageUrl) return '';
+  const ids = splitList(item?.sourceIds);
+  const matchesSource = ids.some((id) => urlBelongsToSource(pageUrl, sourceById(sources, id)));
+  return matchesSource ? pageUrl : '';
+}
+
 export function sourceLabel(item, sources) {
   if (item.source) return item.source;
-  const ids = splitList(item.sourceIds);
-  const names = ids.map((id) => sourceById(sources, id)?.name).filter(Boolean);
+  const names = itemSourceLinks(item, sources).map((src) => src.name).filter(Boolean);
   return names.join(' · ') || 'Unknown source';
 }
 
 export function sourceHref(item, sources) {
-  const ids = splitList(item.sourceIds);
-  for (const id of ids) {
-    const href = sourceById(sources, id)?.url;
-    if (href) return href;
+  const trusted = trustedSourceUrl(item, sources);
+  if (trusted) return trusted;
+  const links = itemSourceLinks(item, sources);
+  for (const link of links) {
+    if (link.href) return link.href;
   }
   return '';
 }

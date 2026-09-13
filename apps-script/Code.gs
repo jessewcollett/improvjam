@@ -14,14 +14,18 @@ var TAB_GENERATOR = 'Generator';
 var TAB_AUDIO = 'Audio';
 var TAB_BANKS = 'Banks';
 var TAB_ICONS = 'Icons';
+var TAB_HELP = 'Help';
 
-var AUDIO_HEADERS = ['id', 'name', 'kind', 'url', 'icon', 'credit', 'creditUrl', 'notes', 'enabled', 'tags'];
-var SOURCES_HEADERS = ['id', 'name', 'url', 'note'];
-var GAMES_HEADERS = ['id', 'name', 'category', 'tags', 'lifeSkills', 'description', 'sourceIds', 'source', 'image'];
-var TERMS_HEADERS = ['id', 'term', 'category', 'definition', 'sourceIds', 'image'];
-var GENERATOR_HEADERS = ['id', 'categories', 'text', 'extra', 'group'];
-var BANKS_HEADERS = ['id', 'label', 'group', 'icon'];
-var ICONS_HEADERS = ['id', 'name', 'kind', 'sample'];
+var AUDIO_HEADERS = ['id', 'name', 'kind', 'url', 'icon', 'credit', 'creditUrl', 'notes', 'active', 'tags'];
+var SOURCES_HEADERS = ['id', 'name', 'url', 'note', 'active'];
+var GAMES_HEADERS = [
+  'id', 'name', 'category', 'tags', 'lifeSkills', 'description', 'sourceIds', 'source', 'image',
+  'setup', 'howToPlay', 'gimmicks', 'variations', 'synonyms', 'relatedIds', 'sourceUrl', 'active',
+];
+var TERMS_HEADERS = ['id', 'term', 'category', 'definition', 'sourceIds', 'image', 'sourceUrl', 'definitions', 'active'];
+var GENERATOR_HEADERS = ['id', 'categories', 'text', 'extra', 'group', 'active'];
+var BANKS_HEADERS = ['id', 'label', 'group', 'icon', 'active'];
+var ICONS_HEADERS = ['id', 'name', 'kind', 'sample', 'active'];
 
 function tabSchemas_() {
   return [
@@ -53,6 +57,10 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Improv Jam')
     .addItem('Update tabs', 'updateTabs')
+    .addItem('Create intake form', 'createIntakeForm')
+    .addItem('Set media folder', 'setMediaFolder')
+    .addSeparator()
+    .addItem('Apply Learn Improv patches', 'applyLearnImprovPatches')
     .addItem('Populate catalog (overwrite tabs)', 'populateCatalog')
     .addToUi();
 }
@@ -65,13 +73,16 @@ function doGet() {
 }
 
 function updateTabs() {
-  var results = ensureAllTabs_(SpreadsheetApp.getActive());
+  var ss = SpreadsheetApp.getActive();
+  var results = ensureAllTabs_(ss);
+  results.push(ensureKnownSources_(ss));
+  results.push(ensureHelpTab_(ss));
   var lines = results.map(function (r) {
     if (r.created) return r.tab + ': created' + (r.added.length ? ' (' + r.added.join(', ') + ')' : '');
-    if (r.added.length) return r.tab + ': added ' + r.added.join(', ');
+    if (r.added && r.added.length) return r.tab + ': added ' + r.added.join(', ');
     return r.tab + ': already current';
   });
-  SpreadsheetApp.getUi().alert('Update tabs', lines.join('\n') + '\n\nExisting rows were not overwritten.', SpreadsheetApp.getUi().ButtonSet.OK);
+  SpreadsheetApp.getUi().alert('Update tabs', lines.join('\n') + '\n\nExisting catalog rows were not overwritten.', SpreadsheetApp.getUi().ButtonSet.OK);
   return results;
 }
 
@@ -112,6 +123,10 @@ function canonHeader_(name) {
     crediturl: 'creditUrl',
     lifeskills: 'lifeSkills',
     sourceids: 'sourceIds',
+    howtoplay: 'howToPlay',
+    relatedids: 'relatedIds',
+    sourceurl: 'sourceUrl',
+    enabled: 'active',
     section: 'group',
     grouping: 'group',
   };
@@ -176,6 +191,47 @@ function finishTabSetup_(sheet, tab) {
     seedIconsIfEmpty_(sheet);
     ensureIconKindValidation_(sheet);
   }
+  ensureActiveCheckboxes_(sheet);
+}
+
+function ensureActiveCheckboxes_(sheet) {
+  var last = Math.max(sheet.getLastColumn(), 1);
+  var headers = sheet.getRange(1, 1, 1, last).getValues()[0];
+  var col = headerIndex_(headers, 'active') + 1;
+  if (col < 1) return;
+  var idCol = headerIndex_(headers, 'id') + 1;
+  if (idCol < 1) idCol = headerIndex_(headers, 'term') + 1;
+  var dataRows = Math.max(sheet.getLastRow() - 1, 0);
+  if (dataRows < 1) return;
+  var rule = SpreadsheetApp.newDataValidation()
+    .requireCheckbox()
+    .setAllowInvalid(true)
+    .setHelpText('Uncheck to hide this row in the app without deleting it.')
+    .build();
+  var range = sheet.getRange(2, col, dataRows, 1);
+  var vals = range.getValues();
+  var ids = idCol > 0 ? sheet.getRange(2, idCol, dataRows, 1).getValues() : [];
+  var i;
+  var lastFilled = 0;
+  for (i = 0; i < vals.length; i++) {
+    var hasRow = String((ids[i] && ids[i][0]) || '').trim();
+    if (!hasRow) {
+      vals[i][0] = '';
+      continue;
+    }
+    lastFilled = i + 1;
+    var raw = vals[i][0];
+    if (raw === false || raw === 'FALSE' || String(raw).toLowerCase() === 'false' || raw === 0) {
+      vals[i][0] = false;
+    } else {
+      vals[i][0] = true;
+    }
+  }
+  range.setValues(vals);
+  range.clearDataValidations();
+  if (lastFilled > 0) {
+    sheet.getRange(2, col, lastFilled, 1).setDataValidation(rule);
+  }
 }
 
 function ensureGroupValidation_(sheet) {
@@ -209,8 +265,13 @@ function ensureIconKindValidation_(sheet) {
 function seedIfEmpty_(sheet, headers, rows) {
   if (sheet.getLastRow() >= 2) return;
   if (!rows.length) return;
+  var padded = rows.map(function (row) {
+    var next = row.slice();
+    while (next.length < headers.length) next.push(headers[next.length] === 'active' ? true : '');
+    return next;
+  });
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-  sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
+  sheet.getRange(2, 1, padded.length, headers.length).setValues(padded);
   sheet.setFrozenRows(1);
 }
 
@@ -326,6 +387,183 @@ function seedAudioDefaults_(sheet) {
   ]);
 }
 
+function applyLearnImprovPatches() {
+  if (typeof LEARN_IMPROV_PATCHES === 'undefined') {
+    throw new Error('LearnImprovPatches.gs is missing. Push the apps-script folder with clasp.');
+  }
+  var ss = SpreadsheetApp.getActive();
+  ensureAllTabs_(ss);
+  ensureKnownSources_(ss);
+  upsertSource_(ss, typeof LEARN_IMPROV_SOURCE === 'undefined' ? {
+    id: 'src-learnimprov',
+    name: 'Learn Improv',
+    url: 'https://www.learnimprov.com/',
+    note: 'CC BY-SA 4.0. https://www.learnimprov.com/about/legal/',
+  } : LEARN_IMPROV_SOURCE);
+  var sheet = ss.getSheetByName(TAB_GAMES);
+  var last = Math.max(sheet.getLastColumn(), 1);
+  var headers = sheet.getRange(1, 1, 1, last).getValues()[0];
+  var updated = [];
+  var missing = [];
+  LEARN_IMPROV_PATCHES.forEach(function (patch) {
+    if (applyRowPatch_(sheet, headers, patch.id, patch)) updated.push(patch.id);
+    else missing.push(patch.id);
+  });
+  ensureActiveCheckboxes_(sheet);
+  var msg = 'Updated ' + updated.length + ' games.';
+  if (missing.length) msg += '\nNot found: ' + missing.join(', ');
+  SpreadsheetApp.getUi().alert('Learn Improv patches', msg, SpreadsheetApp.getUi().ButtonSet.OK);
+  return { updated: updated, missing: missing };
+}
+
+function knownAttributionSources_() {
+  return [
+    {
+      id: 'src-jam-terms',
+      name: 'Improv Jam Terms',
+      url: '',
+      note: 'Teaching notes from Improv-Terms.pdf — essentials, games, and pitfalls used in rehearsal.',
+    },
+    {
+      id: 'src-encyclopedia',
+      name: 'Improv Encyclopedia',
+      url: 'https://improvencyclopedia.org/Download.html',
+      note: 'Version 2.0.6 catalog entries. Free to use with attribution to improvencyclopedia.org.',
+    },
+    {
+      id: 'src-learnimprov',
+      name: 'Learn Improv',
+      url: 'https://www.learnimprov.com/',
+      note: 'CC BY-SA 4.0. https://www.learnimprov.com/about/legal/',
+    },
+  ];
+}
+
+function ensureKnownSources_(ss) {
+  ensureTabHeaders_(ss, TAB_SOURCES, SOURCES_HEADERS);
+  var added = [];
+  knownAttributionSources_().forEach(function (source) {
+    if (upsertSource_(ss, source)) added.push(source.id);
+  });
+  return { tab: TAB_SOURCES, created: false, added: added };
+}
+
+function helpTabRows_() {
+  return [
+    ['Topic', 'Details'],
+    ['Sync', 'Edit this Google Sheet, then tap Sync Data in the app. Games, glossary, generator banks, and Audio (SFX / Track) refresh on the device. To Play, Favorites, Played, custom sets, and hidden SFX pads stay on the device.'],
+    ['Audio credits', 'Credits live on the Audio tab (credit, creditUrl). SFX icons use the icon column (drum, bell-ring, or an emoji like 🥁).'],
+    ['Music tags', 'Tracks use the tags column only — no genre column (Pop, 80s, Underscore — comma or pipe separated). People can also tag on the device in Music.'],
+    ['Photos', 'Game and glossary photos use the image column (Drive share link, Anyone with the link).'],
+    ['Audio url', 'Must be a Drive file share link (not a folder), Anyone with the link → Viewer, under 25MB.'],
+    ['Update tabs', 'Improv Jam → Update tabs adds missing columns (tags, image, Generator group) and creates the Icons, Banks, and Help tabs without overwriting catalog rows.'],
+    ['Generator / Banks', 'Generator categories live on the Banks tab: set group to Ask-for, Skill Building, or Both, and icon to a keyword from the Icons tab (footprints, drum, sparkles) or any emoji. Leave Generator group blank to use the Banks value; fill a row to override that category.'],
+    ['sourceIds', 'Pipe-separated ids that match the Sources tab (src-encyclopedia, src-learnimprov, src-jam-terms). This is what the app uses to decide which sites a card should link to.'],
+    ['source', 'Display label only (for example "Improv Encyclopedia"). Not used for outbound links.'],
+    ['sourceUrl', 'Optional per-row page URL for that game or term. The app uses it only when the URL belongs to one of the row’s sourceIds (same site). A Learn Improv URL is ignored on an Encyclopedia-only or jam-only row.'],
+    ['Sources tab url', 'Homepage / attribution URL for a sourceId. Used when the row has no matching sourceUrl for that source.'],
+    ['Merging Learn Improv', 'Apply Learn Improv patches adds src-learnimprov and may set sourceUrl to the Learn Improv page. Existing Improv Encyclopedia page URLs are preserved. Encyclopedia and jam source rows are not removed.'],
+  ];
+}
+
+function ensureHelpTab_(ss) {
+  var sheet = ss.getSheetByName(TAB_HELP);
+  var created = false;
+  if (!sheet) {
+    sheet = ss.insertSheet(TAB_HELP);
+    created = true;
+  }
+  var rows = helpTabRows_();
+  sheet.clear();
+  sheet.getRange(1, 1, rows.length, 2).setValues(rows);
+  sheet.setFrozenRows(1);
+  sheet.setColumnWidth(1, 200);
+  sheet.setColumnWidth(2, 760);
+  sheet.getRange(1, 1, 1, 2).setFontWeight('bold');
+  sheet.setTabColor('#1d4ed8');
+  return { tab: TAB_HELP, created: created, added: created ? ['documentation'] : [] };
+}
+
+function upsertSource_(ss, source) {
+  var sheet = ss.getSheetByName(TAB_SOURCES);
+  var last = Math.max(sheet.getLastColumn(), 1);
+  var headers = sheet.getRange(1, 1, 1, last).getValues()[0];
+  var idCol = headerIndex_(headers, 'id') + 1;
+  var values = sheet.getDataRange().getValues();
+  var row = -1;
+  var created = false;
+  var r;
+  for (r = 1; r < values.length; r++) {
+    if (String(values[r][idCol - 1]) === source.id) {
+      row = r + 1;
+      break;
+    }
+  }
+  if (row < 0) {
+    row = sheet.getLastRow() + 1;
+    sheet.getRange(row, idCol).setValue(source.id);
+    created = true;
+  }
+  ['name', 'url', 'note'].forEach(function (key) {
+    var col = headerIndex_(headers, key) + 1;
+    if (col < 1 || !source[key]) return;
+    var current = String(sheet.getRange(row, col).getValue() || '').trim();
+    if (!current) sheet.getRange(row, col).setValue(source[key]);
+  });
+  var activeCol = headerIndex_(headers, 'active') + 1;
+  if (activeCol > 0 && created) sheet.getRange(row, activeCol).setValue(true);
+  return created;
+}
+
+function applyRowPatch_(sheet, headers, id, patch) {
+  var idCol = headerIndex_(headers, 'id');
+  if (idCol < 0) return false;
+  var values = sheet.getDataRange().getValues();
+  var r;
+  for (r = 1; r < values.length; r++) {
+    if (String(values[r][idCol]) !== id) continue;
+    Object.keys(patch).forEach(function (key) {
+      if (key === 'id') return;
+      var col = headerIndex_(headers, key);
+      if (col < 0) return;
+      if (canonHeader_(key) === 'sourceUrl' && shouldKeepExistingSourceUrl_(values[r][col], patch[key])) {
+        return;
+      }
+      sheet.getRange(r + 1, col + 1).setValue(patchCellValue_(key, patch[key]));
+    });
+    return true;
+  }
+  return false;
+}
+
+function hostOfUrl_(value) {
+  var raw = String(value == null ? '' : value).trim();
+  var match = raw.match(/^https?:\/\/([^/]+)/i);
+  if (!match) return '';
+  return String(match[1] || '').replace(/^www\./i, '').toLowerCase();
+}
+
+function shouldKeepExistingSourceUrl_(existing, next) {
+  var currentHost = hostOfUrl_(existing);
+  var nextHost = hostOfUrl_(next);
+  if (!currentHost || !nextHost || currentHost === nextHost) return false;
+  return currentHost.indexOf('improvencyclopedia.org') >= 0 && nextHost.indexOf('learnimprov.com') >= 0;
+}
+
+function patchCellValue_(key, value) {
+  var header = canonHeader_(key);
+  if (header === 'active') return isActiveValue_(value);
+  if (value == null) return '';
+  if (header === 'sourceIds' || header === 'tags' || header === 'lifeSkills' || header === 'relatedIds') {
+    if (Object.prototype.toString.call(value) === '[object Array]') {
+      return value.map(function (v) { return String(v == null ? '' : v).trim(); }).filter(Boolean).join('|');
+    }
+    return String(value);
+  }
+  if (Object.prototype.toString.call(value) === '[object Array]') return String(value);
+  return value;
+}
+
 function populateCatalog() {
   if (typeof CATALOG_DATA === 'undefined') {
     throw new Error('CatalogData.gs is missing. Push the apps-script folder with clasp.');
@@ -334,12 +572,28 @@ function populateCatalog() {
   ensureAllTabs_(ss);
   var gameImages = imageMap_(ss, TAB_GAMES, 'id');
   var termImages = imageMap_(ss, TAB_TERMS, 'id');
-  writeRows_(ss, TAB_SOURCES, ['id', 'name', 'url', 'note'], CATALOG_DATA.sources.map(function (s) {
-    return [s.id, s.name, s.url || '', s.note || ''];
+  var sourceActive = activeMap_(ss, TAB_SOURCES);
+  var gameActive = activeMap_(ss, TAB_GAMES);
+  var termActive = activeMap_(ss, TAB_TERMS);
+  var generatorActive = activeMap_(ss, TAB_GENERATOR);
+  var gameSetup = fieldMap_(ss, TAB_GAMES, 'id', 'setup');
+  var gameHow = fieldMap_(ss, TAB_GAMES, 'id', 'howToPlay');
+  var gameGimmicks = fieldMap_(ss, TAB_GAMES, 'id', 'gimmicks');
+  var gameVariations = fieldMap_(ss, TAB_GAMES, 'id', 'variations');
+  var gameSynonyms = fieldMap_(ss, TAB_GAMES, 'id', 'synonyms');
+  var gameRelated = fieldMap_(ss, TAB_GAMES, 'id', 'relatedIds');
+  var gameSourceUrl = fieldMap_(ss, TAB_GAMES, 'id', 'sourceUrl');
+  var termSourceUrl = fieldMap_(ss, TAB_TERMS, 'id', 'sourceUrl');
+  var termDefinitions = fieldMap_(ss, TAB_TERMS, 'id', 'definitions');
+  writeRows_(ss, TAB_SOURCES, SOURCES_HEADERS, CATALOG_DATA.sources.map(function (s) {
+    return [s.id, s.name, s.url || '', s.note || '', activeCell_(sourceActive, s.id, s.active)];
   }));
-  writeRows_(ss, TAB_GAMES, ['id', 'name', 'category', 'tags', 'lifeSkills', 'description', 'sourceIds', 'source', 'image'], CATALOG_DATA.games.map(function (g) {
+  ensureKnownSources_(ss);
+  ensureHelpTab_(ss);
+  writeRows_(ss, TAB_GAMES, GAMES_HEADERS, CATALOG_DATA.games.map(function (g) {
+    var id = g.id;
     return [
-      g.id,
+      id,
       g.name,
       g.category,
       (g.tags || []).join('|'),
@@ -347,20 +601,46 @@ function populateCatalog() {
       g.description,
       (g.sourceIds || []).join('|'),
       g.source || '',
-      g.image || gameImages[g.id] || '',
+      g.image || gameImages[id] || '',
+      g.setup || gameSetup[id] || '',
+      g.howToPlay || gameHow[id] || '',
+      g.gimmicks || gameGimmicks[id] || '',
+      g.variations || gameVariations[id] || '',
+      g.synonyms || gameSynonyms[id] || '',
+      g.relatedIds || gameRelated[id] || '',
+      g.sourceUrl || gameSourceUrl[id] || '',
+      activeCell_(gameActive, id, g.active),
     ];
   }));
-  writeRows_(ss, TAB_TERMS, ['id', 'term', 'category', 'definition', 'sourceIds', 'image'], CATALOG_DATA.terms.map(function (t) {
+  writeRows_(ss, TAB_TERMS, TERMS_HEADERS, CATALOG_DATA.terms.map(function (t) {
     var id = t.id || '';
-    return [id, t.term, t.category, t.definition, (t.sourceIds || []).join('|'), t.image || termImages[id] || ''];
+    return [
+      id,
+      t.term,
+      t.category,
+      t.definition,
+      (t.sourceIds || []).join('|'),
+      t.image || termImages[id] || '',
+      t.sourceUrl || termSourceUrl[id] || '',
+      t.definitions || termDefinitions[id] || '',
+      activeCell_(termActive, id, t.active),
+    ];
   }));
   var generatorGroups = fieldMap_(ss, TAB_GENERATOR, 'id', 'group');
   var generator = CATALOG_DATA.generator || [];
-  writeRows_(ss, TAB_GENERATOR, ['id', 'categories', 'text', 'extra', 'group'], generator.map(function (row) {
+  writeRows_(ss, TAB_GENERATOR, GENERATOR_HEADERS, generator.map(function (row) {
     var id = row.id || '';
     var cats = formatCats_(row.categories || row.category || '');
-    return [id, cats, row.text || '', row.extra || '', row.group || generatorGroups[id] || defaultGeneratorGroup_(cats)];
+    return [
+      id,
+      cats,
+      row.text || '',
+      row.extra || '',
+      row.group || generatorGroups[id] || defaultGeneratorGroup_(cats),
+      activeCell_(generatorActive, id, row.active),
+    ];
   }));
+  ensureAllTabs_(ss);
 }
 
 function normalizeGenerator_(row) {
@@ -524,13 +804,15 @@ function objectsFrom_(ss, name) {
   var values = sheet.getDataRange().getValues();
   if (values.length < 2) return [];
   var headers = values[0].map(function (h) { return canonHeader_(String(h).trim()); });
-  return values.slice(1).filter(function (row) { return row.join('').trim(); }).map(function (row) {
+  return values.slice(1).map(function (row) {
     var obj = {};
     headers.forEach(function (h, i) {
       if (!h) return;
       obj[h] = row[i];
     });
     return obj;
+  }).filter(function (obj) {
+    return String(obj.id || obj.term || obj.name || obj.text || '').trim();
   });
 }
 
@@ -548,6 +830,29 @@ function fieldMap_(ss, tab, idKey, field) {
     if (id && value) map[id] = value;
   });
   return map;
+}
+
+function isActiveValue_(raw) {
+  if (raw === false || raw === 0) return false;
+  var text = String(raw == null ? '' : raw).trim().toLowerCase();
+  if (text === 'false' || text === 'no' || text === '0' || text === 'off') return false;
+  return true;
+}
+
+function activeMap_(ss, tab) {
+  var map = {};
+  objectsFrom_(ss, tab).forEach(function (row) {
+    var id = String((row && row.id) || '');
+    if (!id) return;
+    var raw = row.active != null && row.active !== '' ? row.active : row.enabled;
+    map[id] = isActiveValue_(raw);
+  });
+  return map;
+}
+
+function activeCell_(map, id, fallback) {
+  if (Object.prototype.hasOwnProperty.call(map, id)) return map[id];
+  return isActiveValue_(fallback == null ? true : fallback);
 }
 
 function imageMap_(ss, tab, idKey) {
