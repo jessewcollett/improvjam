@@ -69,6 +69,14 @@ body {
   padding-bottom: var(--bottom-nav-height, calc(6.5rem + env(safe-area-inset-bottom, 16px)));
 }
 
+/* iOS Safari zooms the page when a focused field is under 16px. Use px so rem
+   (from Dynamic Type / -apple-system-body) cannot drop below that threshold. */
+input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='hidden']):not([type='button']):not([type='submit']):not([type='reset']),
+textarea,
+select {
+  font-size: max(16px, 1em);
+}
+
 input[type='search']::-webkit-search-cancel-button,
 input[type='search']::-webkit-search-decoration {
   -webkit-appearance: none;
