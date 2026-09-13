@@ -6,10 +6,19 @@ import {
   Info,
   Minus,
   Monitor,
+  LayoutGrid,
   Palette,
   Plus,
   RefreshCw,
 } from 'lucide-react';
+import ReorderList from './ReorderList.jsx';
+import {
+  DEFAULT_NAV_ORDER,
+  DEFAULT_TOOL_ORDER,
+  NAV_TABS,
+  TOOL_TABS,
+  tabsInOrder,
+} from '../lib/nav.js';
 import { canWakeLock } from '../lib/useWakeLock.js';
 import {
   clampFadeSeconds,
@@ -221,6 +230,28 @@ export default function SettingsView() {
           hint="Less animation on cards, tabs, and page changes."
           checked={Boolean(settings.reducedMotion)}
           onChange={(reducedMotion) => updateSettings({ reducedMotion })}
+        />
+      </SettingsSection>
+
+      <SettingsSection
+        title="Layout"
+        icon={LayoutGrid}
+        summary="Tab and Tools order"
+        accent="text-blue-300"
+      >
+        <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Bottom tabs</p>
+        <p className="text-xs text-gray-500 mb-2">Drag the handle or use the arrows. First launch opens Generator.</p>
+        <ReorderList
+          items={tabsInOrder(NAV_TABS, settings.navOrder)}
+          onOrder={(navOrder) => updateSettings({ navOrder })}
+          onReset={() => updateSettings({ navOrder: [...DEFAULT_NAV_ORDER] })}
+        />
+        <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 mt-4">Tools</p>
+        <p className="text-xs text-gray-500 mb-2">Order of SFX, Music, Timer, and the other jam tools.</p>
+        <ReorderList
+          items={tabsInOrder(TOOL_TABS, settings.toolOrder)}
+          onOrder={(toolOrder) => updateSettings({ toolOrder })}
+          onReset={() => updateSettings({ toolOrder: [...DEFAULT_TOOL_ORDER] })}
         />
       </SettingsSection>
 

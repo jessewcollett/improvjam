@@ -1,17 +1,12 @@
 import { useEffect, useRef } from 'react';
-import { Library, Dices, Wrench, ListTodo, Settings } from 'lucide-react';
 import { motion } from 'framer-motion';
-
-const items = [
-  { id: 'library', label: 'Library', icon: Library },
-  { id: 'generator', label: 'Generator', icon: Dices },
-  { id: 'tools', label: 'Tools', icon: Wrench },
-  { id: 'mysets', label: 'Sets', icon: ListTodo },
-  { id: 'settings', label: 'Settings', icon: Settings },
-];
+import { NAV_TABS, tabsInOrder } from '../lib/nav.js';
+import { useAppStore } from '../store/useAppStore.js';
 
 export default function BottomNav({ activeRoute, onChange }) {
   const navRef = useRef(null);
+  const navOrder = useAppStore((s) => s.settings.navOrder);
+  const items = tabsInOrder(NAV_TABS, navOrder);
 
   useEffect(() => {
     const el = navRef.current;

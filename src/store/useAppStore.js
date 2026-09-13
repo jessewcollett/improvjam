@@ -10,6 +10,13 @@ import {
   clampSfxSlotCount,
   clampPadColor,
 } from '../lib/sfxPad.js';
+import {
+  DEFAULT_NAV_ORDER,
+  DEFAULT_TOOL_ORDER,
+  clampNavId,
+  clampToolId,
+  mergeIdOrder,
+} from '../lib/nav.js';
 
 const bundled = normalizePayload(fallback);
 
@@ -41,7 +48,22 @@ export const defaultSettings = {
   showStats: true,
   whosUpCount: 1,
   librarySort: 'name',
+  lastRoute: 'generator',
+  lastTool: 'timer',
+  navOrder: [...DEFAULT_NAV_ORDER],
+  toolOrder: [...DEFAULT_TOOL_ORDER],
 };
+
+export function normalizeSettings(raw) {
+  const merged = { ...defaultSettings, ...(raw || {}) };
+  return {
+    ...merged,
+    navOrder: mergeIdOrder(merged.navOrder, DEFAULT_NAV_ORDER),
+    toolOrder: mergeIdOrder(merged.toolOrder, DEFAULT_TOOL_ORDER),
+    lastRoute: clampNavId(merged.lastRoute),
+    lastTool: clampToolId(merged.lastTool),
+  };
+}
 
 export const defaultGeneratorBanks = ['Locations', 'Relationships', 'Objects'];
 export const defaultGeneratorSkills = [];
@@ -339,7 +361,7 @@ export const useAppStore = create(
             ? normalizePayload(persisted.data)
             : current.data,
         lists: persisted?.lists || current.lists,
-        settings: { ...defaultSettings, ...(persisted?.settings || {}) },
+        settings: normalizeSettings(persisted?.settings),
         dismissedTipDate:
           typeof persisted?.dismissedTipDate === 'string' ? persisted.dismissedTipDate : current.dismissedTipDate,
         generatorBanks: Array.isArray(persisted?.generatorBanks)

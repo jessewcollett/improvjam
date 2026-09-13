@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Bell, Timer, Users, Shuffle, Lightbulb, Coins, Music, Minus, Plus, Square } from 'lucide-react';
+import { Bell, Timer, Users, Shuffle, Lightbulb, Coins, Minus, Plus, Square } from 'lucide-react';
+import { TOOL_TABS, tabsInOrder, clampToolId } from '../lib/nav.js';
 import { playCountIn, playPad } from '../lib/audio.js';
 import { mergeSfxPads, resolveDefaultPad, sheetTracks } from '../lib/sfxPad.js';
 import { useHoldDing } from '../lib/useHoldDing.js';
@@ -15,15 +16,6 @@ const PRESETS = [
   { label: '2m', seconds: 120 },
   { label: '3m', seconds: 180 },
   { label: '5m', seconds: 300 },
-];
-
-const TOOLS = [
-  { id: 'sfx', label: 'SFX', icon: Bell, accent: 'text-yellow-300' },
-  { id: 'music', label: 'Music', icon: Music, accent: 'text-fuchsia-300' },
-  { id: 'timer', label: 'Timer', icon: Timer, accent: 'text-cyan-300' },
-  { id: 'whosup', label: "Who's Up", icon: Users, accent: 'text-blue-300' },
-  { id: 'hat', label: 'Hat', icon: Lightbulb, accent: 'text-lime-300' },
-  { id: 'coin', label: 'Coin', icon: Coins, accent: 'text-amber-300' },
 ];
 
 const PICK_MIN = 1;
@@ -79,7 +71,7 @@ function PickCountChip({ count, onCount }) {
   );
 }
 
-export default function ToolsView() {
+export default function ToolsView({ active = true }) {
   const prompts = useAppStore((s) => s.data.prompts);
   const audioRows = useAppStore((s) => s.data.audio) || [];
   const settings = useAppStore((s) => s.settings);
@@ -93,8 +85,10 @@ export default function ToolsView() {
   const setSfxSlotColor = useAppStore((s) => s.setSfxSlotColor);
   const setSfxIconOverride = useAppStore((s) => s.setSfxIconOverride);
   const moveSfxSlot = useAppStore((s) => s.moveSfxSlot);
-  useWakeLock(Boolean(settings.keepAwake));
-  const [activeTool, setActiveTool] = useState('timer');
+  useWakeLock(Boolean(settings.keepAwake) && Boolean(active));
+  const activeTool = clampToolId(settings.lastTool);
+  const setActiveTool = (id) => updateSettings({ lastTool: clampToolId(id) });
+  const tools = tabsInOrder(TOOL_TABS, settings.toolOrder);
   const [seconds, setSeconds] = useState(60);
   const [remaining, setRemaining] = useState(60);
   const [running, setRunning] = useState(false);
@@ -207,7 +201,7 @@ export default function ToolsView() {
         </div>
 
         <div className={`grid grid-cols-3 lg:grid-cols-6 gap-1 ${activeTool === 'sfx' ? 'mb-1' : 'mb-4'}`}>
-          {TOOLS.map((tool) => {
+          {tools.map((tool) => {
             const Icon = tool.icon;
             const active = activeTool === tool.id;
             return (
