@@ -7,8 +7,10 @@ import {
   LayoutGrid,
   Lock,
   LockOpen,
+  Moon,
   PictureInPicture2,
   SlidersHorizontal,
+  Sun,
   X,
 } from 'lucide-react';
 import {
@@ -153,6 +155,8 @@ export default function StageLayoutEditor() {
   const aligns = useAppStore((s) => s.stageAligns);
   const captions = useAppStore((s) => s.stageCaptions);
   const boardStyle = useAppStore((s) => s.settings.stageBoardStyle);
+  const theme = useAppStore((s) => s.settings.theme);
+  const updateSettings = useAppStore((s) => s.updateSettings);
   const applyStageLayout = useAppStore((s) => s.applyStageLayout);
   const resetStageFrames = useAppStore((s) => s.resetStageFrames);
   const swapStagePins = useAppStore((s) => s.swapStagePins);
@@ -327,6 +331,15 @@ export default function StageLayoutEditor() {
         <div className="flex flex-wrap items-center gap-1">
           <button
             type="button"
+            onClick={() => updateSettings({ theme: theme === 'light' ? 'dark' : 'light' })}
+            className="w-8 h-8 rounded-md inline-flex items-center justify-center text-gray-400 hover:text-gray-100"
+            aria-label={theme === 'light' ? 'Dark mode' : 'Light mode'}
+            aria-pressed={theme === 'light'}
+          >
+            {theme === 'light' ? <Moon className="w-3.5 h-3.5" /> : <Sun className="w-3.5 h-3.5" />}
+          </button>
+          <button
+            type="button"
             aria-pressed={overlayOn}
             onClick={() => setOverlayOn((on) => !on)}
             className={`min-h-10 px-2.5 rounded-lg text-xs font-bold inline-flex items-center gap-1.5 border ${
@@ -361,7 +374,7 @@ export default function StageLayoutEditor() {
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
-        className={`relative w-full rounded-xl overflow-hidden border border-gray-800 bg-black touch-none ${
+        className={`stage-board relative w-full rounded-xl overflow-hidden border border-gray-800 bg-stage touch-none ${
           phoneLandscape ? 'h-[min(58vh,24rem)]' : 'aspect-video max-h-[min(52vh,20rem)]'
         }`}
       >

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Eye, EyeOff, Tv } from 'lucide-react';
+import { Eye, EyeOff, Moon, Sun, Tv } from 'lucide-react';
 import { StageSlotGrid } from './StageBoardContent.jsx';
 import {
   fetchStage,
@@ -10,7 +10,7 @@ import {
   STAGE_BOARD_POLL_MS,
   stageBoardPath,
 } from '../lib/stage.js';
-import { applyTheme } from '../lib/theme.js';
+import { applyTheme, readStageTheme, writeStageTheme } from '../lib/theme.js';
 
 function JoinForm() {
   const [draft, setDraft] = useState('');
@@ -27,7 +27,7 @@ function JoinForm() {
   };
 
   return (
-    <div className="min-h-dvh w-full bg-black text-white flex flex-col items-center justify-center px-6 py-10">
+    <div className="min-h-dvh w-full bg-stage text-gray-100 flex flex-col items-center justify-center px-6 py-10">
       <Tv className="w-12 h-12 text-lime-400 mb-4" />
       <h1 className="text-4xl font-black font-display tracking-tight mb-2">Stage</h1>
       <p className="text-lg text-gray-400 text-center max-w-md mb-8">
@@ -98,6 +98,11 @@ function StageBoard({ code }) {
   const [hardError, setHardError] = useState('');
   const [ready, setReady] = useState(false);
   const [localHide, setLocalHide] = useState(readLocalHideCode);
+  const [theme, setTheme] = useState(readStageTheme);
+
+  useEffect(() => {
+    applyTheme(theme);
+  }, [theme]);
 
   useEffect(() => {
     let cancelled = false;
@@ -163,16 +168,31 @@ function StageBoard({ code }) {
     setLocalHide(next);
   };
 
+  const toggleTheme = () => {
+    setTheme(writeStageTheme(theme === 'light' ? 'dark' : 'light'));
+  };
+
+  const light = theme === 'light';
+
   return (
-    <div className="h-dvh w-full bg-black text-white flex flex-col overflow-hidden">
+    <div className="stage-board h-dvh w-full bg-stage text-gray-100 flex flex-col overflow-hidden">
       <header className="shrink-0 flex items-center justify-between gap-3 px-4 md:px-8 py-1.5 border-b border-white/10">
         <p className="text-xs uppercase tracking-[0.3em] text-gray-500 font-bold">Improv Jam</p>
-        <div className="flex items-center gap-2 min-w-0">
+        <div className="flex items-center gap-1 min-w-0">
           {hideCode ? null : (
             <p className="text-base md:text-xl font-black font-display tracking-[0.22em] text-gray-200 truncate">
               {code}
             </p>
           )}
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="w-8 h-8 rounded-md inline-flex items-center justify-center text-gray-400 hover:text-gray-100"
+            aria-label={light ? 'Dark mode' : 'Light mode'}
+            aria-pressed={light}
+          >
+            {light ? <Moon className="w-3.5 h-3.5" /> : <Sun className="w-3.5 h-3.5" />}
+          </button>
           {publishedHide ? null : (
             <button
               type="button"
@@ -216,7 +236,7 @@ export default function StageView() {
   }, []);
 
   useEffect(() => {
-    applyTheme('dark');
+    applyTheme(readStageTheme());
     document.documentElement.classList.remove('reduce-motion');
   }, []);
 

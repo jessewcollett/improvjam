@@ -25,3 +25,24 @@ export function readStoredTheme() {
     return 'dark';
   }
 }
+
+const STAGE_THEME_KEY = 'improv-jam-tv-theme';
+
+export function readStageTheme() {
+  try {
+    return normalizeTheme(window.sessionStorage.getItem(STAGE_THEME_KEY));
+  } catch {
+    return 'dark';
+  }
+}
+
+export function writeStageTheme(theme) {
+  const mode = normalizeTheme(theme);
+  try {
+    window.sessionStorage.setItem(STAGE_THEME_KEY, mode);
+  } catch {
+    /* private mode */
+  }
+  applyTheme(mode);
+  return mode;
+}

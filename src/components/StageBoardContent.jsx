@@ -494,7 +494,7 @@ export function StageSlotGrid({ slots, layout, boardStyle, frames, floats, class
               slot={slot}
               count={slots.length}
               boardStyle={boardStyle}
-              className="absolute z-0 border-white/10 bg-black"
+              className="absolute z-0 border-white/10 bg-stage"
               style={{
                 left: `${frame.x}%`,
                 top: `${frame.y}%`,
@@ -512,7 +512,7 @@ export function StageSlotGrid({ slots, layout, boardStyle, frames, floats, class
               slot={slot}
               count={slots.length}
               boardStyle={boardStyle}
-              className="absolute border-white/20 bg-black z-20 shadow-2xl"
+              className="absolute border-white/20 bg-stage z-20 shadow-2xl"
               allowColumns={false}
               style={{
                 left: `${frame.x}%`,
@@ -540,7 +540,7 @@ export function StageSlotGrid({ slots, layout, boardStyle, frames, floats, class
             slot={pip}
             count={slots.length}
             boardStyle={boardStyle}
-            className="absolute right-[2.5%] bottom-[2.5%] w-[32%] h-[32%] border-white/20 bg-black z-10 shadow-2xl"
+            className="absolute right-[2.5%] bottom-[2.5%] w-[32%] h-[32%] border-white/20 bg-stage z-10 shadow-2xl"
             allowColumns={false}
           />
         ) : null}
