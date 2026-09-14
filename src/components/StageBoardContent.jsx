@@ -43,8 +43,8 @@ function alignText(align) {
   return align === 'left' ? 'text-left' : 'text-center';
 }
 
-function alignItems(align) {
-  return align === 'left' ? 'items-start' : 'items-center';
+function alignItems() {
+  return 'items-stretch';
 }
 
 function useTileLandscape() {
@@ -57,8 +57,8 @@ function siblingColumns(count, landscape) {
 
 function siblingBoxClass(columns, stacked = 'gap-3') {
   return columns
-    ? 'grid grid-cols-2 gap-3 min-w-0 h-full auto-rows-fr'
-    : `h-full min-h-0 flex flex-col ${stacked} min-w-0`;
+    ? 'grid grid-cols-2 gap-3 min-w-0 w-full'
+    : `w-full min-w-0 flex flex-col ${stacked}`;
 }
 
 function useLandscape() {
@@ -137,18 +137,17 @@ function StageTileFrame({ children, allowColumns = true, fitKey = '', align = 'c
       const nextLandscape = allowColumns && w >= h * TILE_LANDSCAPE_RATIO;
       setLandscape((prev) => (prev === nextLandscape ? prev : nextLandscape));
       inner.style.transform = 'none';
-      const targetW = w * TILE_FILL;
       const targetH = h * TILE_FILL;
       let lo = TILE_FONT_MIN;
       let hi = TILE_FONT_MAX;
       box.style.setProperty('--stage-font', String(TILE_FONT_MAX));
-      if (contentFits(targetW, targetH)) {
+      if (contentFits(w, targetH)) {
         lo = TILE_FONT_MAX;
       } else {
         for (let i = 0; i < TILE_FONT_STEPS; i += 1) {
           const mid = (lo + hi) / 2;
           box.style.setProperty('--stage-font', String(mid));
-          if (contentFits(targetW, targetH)) lo = mid;
+          if (contentFits(w, targetH)) lo = mid;
           else hi = mid;
         }
       }
@@ -176,7 +175,7 @@ function StageTileFrame({ children, allowColumns = true, fitKey = '', align = 'c
       >
         <div
           ref={innerRef}
-          className={`stage-tile-inner ${resolvedAlign === 'left' ? 'w-full' : ''}`}
+          className="stage-tile-inner"
           style={scale < 0.995 ? { transform: `scale(${scale})` } : undefined}
         >
           {children}
@@ -193,7 +192,7 @@ export function LiveStageTime({ timer, className }) {
 
 function InnerCard({ cards, children, className = '' }) {
   const align = useTileAlign();
-  const fill = `min-w-0 min-h-0 h-full flex-1 flex flex-col justify-center ${alignItems(align)} ${alignText(align)}`;
+  const fill = `w-full min-w-0 flex flex-col ${alignItems(align)} ${alignText(align)}`;
   if (!cards) return <div className={`${fill} ${className}`}>{children}</div>;
   return (
     <div className={`rounded-2xl bg-[#1A1A1A] border border-white/10 px-3 py-2.5 ${fill} ${className}`}>
@@ -212,7 +211,7 @@ function TileTimer({ timer, scale, cards }) {
   );
   if (!cards) {
     return (
-      <div className={`h-full min-h-0 flex flex-col justify-center px-2 ${alignItems(align)} ${alignText(align)}`}>
+      <div className={`w-full flex flex-col px-2 ${alignItems(align)} ${alignText(align)}`}>
         <p className={`mb-2 shrink-0 text-cyan-400 ${scale.kicker}`}>Timer</p>
         {digits}
       </div>
@@ -228,13 +227,13 @@ function TileTimer({ timer, scale, cards }) {
 function TileShell({ kicker, kickerClass, scale, children }) {
   const align = useTileAlign();
   return (
-    <div className="h-full min-h-0 flex flex-col overflow-hidden px-3 py-2">
+    <div className="w-full flex flex-col px-3 py-2">
       {kicker ? (
         <p className={`mb-2 shrink-0 ${alignText(align)} ${scale.kicker} ${kickerClass || 'text-gray-400'}`}>
           {kicker}
         </p>
       ) : null}
-      <div className="flex-1 min-h-0 min-w-0 flex flex-col justify-center">{children}</div>
+      <div className="w-full min-w-0">{children}</div>
     </div>
   );
 }
@@ -258,11 +257,11 @@ function SuggestionTexts({ item, scale }) {
       {entries.map((row) => (
         <div key={`${row.text}-${row.index}`} className={`min-w-0 ${alignText(align)}`}>
           <p
-            className={`font-black font-display break-words ${line ? 'italic text-emerald-300' : 'text-white'} ${scale.body}`}
+            className={`font-black font-display ${line ? 'italic text-emerald-300' : 'text-white'} ${scale.body}`}
           >
             {line ? quotedStageLine(row.text) : row.text}
           </p>
-          {showCaptions && row.extra ? <p className={`text-gray-500 break-words ${scale.caption}`}>{row.extra}</p> : null}
+          {showCaptions && row.extra ? <p className={`text-gray-500 ${scale.caption}`}>{row.extra}</p> : null}
         </div>
       ))}
     </div>
@@ -280,7 +279,7 @@ function GamePartBlocks({ game, scale }) {
     return (
       <div key={part.id} className={`mt-2 min-w-0 ${alignText(align)}`}>
         <p className={`mb-0.5 text-gray-500 ${scale.kicker}`}>{part.label}</p>
-        <p className={`font-bold text-gray-100 whitespace-pre-wrap break-words ${scale.body}`}>{text}</p>
+        <p className={`font-bold text-gray-100 whitespace-pre-wrap ${scale.body}`}>{text}</p>
       </div>
     );
   });
@@ -316,9 +315,9 @@ export function StageSlotTile({ id, value, count, boardStyle }) {
       <TileShell kicker="Games" kickerClass="text-emerald-400" scale={scale}>
         <ul className={siblingBoxClass(siblingColumns(games.length, landscape))}>
           {games.map((game, index) => (
-            <li key={`${game.name}-${index}`} className="min-w-0 min-h-0 h-full">
+            <li key={`${game.name}-${index}`} className="min-w-0">
               <InnerCard cards={cards}>
-                <p className={`font-black font-display break-words ${scale.title}`}>{game.name}</p>
+                <p className={`font-black font-display ${scale.title}`}>{game.name}</p>
                 {game.category ? (
                   <p className={`text-gray-500 ${scale.kicker}`}>{game.category}</p>
                 ) : null}
@@ -336,10 +335,10 @@ export function StageSlotTile({ id, value, count, boardStyle }) {
     return (
       <TileShell kicker="Set" kickerClass="text-indigo-300" scale={scale}>
         <InnerCard cards={cards}>
-          <p className={`font-black font-display break-words mb-1 ${scale.title}`}>{value?.name}</p>
+          <p className={`font-black font-display mb-1 ${scale.title}`}>{value?.name}</p>
           <ul className={siblingBoxClass(siblingColumns(games.length, landscape), 'gap-0.5')}>
             {games.map((name) => (
-              <li key={name} className={`font-bold text-gray-100 break-words ${scale.body}`}>
+              <li key={name} className={`font-bold text-gray-100 ${scale.body}`}>
                 {name}
               </li>
             ))}
@@ -356,7 +355,7 @@ export function StageSlotTile({ id, value, count, boardStyle }) {
         <InnerCard cards={cards}>
           <ul className={`${alignText(align)} ${siblingBoxClass(siblingColumns(names.length, landscape), 'gap-1')}`}>
             {names.map((name, index) => (
-              <li key={`${name}-${index}`} className={`font-black font-display break-words text-blue-100 ${scale.title}`}>
+              <li key={`${name}-${index}`} className={`font-black font-display text-blue-100 ${scale.title}`}>
                 {name}
               </li>
             ))}
@@ -370,7 +369,7 @@ export function StageSlotTile({ id, value, count, boardStyle }) {
     return (
       <TileShell kicker="Hat" kickerClass="text-lime-300" scale={scale}>
         <InnerCard cards={cards}>
-          <div className="grid grid-cols-2 gap-x-3 gap-y-2 min-w-0 h-full">
+          <div className="grid grid-cols-2 gap-x-3 gap-y-2 min-w-0 w-full">
             {[
               ['Location', value?.location],
               ['Occupation', value?.occupation],
@@ -379,7 +378,7 @@ export function StageSlotTile({ id, value, count, boardStyle }) {
             ].map(([label, text]) => (
               <div key={label} className={`min-w-0 ${alignText(align)}`}>
                 <p className={`mb-0.5 text-gray-500 ${scale.kicker}`}>{label}</p>
-                <p className={`font-black font-display break-words ${scale.body}`}>{text}</p>
+                <p className={`font-black font-display ${scale.body}`}>{text}</p>
               </div>
             ))}
           </div>
@@ -392,7 +391,7 @@ export function StageSlotTile({ id, value, count, boardStyle }) {
     return (
       <TileShell kicker="Coin" kickerClass="text-amber-300" scale={scale}>
         <InnerCard cards={cards}>
-          <p className={`font-black font-display break-words ${scale.title}`}>{value}</p>
+          <p className={`font-black font-display ${scale.title}`}>{value}</p>
         </InnerCard>
       </TileShell>
     );
@@ -404,7 +403,7 @@ export function StageSlotTile({ id, value, count, boardStyle }) {
     return (
       <TileShell kicker="Message" kickerClass="text-lime-300" scale={scale}>
         <InnerCard cards={cards}>
-          <p className={`font-black font-display break-words ${scale.title}`}>{text}</p>
+          <p className={`font-black font-display ${scale.title}`}>{text}</p>
         </InnerCard>
       </TileShell>
     );
@@ -418,15 +417,15 @@ export function StageSlotTile({ id, value, count, boardStyle }) {
     return (
       <TileShell kicker="Ideas" kickerClass="text-lime-400" scale={scale}>
         <div className={stacked
-          ? `h-full min-h-0 flex flex-col justify-center gap-3 ${alignItems(align)}`
-          : 'h-full min-h-0 flex items-center gap-4 min-w-0'}
+          ? `w-full flex flex-col gap-3 ${align === 'left' ? 'items-start' : 'items-center'}`
+          : `w-full flex items-center gap-4 min-w-0 ${align === 'left' ? 'justify-start' : 'justify-center'}`}
         >
           <StageQrCode
             value={url}
             label="Audience ideas QR code"
             className="w-[min(100%,11rem)] aspect-square rounded-xl overflow-hidden shrink-0"
           />
-          <div className={`min-w-0 ${alignText(align)}`}>
+          <div className={`min-w-0 ${stacked ? 'w-full' : ''} ${alignText(align)}`}>
             <p className={`font-black font-display tracking-[0.18em] ${scale.title}`}>{code}</p>
             {showCaptions ? (
               <>
