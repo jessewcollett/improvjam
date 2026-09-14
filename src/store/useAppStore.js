@@ -13,6 +13,7 @@ import {
 import {
   DEFAULT_NAV_ORDER,
   DEFAULT_TOOL_ORDER,
+  STAGE_MANAGER_ID,
   clampNavId,
   clampToolId,
   mergeIdOrder,
@@ -20,19 +21,25 @@ import {
 } from '../lib/nav.js';
 import {
   buildStagePayload,
-  clampStageSize,
+  clampStageZoom,
+  fetchStage,
   isStageSlotId,
   listedStageSlots,
   mintStageCode,
   normalizeGameParts,
+  normalizeIdeaCats,
   normalizeStageBoardStyle,
   normalizeStageCode,
+  normalizeStageFrames,
+  normalizeStageIdeasMap,
   normalizeStageLayout,
   normalizeStagePins,
   normalizeStageSizes,
   normalizeStageSlots,
+  normalizeStageZooms,
   postStage,
   publishStageGame,
+  seedStageFrames,
   STAGE_PUBLISH_DEBOUNCE_MS,
 } from '../lib/stage.js';
 
@@ -72,6 +79,7 @@ export const defaultSettings = {
   navOrder: [...DEFAULT_NAV_ORDER],
   toolOrder: [...DEFAULT_TOOL_ORDER],
   stageCode: '',
+  stageOn: false,
   stageBoardStyle: 'cards',
 };
 
@@ -81,10 +89,11 @@ export function normalizeSettings(raw) {
     ...merged,
     navOrder: mergeIdOrder(merged.navOrder, DEFAULT_NAV_ORDER),
     toolOrder: mergeIdOrder(merged.toolOrder, DEFAULT_TOOL_ORDER),
-    lastRoute: clampNavId(merged.lastRoute),
+    lastRoute: clampNavId(merged.lastRoute, merged.stageOn === true),
     lastTool: clampToolId(merged.lastTool),
     generatorView: merged.generatorView === 'games' ? 'games' : 'suggestions',
     stageCode: normalizeStageCode(merged.stageCode),
+    stageOn: merged.stageOn === true,
     stageBoardStyle: normalizeStageBoardStyle(merged.stageBoardStyle),
   };
 }
@@ -111,6 +120,20 @@ let stagePublishTimer = null;
 let stagePublishInflight = false;
 let stagePublishQueued = false;
 
+function seedFrames(state, overrides = {}) {
+  const pins = overrides.stagePins ?? state.stagePins;
+  const layout = overrides.stageLayout ?? state.stageLayout;
+  const listed = listedStageSlots(buildStagePayload(
+    pins,
+    state.stageSlots,
+    state.stageSizes,
+    layout,
+    state.settings.stageBoardStyle,
+    state.stageZooms,
+  ));
+  return seedStageFrames(listed, true, layout);
+}
+
 function queueStagePublish() {
   if (stagePublishTimer) clearTimeout(stagePublishTimer);
   stagePublishTimer = setTimeout(() => {
@@ -131,6 +154,7 @@ async function publishStageNow() {
   stagePublishInflight = true;
   try {
     const state = useAppStore.getState();
+    if (!state.settings.stageOn) return;
     const code = normalizeStageCode(state.settings.stageCode);
     if (!code) return;
     const payload = buildStagePayload(
@@ -139,8 +163,13 @@ async function publishStageNow() {
       state.stageSizes,
       state.stageLayout,
       state.settings.stageBoardStyle,
+      state.stageZooms,
+      state.stageFrames,
     );
-    await postStage(code, payload);
+    await postStage(code, payload, {
+      ideasOpen: Boolean(state.stageIdeasOpen),
+      ideaCats: normalizeIdeaCats(state.stageIdeaCats),
+    });
     useAppStore.setState({ stagePublishError: null });
   } catch (error) {
     useAppStore.setState({ stagePublishError: error.message || 'Stage publish failed.' });
@@ -176,7 +205,12 @@ export const useAppStore = create(
       stagePins: [],
       stageSlots: {},
       stageSizes: {},
+      stageZooms: {},
+      stageFrames: {},
       stageLayout: '',
+      stageIdeasOpen: false,
+      stageIdeaCats: [...defaultGeneratorBanks],
+      stageIdeas: {},
       stagePublishError: null,
 
       updateSettings: (partial) => {
@@ -228,14 +262,55 @@ export const useAppStore = create(
         return code;
       },
 
+      setStageCode: (raw) => {
+        const code = normalizeStageCode(raw);
+        if (!code) return '';
+        const prev = normalizeStageCode(get().settings.stageCode);
+        if (code === prev) return code;
+        set((state) => ({ settings: { ...state.settings, stageCode: code } }));
+        queueStagePublish();
+        return code;
+      },
+
+      mintNewStageCode: () => {
+        const prev = normalizeStageCode(get().settings.stageCode);
+        let code = mintStageCode();
+        if (code === prev) code = mintStageCode();
+        set((state) => ({ settings: { ...state.settings, stageCode: code } }));
+        queueStagePublish();
+        return code;
+      },
+
+      setStageOn: (on) => {
+        const next = Boolean(on);
+        if (next) {
+          const code = get().ensureStageCode();
+          set((state) => ({
+            settings: { ...state.settings, stageOn: true, stageCode: code || state.settings.stageCode },
+          }));
+          publishStageNow();
+          return;
+        }
+        const code = normalizeStageCode(get().settings.stageCode);
+        set((state) => ({
+          settings: {
+            ...state.settings,
+            stageOn: false,
+            lastRoute: state.settings.lastRoute === STAGE_MANAGER_ID ? 'generator' : state.settings.lastRoute,
+          },
+        }));
+        if (code) postStage(code, {}).catch(() => {});
+      },
+
       toggleStagePin: (id) => {
         if (!isStageSlotId(id)) return;
-        get().ensureStageCode();
+        if (get().settings.stageOn) get().ensureStageCode();
         set((state) => {
           const on = state.stagePins.includes(id);
-          return { stagePins: on ? state.stagePins.filter((item) => item !== id) : [...state.stagePins, id] };
+          const stagePins = on ? state.stagePins.filter((item) => item !== id) : [...state.stagePins, id];
+          return { stagePins, stageFrames: seedFrames(state, { stagePins }) };
         });
-        queueStagePublish();
+        publishStageNow();
       },
 
       setStageSlot: (id, data) => {
@@ -245,7 +320,7 @@ export const useAppStore = create(
           shouldPublish = state.stagePins.includes(id);
           return { stageSlots: { ...state.stageSlots, [id]: data } };
         });
-        if (shouldPublish) queueStagePublish();
+        if (shouldPublish) publishStageNow();
       },
 
       publishStageTimer: (timer) => {
@@ -257,9 +332,10 @@ export const useAppStore = create(
         if (!isStageSlotId(id)) return;
         set((state) => {
           if (!state.stagePins.includes(id)) return {};
-          return { stagePins: state.stagePins.filter((item) => item !== id) };
+          const stagePins = state.stagePins.filter((item) => item !== id);
+          return { stagePins, stageFrames: seedFrames(state, { stagePins }) };
         });
-        queueStagePublish();
+        publishStageNow();
       },
 
       removeStageSlotItem: (id, index) => {
@@ -272,25 +348,87 @@ export const useAppStore = create(
           if (!Array.isArray(current)) return {};
           const next = current.filter((_, idx) => idx !== i);
           emptied = next.length === 0;
+          const stagePins = emptied ? state.stagePins.filter((item) => item !== id) : state.stagePins;
           return {
             stageSlots: { ...state.stageSlots, [id]: next },
-            stagePins: emptied ? state.stagePins.filter((item) => item !== id) : state.stagePins,
+            stagePins,
+            stageFrames: emptied ? seedFrames(state, { stagePins }) : state.stageFrames,
           };
         });
-        queueStagePublish();
+        publishStageNow();
       },
 
-      setStageSize: (id, size) => {
+      setStageZoom: (id, zoom) => {
         if (!isStageSlotId(id)) return;
+        const next = clampStageZoom(zoom);
         set((state) => ({
-          stageSizes: { ...state.stageSizes, [id]: clampStageSize(size) },
+          stageZooms: { ...state.stageZooms, [id]: next },
         }));
         if (get().stagePins.includes(id)) queueStagePublish();
       },
 
       setStageLayout: (id) => {
-        set({ stageLayout: normalizeStageLayout(id) });
+        set((state) => {
+          const stageLayout = normalizeStageLayout(id);
+          return { stageLayout, stageFrames: seedFrames(state, { stageLayout }) };
+        });
         queueStagePublish();
+      },
+
+      setStageFrames: (frames) => {
+        set({ stageFrames: normalizeStageFrames(frames) });
+        queueStagePublish();
+      },
+
+      resetStageFrames: () => {
+        set({ stageFrames: {} });
+        queueStagePublish();
+      },
+
+      setStageIdeasOpen: (open) => {
+        const next = Boolean(open);
+        set((state) => {
+          const cats = normalizeIdeaCats(state.stageIdeaCats);
+          const seeded = cats.length
+            ? cats
+            : (state.generatorBanks || []).filter(Boolean);
+          return {
+            stageIdeasOpen: next,
+            stageIdeaCats: next && !cats.length ? seeded : state.stageIdeaCats,
+          };
+        });
+        if (get().settings.stageOn) publishStageNow();
+      },
+
+      setStageIdeaCats: (ids) => {
+        set({ stageIdeaCats: normalizeIdeaCats(ids) });
+        if (get().settings.stageOn && get().stageIdeasOpen) publishStageNow();
+      },
+
+      toggleStageIdeaCat: (id) => {
+        const key = String(id || '').trim();
+        if (!key) return;
+        set((state) => {
+          const current = normalizeIdeaCats(state.stageIdeaCats);
+          const next = current.includes(key)
+            ? current.filter((item) => item !== key)
+            : [...current, key];
+          return { stageIdeaCats: next };
+        });
+        if (get().settings.stageOn && get().stageIdeasOpen) publishStageNow();
+      },
+
+      pullStageIdeas: async () => {
+        const state = get();
+        if (!state.settings.stageOn || !state.stageIdeasOpen) return;
+        const code = normalizeStageCode(state.settings.stageCode);
+        if (!code) return;
+        try {
+          const data = await fetchStage(code);
+          set({ stageIdeas: data.ideas || {} });
+        } catch {
+          /* keep last pool */
+        }
       },
 
       moveStagePin: (id, direction) => {
@@ -304,6 +442,8 @@ export const useAppStore = create(
               state.stageSizes,
               state.stageLayout,
               state.settings.stageBoardStyle,
+              state.stageZooms,
+              state.stageFrames,
             ),
           ).map((slot) => slot.id);
           const from = listed.indexOf(id);
@@ -311,14 +451,15 @@ export const useAppStore = create(
           if (from < 0 || to < 0 || to >= listed.length) return {};
           const nextListed = moveId(listed, from, to);
           const rest = state.stagePins.filter((pin) => !nextListed.includes(pin));
-          return { stagePins: [...nextListed, ...rest] };
+          const stagePins = [...nextListed, ...rest];
+          return { stagePins, stageFrames: seedFrames(state, { stagePins }) };
         });
         queueStagePublish();
       },
 
       clearStagePins: () => {
-        set({ stagePins: [] });
-        queueStagePublish();
+        set({ stagePins: [], stageFrames: {} });
+        publishStageNow();
       },
 
       dismissTipOfTheDay: () => {
@@ -579,7 +720,11 @@ export const useAppStore = create(
         stagePins: state.stagePins,
         stageSlots: state.stageSlots,
         stageSizes: state.stageSizes,
+        stageZooms: state.stageZooms,
+        stageFrames: state.stageFrames,
         stageLayout: state.stageLayout,
+        stageIdeasOpen: state.stageIdeasOpen,
+        stageIdeaCats: state.stageIdeaCats,
       }),
       merge: (persisted, current) => ({
         ...current,
@@ -617,7 +762,14 @@ export const useAppStore = create(
         stagePins: normalizeStagePins(persisted?.stagePins),
         stageSlots: normalizeStageSlots(persisted?.stageSlots),
         stageSizes: normalizeStageSizes(persisted?.stageSizes),
+        stageZooms: normalizeStageZooms(persisted?.stageZooms, persisted?.stageSizes),
+        stageFrames: normalizeStageFrames(persisted?.stageFrames),
         stageLayout: normalizeStageLayout(persisted?.stageLayout),
+        stageIdeasOpen: persisted?.stageIdeasOpen === true,
+        stageIdeaCats: normalizeIdeaCats(
+          Array.isArray(persisted?.stageIdeaCats) ? persisted.stageIdeaCats : current.stageIdeaCats,
+        ),
+        stageIdeas: normalizeStageIdeasMap(persisted?.stageIdeas),
         stagePublishError: null,
       }),
     },

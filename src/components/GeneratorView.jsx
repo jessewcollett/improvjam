@@ -15,7 +15,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore } from '../store/useAppStore.js';
 import { askForCategoriesFromRows, rowCategories, rowExtra, skillItemsFromRows } from '../lib/generator.js';
-import { suggestionsFromGenerator } from '../lib/stage.js';
+import { suggestionsFromGenerator, STAGE_IDEAS_POLL_MS } from '../lib/stage.js';
 import ActionDock from './ActionDock.jsx';
 import CatalogIcon from './CatalogIcon.jsx';
 import SearchField from './SearchField.jsx';
@@ -164,6 +164,11 @@ export default function GeneratorView() {
   const setStageSlot = useAppStore((s) => s.setStageSlot);
   const toggleStagePin = useAppStore((s) => s.toggleStagePin);
   const suggestionsPinned = stagePins.includes('suggestions');
+  const stageOn = useAppStore((s) => s.settings.stageOn);
+  const ideasOpen = useAppStore((s) => s.stageIdeasOpen);
+  const ideaCats = useAppStore((s) => s.stageIdeaCats) || [];
+  const stageIdeas = useAppStore((s) => s.stageIdeas) || {};
+  const pullStageIdeas = useAppStore((s) => s.pullStageIdeas);
   const countFor = (id) => clampDrawCount(drawCounts[id] ?? 1);
   const [locks, setLocks] = useState({ c: false, o: false, r: false, e: false });
   const [kit, setKit] = useState(null);
@@ -218,6 +223,13 @@ export default function GeneratorView() {
   }, [selectedRows, bankQuery]);
 
   const visibleCatalogue = filteredCatalogue.slice(0, CATALOGUE_CAP);
+
+  useEffect(() => {
+    if (!stageOn || !ideasOpen) return undefined;
+    pullStageIdeas();
+    const id = window.setInterval(pullStageIdeas, STAGE_IDEAS_POLL_MS);
+    return () => window.clearInterval(id);
+  }, [stageOn, ideasOpen, pullStageIdeas]);
 
   const drawMany = (rows, n, previous = []) => {
     if (!rows.length || n < 1) return [];
@@ -291,13 +303,32 @@ export default function GeneratorView() {
     if (selectedCats.length) {
       setKit(
         selectedCats.map((cat) => {
-          const rows = generator.filter((row) => rowCategories(row).includes(cat.id) && row.text);
+          const audienceBank = Boolean(stageOn && ideasOpen && ideaCats.includes(cat.id));
+          const sessionRows = audienceBank
+            ? (stageIdeas[cat.id] || []).map((text, index) => ({
+              id: `idea:${cat.id}:${index}:${text}`,
+              text,
+            }))
+            : [];
+          if (audienceBank && !sessionRows.length) {
+            return {
+              id: cat.id,
+              label: cat.label,
+              icon: cat.icon,
+              rows: [],
+              waiting: true,
+            };
+          }
+          const rows = audienceBank
+            ? sessionRows
+            : generator.filter((row) => rowCategories(row).includes(cat.id) && row.text);
           const previous = kit?.find((item) => item.id === cat.id)?.rows || [];
           return {
             id: cat.id,
             label: cat.label,
             icon: cat.icon,
             rows: drawMany(rows, countFor(cat.id), previous),
+            waiting: false,
           };
         }),
       );
@@ -543,7 +574,9 @@ export default function GeneratorView() {
                               {item.label}
                               {rows.length > 1 ? ` · ${rows.length}` : ''}
                             </p>
-                            {rows.length ? (
+                            {item.waiting ? (
+                              <p className="text-sm font-bold text-amber-300 leading-snug">Waiting for ideas</p>
+                            ) : rows.length ? (
                               <div className="space-y-1.5">
                                 {rows.map((row, index) => (
                                   <div key={row.id || `${item.id}-${index}`}>

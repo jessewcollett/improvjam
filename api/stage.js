@@ -1,4 +1,8 @@
 const UPSTREAM = process.env.VITE_SHEETS_URL || '';
+const STAGE_TTL_SEC = 60 * 60 * 24;
+
+const memory = globalThis.__improvStageMemory || new Map();
+globalThis.__improvStageMemory = memory;
 
 function stageCode(req) {
   return String(req.query?.s || req.query?.stage || '').trim();
@@ -7,6 +11,90 @@ function stageCode(req) {
 function execUrl(code) {
   const sep = UPSTREAM.includes('?') ? '&' : '?';
   return `${UPSTREAM}${sep}stage=${encodeURIComponent(code)}`;
+}
+
+function kvConfig() {
+  const url = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL || '';
+  const token = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || '';
+  if (!url || !token) return null;
+  return { url: url.replace(/\/$/, ''), token };
+}
+
+function emptyRecord(code) {
+  return {
+    code: String(code || ''),
+    payload: {},
+    ideas: {},
+    ideaCats: [],
+    ideasOpen: false,
+    updatedAt: '',
+  };
+}
+
+function ideaList(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => (typeof item === 'string' ? item.trim() : String(item?.text || '').trim()))
+    .filter(Boolean)
+    .slice(-200);
+}
+
+function normalizeIdeas(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const out = {};
+  Object.entries(raw).forEach(([cat, rows]) => {
+    const key = String(cat || '').trim();
+    if (!key) return;
+    out[key] = ideaList(rows);
+  });
+  return out;
+}
+
+function mergeIdeas(current, incoming) {
+  const out = { ...normalizeIdeas(current) };
+  if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) return out;
+  Object.entries(incoming).forEach(([cat, rows]) => {
+    const key = String(cat || '').trim();
+    if (!key) return;
+    const prev = ideaList(out[key]);
+    const seen = new Set(prev.map((text) => text.toLowerCase()));
+    ideaList(rows).forEach((text) => {
+      const id = text.toLowerCase();
+      if (seen.has(id)) return;
+      seen.add(id);
+      prev.push(text);
+    });
+    out[key] = prev.slice(-200);
+  });
+  return out;
+}
+
+function ideaCats(raw) {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set();
+  const out = [];
+  raw.forEach((id) => {
+    const key = String(id || '').trim();
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    out.push(key);
+  });
+  return out;
+}
+
+function normalizeRecord(code, raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return emptyRecord(code);
+  const payload = raw.payload && typeof raw.payload === 'object' && !Array.isArray(raw.payload)
+    ? raw.payload
+    : {};
+  return {
+    code: String(raw.code || code || ''),
+    payload,
+    ideas: normalizeIdeas(raw.ideas),
+    ideaCats: ideaCats(raw.ideaCats),
+    ideasOpen: raw.ideasOpen === true,
+    updatedAt: String(raw.updatedAt || ''),
+  };
 }
 
 async function readBody(req) {
@@ -20,6 +108,70 @@ async function readBody(req) {
   return text || '{}';
 }
 
+async function kvCommand(args) {
+  const kv = kvConfig();
+  if (!kv) return null;
+  const res = await fetch(kv.url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${kv.token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(args),
+  });
+  if (!res.ok) return null;
+  const data = await res.json().catch(() => null);
+  return data && Object.prototype.hasOwnProperty.call(data, 'result') ? data.result : data;
+}
+
+async function kvGet(code) {
+  try {
+    const result = await kvCommand(['GET', `stage:${code}`]);
+    if (result == null || result === '') return null;
+    const parsed = typeof result === 'string' ? JSON.parse(result) : result;
+    return normalizeRecord(code, parsed);
+  } catch {
+    return null;
+  }
+}
+
+async function kvSet(code, record) {
+  try {
+    await kvCommand(['SET', `stage:${code}`, JSON.stringify(record), 'EX', String(STAGE_TTL_SEC)]);
+  } catch {
+    /* optional store */
+  }
+}
+
+function remember(code, record) {
+  memory.set(code, record);
+}
+
+async function readLocal(code) {
+  if (memory.has(code)) return memory.get(code);
+  const fromKv = await kvGet(code);
+  if (fromKv) {
+    remember(code, fromKv);
+    return fromKv;
+  }
+  return null;
+}
+
+function persistScript(method, url, body) {
+  if (!UPSTREAM || UPSTREAM.includes('/api/catalog') || UPSTREAM.includes('/api/stage')) return;
+  fetch(url, {
+    method,
+    redirect: 'follow',
+    keepalive: true,
+    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    body,
+  }).catch(() => {});
+}
+
+function loginPage(text) {
+  return Boolean(text && text.trim().startsWith('<'));
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -30,40 +182,82 @@ export default async function handler(req, res) {
     return;
   }
 
-  if (!UPSTREAM || UPSTREAM.includes('/api/catalog') || UPSTREAM.includes('/api/stage')) {
-    res.status(500).json({ error: 'VITE_SHEETS_URL must be the Apps Script /exec URL.' });
-    return;
-  }
-
   try {
-    let upstream;
     if (req.method === 'GET') {
       const code = stageCode(req);
       if (!code) {
         res.status(400).json({ error: 'Missing stage code (s or stage).' });
         return;
       }
-      upstream = await fetch(execUrl(code), { redirect: 'follow' });
-    } else if (req.method === 'POST') {
-      const body = await readBody(req);
-      upstream = await fetch(UPSTREAM, {
-        method: 'POST',
-        redirect: 'follow',
-        headers: { 'Content-Type': 'application/json' },
-        body,
-      });
-    } else {
-      res.status(405).json({ error: 'GET or POST only' });
+      const local = await readLocal(code);
+      if (local) {
+        res.status(200).json(local);
+        return;
+      }
+      if (UPSTREAM && !UPSTREAM.includes('/api/catalog') && !UPSTREAM.includes('/api/stage')) {
+        const upstream = await fetch(execUrl(code), { redirect: 'follow', cache: 'no-store' });
+        const text = await upstream.text();
+        if (loginPage(text)) {
+          res.status(200).json(emptyRecord(code));
+          return;
+        }
+        let parsed = emptyRecord(code);
+        try {
+          parsed = normalizeRecord(code, JSON.parse(text));
+        } catch {
+          parsed = emptyRecord(code);
+        }
+        remember(code, parsed);
+        res.status(upstream.ok ? 200 : upstream.status).json(parsed);
+        return;
+      }
+      res.status(200).json(emptyRecord(code));
       return;
     }
 
-    const text = await upstream.text();
-    if (text.trim().startsWith('<')) {
-      res.status(502).json({ error: 'Sheet URL asked for a Google login. Redeploy the web app as Anyone.' });
+    if (req.method === 'POST') {
+      const raw = await readBody(req);
+      let body = {};
+      try {
+        body = JSON.parse(raw || '{}');
+      } catch {
+        body = {};
+      }
+      const code = String(body.code || '').trim();
+      if (!code) {
+        res.status(400).json({ error: 'Missing code', code: '', payload: {}, ideas: {}, ideaCats: [], ideasOpen: false, updatedAt: '' });
+        return;
+      }
+      const prev = normalizeRecord(code, (await readLocal(code)) || emptyRecord(code));
+      const record = {
+        ...prev,
+        code,
+        updatedAt: new Date().toISOString(),
+      };
+      if (Object.prototype.hasOwnProperty.call(body, 'payload')) {
+        record.payload = body.payload && typeof body.payload === 'object' && !Array.isArray(body.payload)
+          ? body.payload
+          : {};
+      }
+      if (Object.prototype.hasOwnProperty.call(body, 'ideasOpen')) {
+        record.ideasOpen = body.ideasOpen === true;
+      }
+      if (Array.isArray(body.ideaCats)) {
+        record.ideaCats = ideaCats(body.ideaCats);
+      }
+      if (body.ideas && typeof body.ideas === 'object' && !Array.isArray(body.ideas)) {
+        if (record.ideasOpen || body.ideasOpen === true) {
+          record.ideas = mergeIdeas(prev.ideas, body.ideas);
+        }
+      }
+      remember(code, record);
+      await kvSet(code, record);
+      res.status(200).json(record);
+      persistScript('POST', UPSTREAM, JSON.stringify({ code, payload: record.payload }));
       return;
     }
-    res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    res.status(upstream.ok ? 200 : upstream.status).send(text);
+
+    res.status(405).json({ error: 'GET or POST only' });
   } catch (error) {
     res.status(502).json({ error: error.message || 'Stage proxy failed.' });
   }

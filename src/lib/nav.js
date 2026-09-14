@@ -1,4 +1,4 @@
-import { Library, Dices, Wrench, ListTodo, Settings, Bell, Timer, Users, Lightbulb, Coins, Music } from 'lucide-react';
+import { Library, Dices, Wrench, ListTodo, Settings, Bell, Timer, Users, Lightbulb, Coins, Music, Tv } from 'lucide-react';
 
 export const NAV_TABS = [
   { id: 'generator', label: 'Generator', icon: Dices },
@@ -7,6 +7,9 @@ export const NAV_TABS = [
   { id: 'mysets', label: 'Sets', icon: ListTodo },
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
+
+export const STAGE_MANAGER_TAB = { id: 'stagemanager', label: 'Stage', icon: Tv };
+export const STAGE_MANAGER_ID = 'stagemanager';
 
 export const TOOL_TABS = [
   { id: 'sfx', label: 'SFX', icon: Bell, accent: 'text-yellow-300' },
@@ -43,6 +46,11 @@ export function moveId(order, from, to) {
   return next;
 }
 
+export function visibleNavTabs(stageOn) {
+  if (!stageOn) return NAV_TABS;
+  return [NAV_TABS[0], STAGE_MANAGER_TAB, ...NAV_TABS.slice(1)];
+}
+
 export function tabsInOrder(tabs, order) {
   const byId = new Map(tabs.map((tab) => [tab.id, tab]));
   return mergeIdOrder(order, tabs.map((tab) => tab.id))
@@ -50,8 +58,16 @@ export function tabsInOrder(tabs, order) {
     .filter(Boolean);
 }
 
-export function clampNavId(id) {
-  return DEFAULT_NAV_ORDER.includes(id) ? id : DEFAULT_NAV_ORDER[0];
+export function orderedVisibleNavTabs(navOrder, stageOn) {
+  const base = tabsInOrder(NAV_TABS, navOrder);
+  if (!stageOn) return base;
+  const insertAt = Math.max(0, base.findIndex((tab) => tab.id === 'generator') + 1);
+  return [...base.slice(0, insertAt), STAGE_MANAGER_TAB, ...base.slice(insertAt)];
+}
+
+export function clampNavId(id, stageOn = false) {
+  const allowed = visibleNavTabs(stageOn).map((tab) => tab.id);
+  return allowed.includes(id) ? id : allowed[0];
 }
 
 export function clampToolId(id) {

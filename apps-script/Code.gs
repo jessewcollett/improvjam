@@ -693,6 +693,51 @@ function emptyStage_(code) {
   return { code: String(code || ''), payload: {}, updatedAt: '' };
 }
 
+var STAGE_CACHE_TTL = 21600;
+var STAGE_CACHE_MAX = 90000;
+
+function stageCacheKey_(code) {
+  return 'stage:' + String(code || '');
+}
+
+function stageRowKey_(code) {
+  return 'stagerow:' + String(code || '');
+}
+
+function stageFromCache_(code) {
+  try {
+    var raw = CacheService.getScriptCache().get(stageCacheKey_(code));
+    if (!raw) return null;
+    var parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    return {
+      code: code,
+      payload: parseStagePayload_(parsed.payload),
+      updatedAt: String(parsed.updatedAt || ''),
+    };
+  } catch (err) {
+    return null;
+  }
+}
+
+function stageToCache_(code, payload, updatedAt, row) {
+  try {
+    var cache = CacheService.getScriptCache();
+    var text = JSON.stringify({ payload: payload, updatedAt: updatedAt || '' });
+    if (text.length <= STAGE_CACHE_MAX) {
+      cache.put(stageCacheKey_(code), text, STAGE_CACHE_TTL);
+    }
+    if (row >= 2) cache.put(stageRowKey_(code), String(row), STAGE_CACHE_TTL);
+  } catch (err) {}
+}
+
+function stageSheet_(ss, create) {
+  var sheet = ss.getSheetByName(TAB_STAGE);
+  if (sheet || !create) return sheet;
+  ensureTabHeaders_(ss, TAB_STAGE, STAGE_HEADERS);
+  return ss.getSheetByName(TAB_STAGE);
+}
+
 function parseStagePayload_(raw) {
   if (raw == null || raw === '') return {};
   if (typeof raw === 'object' && !Array.isArray(raw)) return raw;
@@ -714,9 +759,9 @@ function readStage_(code) {
   var key = String(code || '').trim();
   var empty = emptyStage_(key);
   if (!key) return empty;
-  var ss = SpreadsheetApp.getActive();
-  ensureTabHeaders_(ss, TAB_STAGE, STAGE_HEADERS);
-  var sheet = ss.getSheetByName(TAB_STAGE);
+  var cached = stageFromCache_(key);
+  if (cached) return cached;
+  var sheet = stageSheet_(SpreadsheetApp.getActive(), false);
   if (!sheet || sheet.getLastRow() < 2) return empty;
   var last = Math.max(sheet.getLastColumn(), 1);
   var headers = sheet.getRange(1, 1, 1, last).getValues()[0];
@@ -728,11 +773,13 @@ function readStage_(code) {
   var r;
   for (r = 1; r < values.length; r++) {
     if (String(values[r][codeCol] || '').trim() !== key) continue;
-    return {
+    var found = {
       code: key,
       payload: parseStagePayload_(payloadCol >= 0 ? values[r][payloadCol] : ''),
       updatedAt: stageUpdatedAt_(updatedCol >= 0 ? values[r][updatedCol] : ''),
     };
+    stageToCache_(key, found.payload, found.updatedAt, r + 1);
+    return found;
   }
   return empty;
 }
@@ -742,33 +789,48 @@ function upsertStage_(body) {
   if (!code) {
     return { error: 'Missing code', code: '', payload: {}, updatedAt: '' };
   }
+  var payload = body && body.payload != null ? body.payload : {};
+  var payloadText = typeof payload === 'string' ? payload : JSON.stringify(payload);
+  var parsed = parseStagePayload_(payloadText);
+  var updatedAt = new Date().toISOString();
+  stageToCache_(code, parsed, updatedAt, 0);
+
   var ss = SpreadsheetApp.getActive();
-  ensureTabHeaders_(ss, TAB_STAGE, STAGE_HEADERS);
-  var sheet = ss.getSheetByName(TAB_STAGE);
+  var sheet = stageSheet_(ss, true);
   var last = Math.max(sheet.getLastColumn(), 1);
   var headers = sheet.getRange(1, 1, 1, last).getValues()[0];
   var codeCol = headerIndex_(headers, 'code') + 1;
   var payloadCol = headerIndex_(headers, 'payload') + 1;
   var updatedCol = headerIndex_(headers, 'updatedAt') + 1;
-  var values = sheet.getDataRange().getValues();
   var row = -1;
-  var r;
-  for (r = 1; r < values.length; r++) {
-    if (String(values[r][codeCol - 1] || '').trim() === code) {
-      row = r + 1;
-      break;
+  try {
+    var cachedRow = parseInt(CacheService.getScriptCache().get(stageRowKey_(code)), 10);
+    if (cachedRow >= 2 && codeCol > 0 && String(sheet.getRange(cachedRow, codeCol).getValue() || '').trim() === code) {
+      row = cachedRow;
+    }
+  } catch (err) {}
+  if (row < 0) {
+    var values = sheet.getDataRange().getValues();
+    var r;
+    for (r = 1; r < values.length; r++) {
+      if (String(values[r][codeCol - 1] || '').trim() === code) {
+        row = r + 1;
+        break;
+      }
     }
   }
   if (row < 0) row = sheet.getLastRow() + 1;
-  var payload = body && body.payload != null ? body.payload : {};
-  var payloadText = typeof payload === 'string' ? payload : JSON.stringify(payload);
-  var updatedAt = new Date().toISOString();
-  if (codeCol > 0) sheet.getRange(row, codeCol).setValue(code);
-  if (payloadCol > 0) sheet.getRange(row, payloadCol).setValue(payloadText);
-  if (updatedCol > 0) sheet.getRange(row, updatedCol).setValue(updatedAt);
+  if (codeCol === 1 && payloadCol === 2 && updatedCol === 3) {
+    sheet.getRange(row, 1, 1, 3).setValues([[code, payloadText, updatedAt]]);
+  } else {
+    if (codeCol > 0) sheet.getRange(row, codeCol).setValue(code);
+    if (payloadCol > 0) sheet.getRange(row, payloadCol).setValue(payloadText);
+    if (updatedCol > 0) sheet.getRange(row, updatedCol).setValue(updatedAt);
+  }
+  stageToCache_(code, parsed, updatedAt, row);
   return {
     code: code,
-    payload: parseStagePayload_(payloadText),
+    payload: parsed,
     updatedAt: updatedAt,
   };
 }

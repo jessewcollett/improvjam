@@ -201,7 +201,7 @@ export default function SettingsView() {
       <SettingsSection
         title="Stage"
         icon={Tv}
-        summary={settings.stageCode ? `Code ${settings.stageCode}` : 'Phone remote for a classroom board'}
+        summary={settings.stageOn && settings.stageCode ? `On · ${settings.stageCode}` : 'Off until you start a session'}
         accent="text-lime-400"
       >
         <StageSettingsPanel />

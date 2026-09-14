@@ -1,12 +1,13 @@
 import { useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { NAV_TABS, tabsInOrder } from '../lib/nav.js';
+import { orderedVisibleNavTabs } from '../lib/nav.js';
 import { useAppStore } from '../store/useAppStore.js';
 
 export default function BottomNav({ activeRoute, onChange }) {
   const navRef = useRef(null);
   const navOrder = useAppStore((s) => s.settings.navOrder);
-  const items = tabsInOrder(NAV_TABS, navOrder);
+  const stageOn = useAppStore((s) => s.settings.stageOn);
+  const items = orderedVisibleNavTabs(navOrder, stageOn);
 
   useEffect(() => {
     const el = navRef.current;

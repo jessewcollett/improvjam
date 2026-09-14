@@ -85,9 +85,11 @@ function StageBoard({ code }) {
   useEffect(() => {
     let cancelled = false;
     let interval = null;
+    let inflight = false;
 
     const tick = async () => {
-      if (cancelled || document.hidden) return;
+      if (cancelled || document.hidden || inflight) return;
+      inflight = true;
       try {
         const data = await fetchStage(code);
         if (cancelled) return;
@@ -102,6 +104,8 @@ function StageBoard({ code }) {
           return;
         }
         setHardError('unreachable');
+      } finally {
+        inflight = false;
       }
     };
 
@@ -143,7 +147,7 @@ function StageBoard({ code }) {
 
       <div className="flex-1 min-h-0">
         {hasBoard ? (
-          <StageSlotGrid slots={slots} layout={payload.layout} boardStyle={payload.boardStyle} />
+          <StageSlotGrid slots={slots} layout={payload.layout} boardStyle={payload.boardStyle} frames={payload.frames} />
         ) : (
           <BoardStandby code={code} connecting={!ready && !hardError} hardError={Boolean(hardError && !ready)} />
         )}

@@ -23,11 +23,15 @@ export function mintStageCode(length = 5) {
   return code;
 }
 
-export function normalizeStageCode(raw) {
-  const code = String(raw || '')
-    .trim()
+export function sanitizeStageCodeInput(raw) {
+  return String(raw || '')
     .toUpperCase()
-    .replace(/[^A-Z0-9]/g, '');
+    .replace(new RegExp(`[^${STAGE_ALPHABET}]`, 'g'), '')
+    .slice(0, 5);
+}
+
+export function normalizeStageCode(raw) {
+  const code = sanitizeStageCodeInput(raw);
   return STAGE_CODE_RE.test(code) ? code : '';
 }
 
@@ -73,22 +77,29 @@ export function normalizeStageBoardStyle(raw) {
   return String(raw || '').trim().toLowerCase() === 'compact' ? 'compact' : 'cards';
 }
 
-export function buildStagePayload(pins, slots, sizes, layout, boardStyle) {
+export function buildStagePayload(pins, slots, sizes, layout, boardStyle, zooms, frames) {
   const payload = {};
   const order = [];
   const sizeMap = {};
+  const zoomMap = {};
   normalizeStagePins(pins).forEach((id) => {
     const value = slots?.[id];
     if (!slotHasContent(id, value)) return;
     payload[id] = value;
     order.push(id);
-    sizeMap[id] = clampStageSize(sizes?.[id]);
+    const resolved = resolveStageZoom(zooms?.[id], sizes?.[id]);
+    zoomMap[id] = resolved.zoom;
+    sizeMap[id] = resolved.size;
   });
   payload.order = order;
   payload.sizes = sizeMap;
+  payload.zooms = zoomMap;
   const layoutId = normalizeStageLayout(layout);
   if (layoutId) payload.layout = layoutId;
   payload.boardStyle = normalizeStageBoardStyle(boardStyle);
+  const frameMap = normalizeStageFrames(frames);
+  const covered = framesCoverSlots(frameMap, order);
+  if (covered) payload.frames = Object.fromEntries(order.map((id) => [id, frameMap[id]]));
   return payload;
 }
 
@@ -113,10 +124,71 @@ export const STAGE_SIZE_MIN = 1;
 export const STAGE_SIZE_MAX = 3;
 export const STAGE_SIZE_LABELS = { 1: 'S', 2: 'M', 3: 'L' };
 
+export const STAGE_ZOOM_MIN = 50;
+export const STAGE_ZOOM_MAX = 200;
+export const STAGE_ZOOM_STEP = 10;
+export const STAGE_ZOOM_DEFAULT = 100;
+export const STAGE_ZOOM_AUTO = 'auto';
+export const STAGE_FRAME_MIN = 12;
+
+export function isAutoZoom(value) {
+  return value == null || value === '' || value === STAGE_ZOOM_AUTO;
+}
+
 export function clampStageSize(value) {
   const n = Math.round(Number(value));
   if (!Number.isFinite(n)) return 1;
   return Math.min(STAGE_SIZE_MAX, Math.max(STAGE_SIZE_MIN, n));
+}
+
+export function clampStageZoom(value) {
+  if (isAutoZoom(value)) return STAGE_ZOOM_AUTO;
+  const n = Math.round(Number(value) / STAGE_ZOOM_STEP) * STAGE_ZOOM_STEP;
+  if (!Number.isFinite(n)) return STAGE_ZOOM_AUTO;
+  return Math.min(STAGE_ZOOM_MAX, Math.max(STAGE_ZOOM_MIN, n));
+}
+
+export function stageFontFactor(zoom) {
+  if (isAutoZoom(zoom)) return 1;
+  const n = clampStageZoom(zoom);
+  return n === STAGE_ZOOM_AUTO ? 1 : n / 100;
+}
+
+export function zoomFromLegacySize(size) {
+  const s = clampStageSize(size);
+  if (s >= 3) return 150;
+  if (s >= 2) return 120;
+  return STAGE_ZOOM_DEFAULT;
+}
+
+/** Auto packer span weight. Named layouts ignore this. Auto zoom is even cells. */
+export function packerSizeFromZoom(zoom) {
+  if (isAutoZoom(zoom)) return 1;
+  const z = clampStageZoom(zoom);
+  if (z === STAGE_ZOOM_AUTO) return 1;
+  if (z <= 90) return 1;
+  if (z >= 140) return 3;
+  return 2;
+}
+
+export function resolveStageZoom(zoomRaw, sizeRaw) {
+  const hasZoom = zoomRaw != null && zoomRaw !== '';
+  if (hasZoom) {
+    if (isAutoZoom(zoomRaw)) return { zoom: STAGE_ZOOM_AUTO, size: 1 };
+    const zoom = clampStageZoom(zoomRaw);
+    return { zoom, size: packerSizeFromZoom(zoom) };
+  }
+  if (sizeRaw != null && sizeRaw !== '') {
+    const size = clampStageSize(sizeRaw);
+    return { zoom: zoomFromLegacySize(size), size };
+  }
+  return { zoom: STAGE_ZOOM_AUTO, size: 1 };
+}
+
+export function nudgeStageZoom(current, delta) {
+  const step = Number(delta) || 0;
+  if (isAutoZoom(current)) return clampStageZoom(STAGE_ZOOM_DEFAULT + step);
+  return clampStageZoom(Number(current) + step);
 }
 
 export function normalizeStageSizes(raw) {
@@ -124,6 +196,197 @@ export function normalizeStageSizes(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
   STAGE_SLOT_IDS.forEach((id) => {
     if (raw[id] != null) out[id] = clampStageSize(raw[id]);
+  });
+  return out;
+}
+
+export function normalizeStageZooms(raw, fallbackSizes) {
+  const out = {};
+  const sizes = fallbackSizes && typeof fallbackSizes === 'object' && !Array.isArray(fallbackSizes)
+    ? fallbackSizes
+    : {};
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    STAGE_SLOT_IDS.forEach((id) => {
+      if (raw[id] != null) out[id] = clampStageZoom(raw[id]);
+    });
+  }
+  STAGE_SLOT_IDS.forEach((id) => {
+    if (out[id] == null && sizes[id] != null) out[id] = zoomFromLegacySize(sizes[id]);
+  });
+  return out;
+}
+
+export function clampStageFrame(frame) {
+  const x = Math.max(0, Math.min(100, Number(frame?.x) || 0));
+  const y = Math.max(0, Math.min(100, Number(frame?.y) || 0));
+  const w = Math.max(STAGE_FRAME_MIN, Math.min(100 - x, Number(frame?.w) || STAGE_FRAME_MIN));
+  const h = Math.max(STAGE_FRAME_MIN, Math.min(100 - y, Number(frame?.h) || STAGE_FRAME_MIN));
+  return { x, y, w, h };
+}
+
+export function normalizeStageFrames(raw) {
+  const out = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  STAGE_SLOT_IDS.forEach((id) => {
+    if (raw[id]) out[id] = clampStageFrame(raw[id]);
+  });
+  return out;
+}
+
+export function framesFromPacked(packed) {
+  if (!packed || packed.mode === 'pip') return {};
+  const cols = Math.max(1, packed.cols || 1);
+  const rows = Math.max(1, packed.rows || 1);
+  const out = {};
+  (packed.placements || []).forEach((item) => {
+    if (!item?.id || item.overlay) return;
+    out[item.id] = {
+      x: ((item.col - 1) / cols) * 100,
+      y: ((item.row - 1) / rows) * 100,
+      w: (item.colSpan / cols) * 100,
+      h: (item.rowSpan / rows) * 100,
+    };
+  });
+  return out;
+}
+
+export function framesCoverSlots(frames, ids) {
+  const list = ids || [];
+  if (!list.length) return false;
+  return list.every((id) => frames?.[id]);
+}
+
+const FRAME_EDGE = 1.25;
+
+function near(a, b) {
+  return Math.abs(Number(a) - Number(b)) < FRAME_EDGE;
+}
+
+export function layoutSplitters(frames) {
+  const entries = Object.entries(frames || {});
+  const vertical = [];
+  const horizontal = [];
+  const seenV = new Set();
+  const seenH = new Set();
+  entries.forEach(([, frame]) => {
+    const right = frame.x + frame.w;
+    const bottom = frame.y + frame.h;
+    if (right < 99.5) {
+      const key = Math.round(right);
+      if (!seenV.has(key)) {
+        const leftIds = entries.filter(([, other]) => near(other.x + other.w, right)).map(([id]) => id);
+        const rightIds = entries.filter(([, other]) => near(other.x, right)).map(([id]) => id);
+        if (leftIds.length && rightIds.length) {
+          seenV.add(key);
+          vertical.push({ axis: 'x', at: right, left: leftIds, right: rightIds });
+        }
+      }
+    }
+    if (bottom < 99.5) {
+      const key = Math.round(bottom);
+      if (!seenH.has(key)) {
+        const topIds = entries.filter(([, other]) => near(other.y + other.h, bottom)).map(([id]) => id);
+        const bottomIds = entries.filter(([, other]) => near(other.y, bottom)).map(([id]) => id);
+        if (topIds.length && bottomIds.length) {
+          seenH.add(key);
+          horizontal.push({ axis: 'y', at: bottom, top: topIds, bottom: bottomIds });
+        }
+      }
+    }
+  });
+  return { vertical, horizontal };
+}
+
+export function applySplitterDrag(frames, splitter, nextAt) {
+  const next = { ...frames };
+  if (!splitter) return next;
+  if (splitter.axis === 'x') {
+    let at = nextAt;
+    (splitter.left || []).forEach((id) => {
+      const frame = next[id];
+      if (!frame) return;
+      at = Math.max(at, frame.x + STAGE_FRAME_MIN);
+    });
+    (splitter.right || []).forEach((id) => {
+      const frame = next[id];
+      if (!frame) return;
+      at = Math.min(at, frame.x + frame.w - STAGE_FRAME_MIN);
+    });
+    (splitter.left || []).forEach((id) => {
+      const frame = next[id];
+      if (!frame) return;
+      next[id] = clampStageFrame({ ...frame, w: at - frame.x });
+    });
+    (splitter.right || []).forEach((id) => {
+      const frame = next[id];
+      if (!frame) return;
+      const end = frame.x + frame.w;
+      next[id] = clampStageFrame({ ...frame, x: at, w: end - at });
+    });
+  } else {
+    let at = nextAt;
+    (splitter.top || []).forEach((id) => {
+      const frame = next[id];
+      if (!frame) return;
+      at = Math.max(at, frame.y + STAGE_FRAME_MIN);
+    });
+    (splitter.bottom || []).forEach((id) => {
+      const frame = next[id];
+      if (!frame) return;
+      at = Math.min(at, frame.y + frame.h - STAGE_FRAME_MIN);
+    });
+    (splitter.top || []).forEach((id) => {
+      const frame = next[id];
+      if (!frame) return;
+      next[id] = clampStageFrame({ ...frame, h: at - frame.y });
+    });
+    (splitter.bottom || []).forEach((id) => {
+      const frame = next[id];
+      if (!frame) return;
+      const end = frame.y + frame.h;
+      next[id] = clampStageFrame({ ...frame, y: at, h: end - at });
+    });
+  }
+  return next;
+}
+
+export function normalizeIdeaCats(raw) {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set();
+  const out = [];
+  raw.forEach((id) => {
+    const key = String(id || '').trim();
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    out.push(key);
+  });
+  return out;
+}
+
+export function normalizeIdeaBucket(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => (typeof item === 'string' ? item.trim() : String(item?.text || '').trim()))
+    .filter(Boolean)
+    .slice(0, 200);
+}
+
+export function mergeStageIdeas(current, incoming) {
+  const out = { ...(current && typeof current === 'object' && !Array.isArray(current) ? current : {}) };
+  if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) return out;
+  Object.entries(incoming).forEach(([cat, rows]) => {
+    const key = String(cat || '').trim();
+    if (!key) return;
+    const prev = normalizeIdeaBucket(out[key]);
+    const add = normalizeIdeaBucket(rows);
+    const seen = new Set(prev.map((text) => text.toLowerCase()));
+    add.forEach((text) => {
+      const id = text.toLowerCase();
+      if (seen.has(id)) return;
+      seen.add(id);
+      prev.push(text);
+    });
+    out[key] = prev.slice(-200);
   });
   return out;
 }
@@ -251,11 +514,21 @@ export function listedStageSlots(payload) {
     seen.add(id);
     ids.push(id);
   });
-  return ids.map((id) => ({
-    id,
-    value: payload[id],
-    size: clampStageSize(payload.sizes?.[id]),
-  }));
+  const frames = normalizeStageFrames(payload?.frames);
+  return ids.map((id) => {
+    const resolved = resolveStageZoom(payload.zooms?.[id], payload.sizes?.[id]);
+    return {
+      id,
+      value: payload[id],
+      zoom: resolved.zoom,
+      size: resolved.size,
+      frame: frames[id],
+    };
+  });
+}
+
+export function seedStageFrames(slots, landscape, layout) {
+  return framesFromPacked(packStageGrid(slots, landscape, layout));
 }
 
 export function packStageGrid(slots, landscape, layout) {
@@ -271,7 +544,7 @@ export function packStageGrid(slots, landscape, layout) {
       placements: [{ ...items[0], col: 1, row: 1, colSpan: 1, rowSpan: 1 }],
     };
   }
-  const emphasized = items.some((slot) => slot.size > 1);
+  const emphasized = items.some((slot) => slot.size !== items[0].size);
   if (!emphasized) {
     const { cols, rows } = stageGridTemplate(n, landscape);
     return {
@@ -336,10 +609,12 @@ export function stageGridTemplate(count, landscape) {
 
 /** Local countdown paint rate on the board. Digits interpolate from endsAt, not from polls. */
 export const STAGE_TIMER_TICK_MS = 50;
-/** How often the TV GETs /api/stage. Start/pause latency only — not the digit refresh. */
-export const STAGE_BOARD_POLL_MS = 1500;
-/** Debounce for non-timer publishes (pins, suggestions, layout). Timer POSTs immediately. */
-export const STAGE_PUBLISH_DEBOUNCE_MS = 300;
+/** How often the TV GETs /api/stage. Pin/start latency only — not the digit refresh. */
+export const STAGE_BOARD_POLL_MS = 250;
+export const STAGE_IDEAS_POLL_MS = 1000;
+/** Debounce for bursty UI (zoom, layout). Pins, slots, and timer POST immediately. */
+export const STAGE_PUBLISH_DEBOUNCE_MS = 80;
+export const STAGE_FETCH_TIMEOUT_MS = 8000;
 
 export function stageTypeScale(count) {
   if (count <= 1) {
@@ -375,9 +650,11 @@ export function stageTypeScale(count) {
 }
 
 export function isTransientStageError(error) {
+  const name = String(error?.name || '');
+  if (name === 'AbortError' || name === 'TimeoutError') return true;
   const msg = String(error?.message || error || '').toLowerCase();
   if (!msg) return false;
-  return /google login|redeploy|unauthorized|unauthorised|sign in|sign-in|forbidden|\b401\b|\b403\b|anyone|login page|asked for a google/.test(msg);
+  return /google login|redeploy|unauthorized|unauthorised|sign in|sign-in|forbidden|\b401\b|\b403\b|anyone|login page|asked for a google|abort|timed out|timeout|failed to fetch|network/.test(msg);
 }
 
 export function slotSummary(id, value) {
@@ -414,6 +691,27 @@ export function stageBoardPath(code) {
 export function stageBoardUrl(code, origin = typeof window !== 'undefined' ? window.location.origin : '') {
   const path = stageBoardPath(code);
   return origin ? `${origin}${path}` : path;
+}
+
+export function stageIdeasPath(code) {
+  const normalized = normalizeStageCode(code);
+  return normalized ? `/ideas?s=${encodeURIComponent(normalized)}` : '/ideas';
+}
+
+export function stageIdeasUrl(code, origin = typeof window !== 'undefined' ? window.location.origin : '') {
+  const path = stageIdeasPath(code);
+  return origin ? `${origin}${path}` : path;
+}
+
+export function normalizeStageIdeasMap(raw) {
+  const out = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  Object.entries(raw).forEach(([cat, rows]) => {
+    const key = String(cat || '').trim();
+    if (!key) return;
+    out[key] = normalizeIdeaBucket(rows);
+  });
+  return out;
 }
 
 export async function copyText(text) {
@@ -456,10 +754,31 @@ async function readJson(res) {
   }
 }
 
+function abortAfter(ms) {
+  const controller = new AbortController();
+  const timer = globalThis.setTimeout(() => controller.abort(), ms);
+  return {
+    signal: controller.signal,
+    clear: () => globalThis.clearTimeout(timer),
+  };
+}
+
 export async function fetchStage(code) {
   const normalized = normalizeStageCode(code);
   if (!normalized) throw new Error('Missing stage code.');
-  const res = await fetch(`/api/stage?s=${encodeURIComponent(normalized)}`, { cache: 'no-store' });
+  const abort = abortAfter(STAGE_FETCH_TIMEOUT_MS);
+  let res;
+  try {
+    res = await fetch(`/api/stage?s=${encodeURIComponent(normalized)}`, {
+      cache: 'no-store',
+      signal: abort.signal,
+    });
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new Error('Stage request timed out.');
+    throw error;
+  } finally {
+    abort.clear();
+  }
   const data = await readJson(res);
   if (!res.ok) {
     throw new Error(data.error || `Couldn’t load the board (${res.status}).`);
@@ -467,18 +786,34 @@ export async function fetchStage(code) {
   return {
     code: data.code || normalized,
     payload: data.payload && typeof data.payload === 'object' && !Array.isArray(data.payload) ? data.payload : {},
+    ideas: normalizeStageIdeasMap(data.ideas),
+    ideaCats: normalizeIdeaCats(data.ideaCats),
+    ideasOpen: data.ideasOpen === true,
     updatedAt: data.updatedAt || '',
   };
 }
 
-export async function postStage(code, payload) {
+export async function postStage(code, payload, extra = {}) {
   const normalized = normalizeStageCode(code);
   if (!normalized) throw new Error('Missing stage code.');
-  const res = await fetch('/api/stage', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code: normalized, payload: payload || {} }),
-  });
+  const abort = abortAfter(STAGE_FETCH_TIMEOUT_MS);
+  const body = { code: normalized, ...extra };
+  if (payload !== undefined) body.payload = payload || {};
+  let res;
+  try {
+    res = await fetch('/api/stage', {
+      method: 'POST',
+      cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: abort.signal,
+    });
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new Error('Stage request timed out.');
+    throw error;
+  } finally {
+    abort.clear();
+  }
   const data = await readJson(res);
   if (!res.ok) {
     throw new Error(data.error || `Couldn’t publish to Stage (${res.status}).`);
@@ -572,6 +907,7 @@ export function suggestionsFromGenerator(kit, skillResults) {
     const texts = (item.rows || [])
       .map((row) => suggestionEntry(displayText(row), extraOf(row)))
       .filter(Boolean);
+    if (!texts.length) return;
     items.push({
       label: item.label || 'Ask for',
       type: kitSuggestionType(item),

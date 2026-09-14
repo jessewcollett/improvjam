@@ -3,15 +3,17 @@ import { MotionConfig } from 'framer-motion';
 import BottomNav from './components/BottomNav.jsx';
 import LibraryView from './components/LibraryView.jsx';
 import GeneratorView from './components/GeneratorView.jsx';
+import StageManagerView from './components/StageManagerView.jsx';
 import ToolsView from './components/ToolsView.jsx';
 import MySetsView from './components/MySetsView.jsx';
 import SettingsView from './components/SettingsView.jsx';
 import { applyTheme } from './lib/theme.js';
-import { clampNavId } from './lib/nav.js';
+import { STAGE_MANAGER_ID, clampNavId } from './lib/nav.js';
 import { useAppStore } from './store/useAppStore.js';
 
 const views = [
   { id: 'generator', View: GeneratorView },
+  { id: STAGE_MANAGER_ID, View: StageManagerView },
   { id: 'library', View: LibraryView },
   { id: 'tools', View: ToolsView },
   { id: 'mysets', View: MySetsView },
@@ -22,7 +24,8 @@ export default function App() {
   const syncFromSheet = useAppStore((s) => s.syncFromSheet);
   const settings = useAppStore((s) => s.settings);
   const updateSettings = useAppStore((s) => s.updateSettings);
-  const activeRoute = clampNavId(settings.lastRoute);
+  const stageOn = Boolean(settings.stageOn);
+  const activeRoute = clampNavId(settings.lastRoute, stageOn);
 
   useEffect(() => {
     applyTheme(settings.theme);
@@ -34,12 +37,19 @@ export default function App() {
     syncFromSheet().catch(() => {});
   }, [syncFromSheet]);
 
+  useEffect(() => {
+    if (!stageOn && settings.lastRoute === STAGE_MANAGER_ID) {
+      updateSettings({ lastRoute: 'generator' });
+    }
+  }, [stageOn, settings.lastRoute, updateSettings]);
+
   return (
     <MotionConfig reducedMotion={settings.reducedMotion ? 'always' : 'user'}>
       <div className="flex flex-col h-screen w-full max-w-md md:max-w-3xl lg:max-w-5xl mx-auto bg-stage font-body text-gray-100 overflow-hidden relative selection:bg-blue-500/30">
         <main className="flex-1 overflow-hidden relative">
           {views.map(({ id, View }) => {
             const active = activeRoute === id;
+            if (id === STAGE_MANAGER_ID && !stageOn) return null;
             return (
               <div
                 key={id}
