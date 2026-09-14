@@ -42,6 +42,7 @@ import {
   normalizeStagePins,
   normalizeStageSizes,
   normalizeStageSlots,
+  normalizeStageSpotlight,
   normalizeStageZooms,
   popOutStageTile,
   postStage,
@@ -51,6 +52,7 @@ import {
   swapStageFrames,
   STAGE_PUBLISH_DEBOUNCE_MS,
 } from '../lib/stage.js';
+import { normalizeTheme } from '../lib/theme.js';
 
 const bundled = normalizePayload(fallback);
 
@@ -150,6 +152,10 @@ function seedLayout(state, overrides = {}) {
   return { stageFrames: seeded.frames, stageFloats: seeded.floats };
 }
 
+function pinnedSpotlight(state, pins) {
+  return normalizeStageSpotlight(state.stageSpotlight, normalizeStagePins(pins));
+}
+
 function queueStagePublish() {
   if (stagePublishTimer) clearTimeout(stagePublishTimer);
   stagePublishTimer = setTimeout(() => {
@@ -183,7 +189,10 @@ async function publishStageNow() {
       state.stageFrames,
     );
     payload.hideCode = Boolean(state.stageHideCode);
+    payload.theme = normalizeTheme(state.stageTheme);
     payload.floats = normalizeStageFloats(state.stageFloats, payload.order);
+    const spotlight = normalizeStageSpotlight(state.stageSpotlight, payload.order);
+    if (spotlight) payload.spotlight = spotlight;
     const aligns = normalizeStageAligns(state.stageAligns);
     if (Object.keys(aligns).length) payload.aligns = aligns;
     const captions = normalizeStageCaptions(state.stageCaptions);
@@ -236,6 +245,8 @@ export const useAppStore = create(
       stageAligns: {},
       stageCaptions: {},
       stageHideCode: false,
+      stageTheme: 'dark',
+      stageSpotlight: '',
       stageIdeasOpen: false,
       stageIdeasUse: false,
       stageIdeaCats: [...defaultGeneratorBanks],
@@ -352,7 +363,7 @@ export const useAppStore = create(
         set((state) => {
           const on = state.stagePins.includes(id);
           const stagePins = on ? state.stagePins.filter((item) => item !== id) : [...state.stagePins, id];
-          return { stagePins, ...seedLayout(state, { stagePins }) };
+          return { stagePins, stageSpotlight: pinnedSpotlight(state, stagePins), ...seedLayout(state, { stagePins }) };
         });
         publishStageNow();
       },
@@ -377,7 +388,7 @@ export const useAppStore = create(
         set((state) => {
           if (!state.stagePins.includes(id)) return {};
           const stagePins = state.stagePins.filter((item) => item !== id);
-          return { stagePins, ...seedLayout(state, { stagePins }) };
+          return { stagePins, stageSpotlight: pinnedSpotlight(state, stagePins), ...seedLayout(state, { stagePins }) };
         });
         publishStageNow();
       },
@@ -396,6 +407,7 @@ export const useAppStore = create(
           return {
             stageSlots: { ...state.stageSlots, [id]: next },
             stagePins,
+            stageSpotlight: pinnedSpotlight(state, stagePins),
             ...(emptied
               ? seedLayout(state, { stagePins })
               : {
@@ -537,6 +549,20 @@ export const useAppStore = create(
         if (get().settings.stageOn) publishStageNow();
       },
 
+      setStageTheme: (theme) => {
+        set({ stageTheme: normalizeTheme(theme) });
+        if (get().settings.stageOn) publishStageNow();
+      },
+
+      toggleStageSpotlight: (id) => {
+        if (!isStageSlotId(id)) return;
+        set((state) => {
+          if (!state.stagePins.includes(id)) return {};
+          return { stageSpotlight: state.stageSpotlight === id ? '' : id };
+        });
+        if (get().settings.stageOn) publishStageNow();
+      },
+
       toggleStageDisplay: () => {
         get().ensureStageCode();
         set((state) => {
@@ -548,6 +574,7 @@ export const useAppStore = create(
           return {
             stageSlots: { ...state.stageSlots, display: invite },
             stagePins,
+            stageSpotlight: pinnedSpotlight(state, stagePins),
             ...seedLayout(state, { stagePins }),
           };
         });
@@ -614,7 +641,7 @@ export const useAppStore = create(
           const on = state.stagePins.includes('message');
           if (on) {
             const stagePins = state.stagePins.filter((item) => item !== 'message');
-            return { stagePins, ...seedLayout(state, { stagePins }) };
+            return { stagePins, stageSpotlight: pinnedSpotlight(state, stagePins), ...seedLayout(state, { stagePins }) };
           }
           if (!text) return {};
           const stagePins = [...state.stagePins, 'message'];
@@ -681,7 +708,7 @@ export const useAppStore = create(
       },
 
       clearStagePins: () => {
-        set({ stagePins: [], stageFrames: {}, stageFloats: [] });
+        set({ stagePins: [], stageFrames: {}, stageFloats: [], stageSpotlight: '' });
         publishStageNow();
       },
 
@@ -963,6 +990,8 @@ export const useAppStore = create(
         stageAligns: state.stageAligns,
         stageCaptions: state.stageCaptions,
         stageHideCode: state.stageHideCode,
+        stageTheme: state.stageTheme,
+        stageSpotlight: state.stageSpotlight,
         stageIdeasOpen: state.stageIdeasOpen,
         stageIdeasUse: state.stageIdeasUse,
         stageIdeaCats: state.stageIdeaCats,
@@ -1014,6 +1043,8 @@ export const useAppStore = create(
         stageAligns: normalizeStageAligns(persisted?.stageAligns),
         stageCaptions: normalizeStageCaptions(persisted?.stageCaptions),
         stageHideCode: persisted?.stageHideCode === true,
+        stageTheme: normalizeTheme(persisted?.stageTheme),
+        stageSpotlight: normalizeStageSpotlight(persisted?.stageSpotlight, normalizeStagePins(persisted?.stagePins)),
         stageIdeasOpen: persisted?.stageIdeasOpen === true,
         stageIdeasUse: persisted?.stageIdeasUse === true,
         stageIdeaCats: normalizeIdeaCats(

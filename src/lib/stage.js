@@ -8,6 +8,13 @@ export function isStageSlotId(id) {
   return SLOT_SET.has(id);
 }
 
+export function normalizeStageSpotlight(raw, ids) {
+  const key = String(raw || '').trim();
+  if (!key || !isStageSlotId(key)) return '';
+  if (Array.isArray(ids) && ids.length && !ids.includes(key)) return '';
+  return key;
+}
+
 export function mintStageCode(length = 5) {
   const n = length === 4 ? 4 : 5;
   const bytes = new Uint8Array(n);

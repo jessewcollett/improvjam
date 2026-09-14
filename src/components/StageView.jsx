@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Eye, EyeOff, Moon, Sun, Tv } from 'lucide-react';
 import { StageSlotGrid } from './StageBoardContent.jsx';
 import {
@@ -93,12 +93,28 @@ function BoardStandby({ code, connecting, hardError, hideCode }) {
   );
 }
 
+function sessionThemeFromPayload(payload) {
+  const raw = payload?.theme;
+  return raw === 'light' || raw === 'dark' ? raw : '';
+}
+
 function StageBoard({ code }) {
   const [payload, setPayload] = useState({});
   const [hardError, setHardError] = useState('');
   const [ready, setReady] = useState(false);
   const [localHide, setLocalHide] = useState(readLocalHideCode);
-  const [theme, setTheme] = useState(readStageTheme);
+  const [localTheme, setLocalTheme] = useState('');
+  const publishedTheme = sessionThemeFromPayload(payload);
+  const publishedThemeRef = useRef(publishedTheme);
+  const theme = localTheme || publishedTheme || readStageTheme();
+
+  useEffect(() => {
+    if (!publishedTheme) return;
+    if (publishedThemeRef.current !== publishedTheme) {
+      publishedThemeRef.current = publishedTheme;
+      setLocalTheme('');
+    }
+  }, [publishedTheme]);
 
   useEffect(() => {
     applyTheme(theme);
@@ -169,7 +185,9 @@ function StageBoard({ code }) {
   };
 
   const toggleTheme = () => {
-    setTheme(writeStageTheme(theme === 'light' ? 'dark' : 'light'));
+    const next = theme === 'light' ? 'dark' : 'light';
+    writeStageTheme(next);
+    setLocalTheme(next);
   };
 
   const light = theme === 'light';
@@ -215,6 +233,7 @@ function StageBoard({ code }) {
             boardStyle={payload.boardStyle}
             frames={payload.frames}
             floats={Array.isArray(payload.floats) ? payload.floats : undefined}
+            spotlight={payload.spotlight}
           />
         ) : (
           <BoardStandby

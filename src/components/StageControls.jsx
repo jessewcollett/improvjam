@@ -18,6 +18,7 @@ import {
   stageIdeasUrl,
 } from '../lib/stage.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { STAGE_MANAGER_ID } from '../lib/nav.js';
 import { LiveStageTime } from './StageBoardContent.jsx';
 import { GamePartToggles } from './StagePin.jsx';
 
@@ -680,8 +681,9 @@ export function StageRemoteBody({ footer = null, extra = null, showPinList = tru
 export function StageHeaderControl() {
   const code = useAppStore((s) => s.settings.stageCode);
   const stageOn = useAppStore((s) => s.settings.stageOn);
+  const updateSettings = useAppStore((s) => s.updateSettings);
+  const setStageOn = useAppStore((s) => s.setStageOn);
   const [copied, markCopied] = useCopiedFlag();
-  const [open, setOpen] = useState(false);
   const preview = useStagePreview();
 
   const onCopy = async (event) => {
@@ -690,75 +692,36 @@ export function StageHeaderControl() {
     if (await copyStageLink(code)) markCopied();
   };
 
-  return (
-    <>
-      <div className="flex items-center gap-0.5 rounded-xl border border-gray-800 bg-[#1A1A1A] pl-0.5 pr-0.5">
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="flex items-center gap-1 min-h-11 pl-2 pr-1 rounded-lg"
-          aria-label="Stage Manager"
-        >
-          <Tv className={`w-3.5 h-3.5 shrink-0 ${stageOn ? 'text-lime-400' : 'text-gray-500'}`} aria-hidden />
-          <span className="text-xs font-black font-display tracking-[0.16em] text-gray-200 tabular-nums min-w-[3.25rem]">
-            {stageOn && code ? code : 'Off'}
-          </span>
-          {stageOn && preview.pinCount ? (
-            <span className="text-2xs font-bold text-lime-400">{preview.pinCount}</span>
-          ) : null}
-        </button>
-        <button
-          type="button"
-          onClick={onCopy}
-          disabled={!stageOn || !code}
-          className="flex items-center justify-center min-w-11 min-h-11 rounded-lg text-gray-300 disabled:text-gray-600"
-          aria-label={copied ? 'Stage link copied' : 'Copy stage link'}
-        >
-          {copied ? <Check className="w-3.5 h-3.5 text-lime-400" /> : <Copy className="w-3.5 h-3.5" />}
-        </button>
-      </div>
-      {open ? (
-        <StageRemoteSheet
-          onClose={() => setOpen(false)}
-          onCopy={onCopy}
-          copied={copied}
-        />
-      ) : null}
-    </>
-  );
-}
+  const openStageTab = () => {
+    if (!stageOn) setStageOn(true);
+    updateSettings({ lastRoute: STAGE_MANAGER_ID });
+  };
 
-function StageRemoteSheet({ onClose, onCopy, copied }) {
   return (
-    <div className="fixed inset-0 z-[70] flex flex-col justify-end">
-      <button type="button" className="absolute inset-0 bg-black/70" aria-label="Close Stage Manager" onClick={onClose} />
-      <div className="relative bg-[#121212] border-t border-gray-800 rounded-t-3xl px-4 pt-3 pb-nav max-h-[80vh] flex flex-col">
-        <div className="flex items-center justify-between gap-2 mb-2">
-          <p className="text-base font-black font-display text-white leading-tight">Stage Manager</p>
-          <button
-            type="button"
-            onClick={onClose}
-            className="min-w-11 min-h-11 flex items-center justify-center text-gray-400"
-            aria-label="Close"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-auto scrollbar-hide pb-2">
-          <StageRemoteBody
-            footer={(
-              <button
-                type="button"
-                onClick={onCopy}
-                className="min-h-11 px-3 rounded-xl bg-gray-800 border border-gray-700 text-sm font-bold text-gray-100 inline-flex items-center gap-2"
-              >
-                {copied ? <Check className="w-3.5 h-3.5 text-lime-400" /> : <Copy className="w-3.5 h-3.5" />}
-                {copied ? 'Copied' : 'Copy link'}
-              </button>
-            )}
-          />
-        </div>
-      </div>
+    <div className="flex items-center gap-0.5 rounded-xl border border-gray-800 bg-[#1A1A1A] pl-0.5 pr-0.5">
+      <button
+        type="button"
+        onClick={openStageTab}
+        className="flex items-center gap-1 min-h-11 pl-2 pr-1 rounded-lg"
+        aria-label="Open Stage"
+      >
+        <Tv className={`w-3.5 h-3.5 shrink-0 ${stageOn ? 'text-lime-400' : 'text-gray-500'}`} aria-hidden />
+        <span className="text-xs font-black font-display tracking-[0.16em] text-gray-200 tabular-nums min-w-[3.25rem]">
+          {stageOn && code ? code : 'Off'}
+        </span>
+        {stageOn && preview.pinCount ? (
+          <span className="text-2xs font-bold text-lime-400">{preview.pinCount}</span>
+        ) : null}
+      </button>
+      <button
+        type="button"
+        onClick={onCopy}
+        disabled={!stageOn || !code}
+        className="flex items-center justify-center min-w-11 min-h-11 rounded-lg text-gray-300 disabled:text-gray-600"
+        aria-label={copied ? 'Stage link copied' : 'Copy stage link'}
+      >
+        {copied ? <Check className="w-3.5 h-3.5 text-lime-400" /> : <Copy className="w-3.5 h-3.5" />}
+      </button>
     </div>
   );
 }

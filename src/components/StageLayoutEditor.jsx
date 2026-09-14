@@ -7,6 +7,8 @@ import {
   LayoutGrid,
   Lock,
   LockOpen,
+  Maximize2,
+  Minimize2,
   Moon,
   PictureInPicture2,
   SlidersHorizontal,
@@ -155,8 +157,10 @@ export default function StageLayoutEditor() {
   const aligns = useAppStore((s) => s.stageAligns);
   const captions = useAppStore((s) => s.stageCaptions);
   const boardStyle = useAppStore((s) => s.settings.stageBoardStyle);
-  const theme = useAppStore((s) => s.settings.theme);
-  const updateSettings = useAppStore((s) => s.updateSettings);
+  const stageTheme = useAppStore((s) => s.stageTheme);
+  const setStageTheme = useAppStore((s) => s.setStageTheme);
+  const spotlight = useAppStore((s) => s.stageSpotlight);
+  const toggleStageSpotlight = useAppStore((s) => s.toggleStageSpotlight);
   const applyStageLayout = useAppStore((s) => s.applyStageLayout);
   const resetStageFrames = useAppStore((s) => s.resetStageFrames);
   const swapStagePins = useAppStore((s) => s.swapStagePins);
@@ -174,6 +178,7 @@ export default function StageLayoutEditor() {
   const covering = framesCoverSlots(frames, ids);
   const working = covering ? frames : seeded.frames;
   const workingFloats = covering ? normalizeStageFloats(floats, ids) : seeded.floats;
+  const spotlightOn = ids.includes(spotlight) ? spotlight : '';
   const [activeId, setActiveId] = useState('');
   const [hoverId, setHoverId] = useState('');
   const [overlayOn, setOverlayOn] = useState(false);
@@ -331,12 +336,13 @@ export default function StageLayoutEditor() {
         <div className="flex flex-wrap items-center gap-1">
           <button
             type="button"
-            onClick={() => updateSettings({ theme: theme === 'light' ? 'dark' : 'light' })}
+            onClick={() => setStageTheme(stageTheme === 'light' ? 'dark' : 'light')}
             className="w-8 h-8 rounded-md inline-flex items-center justify-center text-gray-400 hover:text-gray-100"
-            aria-label={theme === 'light' ? 'Dark mode' : 'Light mode'}
-            aria-pressed={theme === 'light'}
+            aria-label={stageTheme === 'light' ? 'Dark mode for Stage' : 'Light mode for Stage'}
+            aria-pressed={stageTheme === 'light'}
+            title="Stage light/dark"
           >
-            {theme === 'light' ? <Moon className="w-3.5 h-3.5" /> : <Sun className="w-3.5 h-3.5" />}
+            {stageTheme === 'light' ? <Moon className="w-3.5 h-3.5" /> : <Sun className="w-3.5 h-3.5" />}
           </button>
           <button
             type="button"
@@ -385,23 +391,29 @@ export default function StageLayoutEditor() {
             boardStyle={boardStyle}
             frames={working}
             floats={workingFloats}
+            spotlight={spotlightOn}
           />
         </div>
         {listed.map((slot) => {
           const id = slot.id;
           const frame = working[id];
           if (!frame) return null;
+          if (spotlightOn && id !== spotlightOn) return null;
           const floating = workingFloats.includes(id);
           const name = STAGE_SLOT_LABELS[id] || id;
           const PopIcon = floating ? LayoutGrid : PictureInPicture2;
           const popLabel = floating ? 'Dock tile' : 'Pop out tile';
+          const lit = spotlightOn === id;
+          const SpotIcon = lit ? Minimize2 : Maximize2;
+          const spotLabel = lit ? `Exit spotlight` : `Spotlight ${name}`;
+          const canResize = !resizeLocked && !lit;
           return (
             <div
               key={id}
-              className={`absolute ${floating ? 'z-30' : 'z-20'} ${hoverId === id ? 'ring-1 ring-lime-400/80' : ''}`}
-              style={frameStyle(frame)}
+              className={`absolute ${floating && !lit ? 'z-30' : 'z-20'} ${hoverId === id ? 'ring-1 ring-lime-400/80' : ''}`}
+              style={lit ? { left: 0, top: 0, width: '100%', height: '100%' } : frameStyle(frame)}
             >
-              {resizeLocked ? null : (
+              {canResize ? (
                 <div
                   role="presentation"
                   onPointerDown={(event) => startBody(event, id)}
@@ -410,8 +422,8 @@ export default function StageLayoutEditor() {
                   onPointerCancel={onPointerUp}
                   className="absolute inset-0 touch-none cursor-grab"
                 />
-              )}
-              {resizeLocked ? null : ['left', 'right', 'top', 'bottom'].map((edge) => {
+              ) : null}
+              {canResize ? ['left', 'right', 'top', 'bottom'].map((edge) => {
                 const vertical = edge === 'left' || edge === 'right';
                 const Icon = EDGE_ICON[edge];
                 return (
@@ -439,8 +451,8 @@ export default function StageLayoutEditor() {
                     <Icon className="absolute left-1/2 top-1/2 w-3.5 h-3.5 -translate-x-1/2 -translate-y-1/2 pointer-events-none" />
                   </button>
                 );
-              })}
-              {resizeLocked || !floating ? null : ['nw', 'ne', 'sw', 'se'].map((corner) => (
+              }) : null}
+              {canResize && floating ? ['nw', 'ne', 'sw', 'se'].map((corner) => (
                 <button
                   key={corner}
                   type="button"
@@ -463,8 +475,24 @@ export default function StageLayoutEditor() {
                     } ${corner === 'se' ? 'bottom-1.5 right-1.5 border-b border-r' : ''}`}
                   />
                 </button>
-              ))}
+              )) : null}
               {overlayOn ? <TileCustomizeOverlay slot={slot} /> : null}
+              <button
+                type="button"
+                aria-label={spotLabel}
+                title={spotLabel}
+                aria-pressed={lit}
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }}
+                onClick={() => toggleStageSpotlight(id)}
+                className={`absolute z-30 top-0 left-0 w-11 h-11 inline-flex items-center justify-center bg-black/40 ${
+                  lit ? 'text-lime-300' : 'text-gray-300 hover:text-lime-200'
+                }`}
+              >
+                <SpotIcon className="w-4 h-4" />
+              </button>
               <button
                 type="button"
                 aria-label={`Remove ${name} from stage`}
@@ -478,27 +506,31 @@ export default function StageLayoutEditor() {
               >
                 <X className="w-4 h-4" />
               </button>
-              <button
-                type="button"
-                aria-label={popLabel}
-                title={popLabel}
-                onPointerDown={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                }}
-                onClick={(event) => toggleFloat(event, id)}
-                className="absolute z-30 bottom-0 right-0 w-11 h-11 inline-flex items-center justify-center text-lime-300/90 hover:text-lime-200 bg-black/40"
-              >
-                <PopIcon className="w-4 h-4" />
-              </button>
+              {lit ? null : (
+                <button
+                  type="button"
+                  aria-label={popLabel}
+                  title={popLabel}
+                  onPointerDown={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }}
+                  onClick={(event) => toggleFloat(event, id)}
+                  className="absolute z-30 bottom-0 right-0 w-11 h-11 inline-flex items-center justify-center text-lime-300/90 hover:text-lime-200 bg-black/40"
+                >
+                  <PopIcon className="w-4 h-4" />
+                </button>
+              )}
             </div>
           );
         })}
       </div>
       <p className="text-xs text-gray-500 mt-2">
-        {resizeLocked
-          ? 'Resize is locked. X unpins a window. Bottom-right pops it out or docks it.'
-          : 'Drag edges to resize. Drag a window onto another to swap. Popped-out windows also resize from corners.'}
+        {spotlightOn
+          ? 'Spotlight fills the TV. Tap it again to restore the previous layout.'
+          : resizeLocked
+            ? 'Resize is locked. Top-left spotlights a window. X unpins. Bottom-right pops it out or docks it.'
+            : 'Top-left spotlights a window. Drag edges to resize. Drag a window onto another to swap.'}
       </p>
     </div>
   );

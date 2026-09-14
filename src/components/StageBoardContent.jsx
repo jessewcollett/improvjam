@@ -461,9 +461,17 @@ function StageCell({ slot, count, boardStyle, className = '', style, allowColumn
   );
 }
 
-export function StageSlotGrid({ slots, layout, boardStyle, frames, floats, className = '' }) {
+export function StageSlotGrid({ slots, layout, boardStyle, frames, floats, spotlight, className = '' }) {
   const landscape = useLandscape();
   if (!slots?.length) return null;
+  const featured = slots.find((slot) => slot.id === String(spotlight || '').trim());
+  if (featured) {
+    return (
+      <div className={`h-full min-h-0 ${className}`}>
+        <StageCell slot={featured} count={1} boardStyle={boardStyle} className="h-full border-0" />
+      </div>
+    );
+  }
   const fromSlots = {};
   slots.forEach((slot) => {
     if (slot?.frame) fromSlots[slot.id] = slot.frame;
