@@ -7,6 +7,15 @@
     },
     "api/media.js": {
       "maxDuration": 30
+    },
+    "api/stage.js": {
+      "maxDuration": 30
     }
-  }
+  },
+  "rewrites": [
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
+    }
+  ]
 }

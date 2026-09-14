@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Wand2,
   Shuffle,
@@ -10,13 +10,17 @@ import {
   Minus,
   Plus,
   X,
+  Dices,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore } from '../store/useAppStore.js';
 import { askForCategoriesFromRows, rowCategories, rowExtra, skillItemsFromRows } from '../lib/generator.js';
+import { suggestionsFromGenerator } from '../lib/stage.js';
 import ActionDock from './ActionDock.jsx';
 import CatalogIcon from './CatalogIcon.jsx';
 import SearchField from './SearchField.jsx';
+import { StageHeaderControl } from './StageControls.jsx';
+import StagePin from './StagePin.jsx';
 import SyncButton from './SyncButton.jsx';
 import RandomGameDraw from './RandomGameDraw.jsx';
 
@@ -154,6 +158,12 @@ export default function GeneratorView() {
   const drawCounts = useAppStore((s) => s.generatorDrawCounts) || {};
   const setGeneratorDrawCount = useAppStore((s) => s.setGeneratorDrawCount);
   const showStats = useAppStore((s) => s.settings.showStats) !== false;
+  const generatorView = useAppStore((s) => s.settings.generatorView) === 'games' ? 'games' : 'suggestions';
+  const updateSettings = useAppStore((s) => s.updateSettings);
+  const stagePins = useAppStore((s) => s.stagePins);
+  const setStageSlot = useAppStore((s) => s.setStageSlot);
+  const toggleStagePin = useAppStore((s) => s.toggleStagePin);
+  const suggestionsPinned = stagePins.includes('suggestions');
   const countFor = (id) => clampDrawCount(drawCounts[id] ?? 1);
   const [locks, setLocks] = useState({ c: false, o: false, r: false, e: false });
   const [kit, setKit] = useState(null);
@@ -258,7 +268,7 @@ export default function GeneratorView() {
     }
     if (id === 'line') {
       const line = pickSkillRow('Lines', prompts.lines);
-      return line ? { id, type: 'line', title: 'Opening Line', content: line } : null;
+      return line ? { id, type: 'line', title: 'Line', content: line } : null;
     }
     if (id === 'two') {
       const scene = pickSkillRow('Scenes', prompts.twoPerson);
@@ -326,6 +336,11 @@ export default function GeneratorView() {
 
   const canGenerate = selectedCats.length > 0 || selectedSkillItems.length > 0;
   const hasOutput = Boolean(kit?.length || skillResults.length);
+
+  useEffect(() => {
+    if (!hasOutput) return;
+    setStageSlot('suggestions', suggestionsFromGenerator(kit, skillResults));
+  }, [hasOutput, kit, skillResults, setStageSlot]);
   const selectedSummary = [
     ...selectedCats.map((cat) => cat.label),
     ...selectedSkillItems.map((item) => item.label),
@@ -374,97 +389,125 @@ export default function GeneratorView() {
             <Wand2 className="text-green-400 mr-2 w-7 h-7" />
             Generator
           </h1>
-          <SyncButton compact />
+          <div className="flex items-center gap-1.5">
+            <StageHeaderControl />
+            <SyncButton compact />
+          </div>
         </div>
 
-        <section className="mb-2">
+        <div className="flex bg-[#1A1A1A] p-1 rounded-xl border border-gray-800">
           <button
             type="button"
-            onClick={() => setBanksOpen((v) => !v)}
-            className="w-full flex items-center justify-between px-3 py-2.5 rounded-2xl border border-gray-800 bg-[#1A1A1A] min-h-11"
+            className={`flex-1 py-2 text-sm font-bold rounded-lg flex items-center justify-center min-h-11 px-2 ${
+              generatorView === 'suggestions' ? 'bg-gray-700 text-white' : 'text-gray-400'
+            }`}
+            onClick={() => updateSettings({ generatorView: 'suggestions' })}
           >
-            <div className="text-left min-w-0">
-              <h2 className="text-base font-black font-display text-white leading-tight">Ask for…</h2>
-              <p className="text-xs text-gray-500 leading-snug">
-                {showStats ? (
-                  <>
-                    {selectedCats.length + selectedSkillItems.length} selected
-                    {favoriteCats.length ? ` · ${favoriteCats.length} favorite${favoriteCats.length === 1 ? '' : 's'}` : ''}
-                    {' · '}
-                  </>
-                ) : null}
-                {selectedSummary}
-              </p>
-            </div>
-            <ChevronDown className={`w-5 h-5 text-gray-500 shrink-0 transition-transform ${banksOpen ? 'rotate-180' : ''}`} />
+            <Wand2 className="w-4 h-4 mr-2 shrink-0" />
+            <span className="text-center leading-tight">Suggestions</span>
           </button>
+          <button
+            type="button"
+            className={`flex-1 py-2 text-sm font-bold rounded-lg flex items-center justify-center min-h-11 px-2 ${
+              generatorView === 'games' ? 'bg-gray-700 text-white' : 'text-gray-400'
+            }`}
+            onClick={() => updateSettings({ generatorView: 'games' })}
+          >
+            <Dices className="w-4 h-4 mr-2 shrink-0" />
+            <span className="text-center leading-tight">Games</span>
+          </button>
+        </div>
 
-          {banksOpen && (
-            <div className="mt-2 max-h-[36vh] overflow-y-auto scrollbar-hide">
-              {favoriteCats.length > 0 && (
-                <>
-                  <p className="text-2xs uppercase tracking-wider text-yellow-500/80 font-bold px-0.5 mb-1">Favorites</p>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-1">
-                    {favoriteCats.map((cat) => (
-                      <BankRow
-                        key={cat.id}
-                        cat={cat}
-                        checked={selectedIds.includes(cat.id)}
-                        favorited
-                        showStats={showStats}
-                        onToggle={() => toggleGeneratorBank(cat.id)}
-                        onFavorite={() => toggleGeneratorBankFavorite(cat.id)}
-                      />
-                    ))}
-                  </div>
-                </>
-              )}
-              {remainingCats.length > 0 && (
-                <>
-                  <p className={`text-2xs uppercase tracking-wider text-gray-500 font-bold px-0.5 mb-1 ${favoriteCats.length ? 'mt-2.5' : ''}`}>
-                    {favoriteCats.length ? 'All banks' : 'Ask for'}
-                  </p>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-1">
-                    {remainingCats.map((cat) => (
-                      <BankRow
-                        key={cat.id}
-                        cat={cat}
-                        checked={selectedIds.includes(cat.id)}
-                        favorited={false}
-                        showStats={showStats}
-                        onToggle={() => toggleGeneratorBank(cat.id)}
-                        onFavorite={() => toggleGeneratorBankFavorite(cat.id)}
-                      />
-                    ))}
-                  </div>
-                </>
-              )}
-              {skillItems.length > 0 && (
-                <>
-                  <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold px-0.5 mt-2.5 mb-1">Skill Building</p>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-1">
-                    {skillItems.map((skill) => (
-                      <CheckRow
-                        key={skill.id}
-                        checked={selectedSkills.includes(skill.id)}
-                        icon={skill.icon}
-                        label={skill.label}
-                        count={showStats ? skill.count : undefined}
-                        onToggle={() => toggleGeneratorSkill(skill.id)}
-                      />
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-        </section>
+        <div className={generatorView === 'suggestions' ? 'mt-3' : 'hidden'}>
+          <section className="mb-2">
+            <button
+              type="button"
+              onClick={() => setBanksOpen((v) => !v)}
+              className="w-full flex items-center justify-between px-3 py-2.5 rounded-2xl border border-gray-800 bg-[#1A1A1A] min-h-11"
+            >
+              <div className="text-left min-w-0">
+                <h2 className="text-base font-black font-display text-white leading-tight">Ask for…</h2>
+                <p className="text-xs text-gray-500 leading-snug">
+                  {showStats ? (
+                    <>
+                      {selectedCats.length + selectedSkillItems.length} selected
+                      {favoriteCats.length ? ` · ${favoriteCats.length} favorite${favoriteCats.length === 1 ? '' : 's'}` : ''}
+                      {' · '}
+                    </>
+                  ) : null}
+                  {selectedSummary}
+                </p>
+              </div>
+              <ChevronDown className={`w-5 h-5 text-gray-500 shrink-0 transition-transform ${banksOpen ? 'rotate-180' : ''}`} />
+            </button>
 
-        <div className="hidden md:block">{renderGenerateBlock()}</div>
+            {banksOpen && (
+              <div className="mt-2 max-h-[36vh] overflow-y-auto scrollbar-hide">
+                {favoriteCats.length > 0 && (
+                  <>
+                    <p className="text-2xs uppercase tracking-wider text-yellow-500/80 font-bold px-0.5 mb-1">Favorites</p>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-1">
+                      {favoriteCats.map((cat) => (
+                        <BankRow
+                          key={cat.id}
+                          cat={cat}
+                          checked={selectedIds.includes(cat.id)}
+                          favorited
+                          showStats={showStats}
+                          onToggle={() => toggleGeneratorBank(cat.id)}
+                          onFavorite={() => toggleGeneratorBankFavorite(cat.id)}
+                        />
+                      ))}
+                    </div>
+                  </>
+                )}
+                {remainingCats.length > 0 && (
+                  <>
+                    <p className={`text-2xs uppercase tracking-wider text-gray-500 font-bold px-0.5 mb-1 ${favoriteCats.length ? 'mt-2.5' : ''}`}>
+                      {favoriteCats.length ? 'All banks' : 'Ask for'}
+                    </p>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-1">
+                      {remainingCats.map((cat) => (
+                        <BankRow
+                          key={cat.id}
+                          cat={cat}
+                          checked={selectedIds.includes(cat.id)}
+                          favorited={false}
+                          showStats={showStats}
+                          onToggle={() => toggleGeneratorBank(cat.id)}
+                          onFavorite={() => toggleGeneratorBankFavorite(cat.id)}
+                        />
+                      ))}
+                    </div>
+                  </>
+                )}
+                {skillItems.length > 0 && (
+                  <>
+                    <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold px-0.5 mt-2.5 mb-1">Skill Building</p>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-1">
+                      {skillItems.map((skill) => (
+                        <CheckRow
+                          key={skill.id}
+                          checked={selectedSkills.includes(skill.id)}
+                          icon={skill.icon}
+                          label={skill.label}
+                          count={showStats ? skill.count : undefined}
+                          onToggle={() => toggleGeneratorSkill(skill.id)}
+                        />
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </section>
+
+          <div className="hidden md:block">{renderGenerateBlock()}</div>
+        </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide px-4 md:px-6 pt-3 pb-3 md:pb-nav">
-        <RandomGameDraw />
+      <div className={generatorView === 'suggestions' ? 'flex flex-col flex-1 min-h-0' : 'hidden'}>
+        <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide px-4 md:px-6 pt-3 pb-3 md:pb-nav">
         <AnimatePresence>
           {hasOutput && (
             <motion.div
@@ -473,6 +516,19 @@ export default function GeneratorView() {
               exit={{ opacity: 0 }}
               className="mb-3 space-y-2"
             >
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold">Results</p>
+                <StagePin
+                  pressed={suggestionsPinned}
+                  label={suggestionsPinned ? 'Unpin suggestions from Stage' : 'Pin suggestions to Stage'}
+                  onClick={() => {
+                    if (!suggestionsPinned) {
+                      setStageSlot('suggestions', suggestionsFromGenerator(kit, skillResults));
+                    }
+                    toggleStagePin('suggestions');
+                  }}
+                />
+              </div>
               {kit?.length ? (
                 <section className="bg-[#1A1A1A] border border-lime-800/50 rounded-2xl p-3">
                   <p className="text-2xs uppercase tracking-wider text-lime-400 font-bold mb-2">Scene kit</p>
@@ -665,6 +721,11 @@ export default function GeneratorView() {
         </section>
       </div>
       <ActionDock>{renderGenerateBlock()}</ActionDock>
+      </div>
+
+      <div className={generatorView === 'games' ? 'flex flex-col flex-1 min-h-0' : 'hidden'}>
+        <RandomGameDraw />
+      </div>
     </div>
   );
 }

@@ -6,9 +6,12 @@ import { mergeSfxPads, resolveDefaultPad, sheetTracks } from '../lib/sfxPad.js';
 import { useHoldDing } from '../lib/useHoldDing.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { useWakeLock } from '../lib/useWakeLock.js';
+import { snapshotTimer } from '../lib/stage.js';
 import ActionDock from './ActionDock.jsx';
 import MusicPlayer from './MusicPlayer.jsx';
 import SfxPad from './SfxPad.jsx';
+import { StageHeaderControl } from './StageControls.jsx';
+import StagePin from './StagePin.jsx';
 
 const PRESETS = [
   { label: '30s', seconds: 30 },
@@ -102,6 +105,10 @@ export default function ToolsView({ active = true }) {
   const [suggestion, setSuggestion] = useState(null);
   const [coin, setCoin] = useState('');
   const musicControlsRef = useRef({});
+  const stagePins = useAppStore((s) => s.stagePins);
+  const setStageSlot = useAppStore((s) => s.setStageSlot);
+  const toggleStagePin = useAppStore((s) => s.toggleStagePin);
+  const publishStageTimer = useAppStore((s) => s.publishStageTimer);
 
   const halfSequence = [60, 30, 15, 7];
   const pads = useMemo(() => mergeSfxPads(audioRows), [audioRows]);
@@ -110,6 +117,21 @@ export default function ToolsView({ active = true }) {
     () => resolveDefaultPad(pads, settings.defaultSfxId, settings.bellStyle),
     [pads, settings.defaultSfxId, settings.bellStyle],
   );
+
+  useEffect(() => {
+    if (!suggestion) return;
+    setStageSlot('hat', suggestion);
+  }, [suggestion, setStageSlot]);
+
+  useEffect(() => {
+    if (!coin) return;
+    setStageSlot('coin', coin);
+  }, [coin, setStageSlot]);
+
+  useEffect(() => {
+    if (!picked.length) return;
+    setStageSlot('whosup', picked);
+  }, [picked, setStageSlot]);
 
   const ding = () => playPad(defaultPad, settings.bellVolume);
   const holdHeaderDing = useHoldDing(defaultPad, settings.bellVolume);
@@ -124,16 +146,18 @@ export default function ToolsView({ active = true }) {
           if (halfLife && halfStep < halfSequence.length - 1) {
             const next = halfStep + 1;
             setHalfStep(next);
+            publishStageTimer(snapshotTimer(true, halfSequence[next]));
             return halfSequence[next];
           }
           setRunning(false);
+          publishStageTimer(snapshotTimer(false, 0));
           return 0;
         }
         return prev - 1;
       });
     }, 1000);
     return () => clearInterval(id);
-  }, [running, halfLife, halfStep, defaultPad, settings.bellVolume]);
+  }, [running, halfLife, halfStep, defaultPad, settings.bellVolume, publishStageTimer]);
 
   const players = useMemo(
     () => roster.split(/[\n,]/).map((n) => n.trim()).filter(Boolean),
@@ -144,6 +168,31 @@ export default function ToolsView({ active = true }) {
     setSeconds(value);
     setRemaining(value);
     setRunning(true);
+    publishStageTimer(snapshotTimer(true, value));
+  };
+
+  const toggleRunning = () => {
+    const next = !running;
+    setRunning(next);
+    publishStageTimer(snapshotTimer(next, remaining));
+  };
+
+  const resetTimer = () => {
+    setRunning(false);
+    setRemaining(seconds);
+    publishStageTimer(snapshotTimer(false, seconds));
+  };
+
+  const endTimer = () => {
+    ding();
+    setRunning(false);
+    setRemaining(0);
+    publishStageTimer(snapshotTimer(false, 0));
+  };
+
+  const pinTool = (id, data) => {
+    if (!stagePins.includes(id)) setStageSlot(id, data);
+    toggleStagePin(id);
   };
 
   const applyCustom = () => {
@@ -195,8 +244,11 @@ export default function ToolsView({ active = true }) {
       <div className={`px-4 md:px-6 ${activeTool === 'sfx' ? 'pb-0' : ''}`}>
         <div className={`flex items-center justify-between gap-3 ${activeTool === 'sfx' ? 'mb-1' : 'mb-3'}`}>
           <h1 className={`font-black font-display text-white tracking-tight ${activeTool === 'sfx' ? 'text-lg' : 'text-2xl'}`}>Jam Tools</h1>
-          <div className="hidden md:flex items-center gap-2">
-            {activeTool !== 'sfx' ? dingButton('flex px-5 py-2.5 min-w-[88px]') : null}
+          <div className="flex items-center gap-2">
+            <StageHeaderControl />
+            <div className="hidden md:flex items-center gap-2">
+              {activeTool !== 'sfx' ? dingButton('flex px-5 py-2.5 min-w-[88px]') : null}
+            </div>
           </div>
         </div>
 
@@ -262,10 +314,17 @@ export default function ToolsView({ active = true }) {
 
         {activeTool === 'timer' && (
           <section className="bg-card border border-gray-800 rounded-2xl p-4">
-            <h2 className="text-lg font-black font-display mb-3 text-cyan-300 flex items-center">
-              <Timer className="w-5 h-5 mr-2" />
-              Timer
-            </h2>
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <h2 className="text-lg font-black font-display text-cyan-300 flex items-center">
+                <Timer className="w-5 h-5 mr-2" />
+                Timer
+              </h2>
+              <StagePin
+                pressed={stagePins.includes('timer')}
+                label={stagePins.includes('timer') ? 'Unpin timer from Stage' : 'Pin timer to Stage'}
+                onClick={() => pinTool('timer', snapshotTimer(running, remaining))}
+              />
+            </div>
             <div className="text-center mb-4">
               <p className="text-6xl font-black font-display tabular-nums text-white">{formatTime(remaining)}</p>
               {halfLife && <p className="text-xs text-cyan-400 mt-1">Half-Life beat {halfStep + 1} of 4</p>}
@@ -321,26 +380,19 @@ export default function ToolsView({ active = true }) {
               </button>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-              <button type="button" onClick={() => setRunning((v) => !v)} className="hidden md:block bg-gray-800 border border-gray-700 rounded-lg py-3 font-bold min-h-12">
+              <button type="button" onClick={toggleRunning} className="hidden md:block bg-gray-800 border border-gray-700 rounded-lg py-3 font-bold min-h-12">
                 {running ? 'Pause' : 'Start'}
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setRunning(false);
-                  setRemaining(seconds);
-                }}
+                onClick={resetTimer}
                 className="bg-gray-800 border border-gray-700 rounded-lg py-3 font-bold min-h-12"
               >
                 Reset
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  ding();
-                  setRunning(false);
-                  setRemaining(0);
-                }}
+                onClick={endTimer}
                 className="bg-gray-800 border border-gray-700 rounded-lg py-3 font-bold min-h-12"
               >
                 End + ding
@@ -351,10 +403,17 @@ export default function ToolsView({ active = true }) {
 
         {activeTool === 'whosup' && (
           <section className="bg-card border border-gray-800 rounded-2xl p-4">
-            <h2 className="text-lg font-black font-display mb-3 text-blue-300 flex items-center">
-              <Users className="w-5 h-5 mr-2" />
-              Who&apos;s Up
-            </h2>
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <h2 className="text-lg font-black font-display text-blue-300 flex items-center">
+                <Users className="w-5 h-5 mr-2" />
+                Who&apos;s Up
+              </h2>
+              <StagePin
+                pressed={stagePins.includes('whosup')}
+                label={stagePins.includes('whosup') ? 'Unpin Who’s Up from Stage' : 'Pin Who’s Up to Stage'}
+                onClick={() => pinTool('whosup', picked)}
+              />
+            </div>
             <textarea
               value={roster}
               onChange={(e) => setRoster(e.target.value)}
@@ -382,10 +441,17 @@ export default function ToolsView({ active = true }) {
 
         {activeTool === 'hat' && (
           <section className="bg-card border border-gray-800 rounded-2xl p-4">
-            <h2 className="text-lg font-black font-display mb-3 text-lime-300 flex items-center">
-              <Lightbulb className="w-5 h-5 mr-2" />
-              Suggestion Hat
-            </h2>
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <h2 className="text-lg font-black font-display text-lime-300 flex items-center">
+                <Lightbulb className="w-5 h-5 mr-2" />
+                Suggestion Hat
+              </h2>
+              <StagePin
+                pressed={stagePins.includes('hat')}
+                label={stagePins.includes('hat') ? 'Unpin hat from Stage' : 'Pin hat to Stage'}
+                onClick={() => pinTool('hat', suggestion)}
+              />
+            </div>
             <button type="button" onClick={rollSuggestion} className="hidden md:block w-full bg-lime-700 text-white font-bold py-3 rounded-xl min-h-12 mb-3">
               Draw a suggestion
             </button>
@@ -402,10 +468,17 @@ export default function ToolsView({ active = true }) {
 
         {activeTool === 'coin' && (
           <section className="bg-card border border-gray-800 rounded-2xl p-4">
-            <h2 className="text-lg font-black font-display mb-3 text-amber-300 flex items-center">
-              <Coins className="w-5 h-5 mr-2" />
-              Coin Flip
-            </h2>
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <h2 className="text-lg font-black font-display text-amber-300 flex items-center">
+                <Coins className="w-5 h-5 mr-2" />
+                Coin Flip
+              </h2>
+              <StagePin
+                pressed={stagePins.includes('coin')}
+                label={stagePins.includes('coin') ? 'Unpin coin from Stage' : 'Pin coin to Stage'}
+                onClick={() => pinTool('coin', coin)}
+              />
+            </div>
             <button
               type="button"
               onClick={flipCoin}
@@ -452,7 +525,7 @@ export default function ToolsView({ active = true }) {
           {activeTool === 'timer' && (
             <button
               type="button"
-              onClick={() => setRunning((v) => !v)}
+              onClick={toggleRunning}
               className="flex-1 bg-cyan-700 text-white font-bold rounded-xl min-h-12"
             >
               {running ? 'Pause' : 'Start'}

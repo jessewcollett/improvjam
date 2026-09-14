@@ -83,6 +83,72 @@ input[type='search']::-webkit-search-decoration {
   appearance: none;
 }
 
+/* Stage tiles: type follows the cell, not the viewport. --stage-cqmin is 1% of
+   the shorter tile axis (ResizeObserver); cqmin is the CSS fallback. */
+.stage-tile {
+  container-type: size;
+  container-name: stage-tile;
+  --stage-cqmin: 1vmin;
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+}
+
+@supports (font-size: 1cqmin) {
+  .stage-tile {
+    --stage-cqmin: 1cqmin;
+  }
+}
+
+.stage-tile-inner {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  transform-origin: center center;
+}
+
+.stage-type-kicker {
+  text-transform: uppercase;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.stage-type-title,
+.stage-type-body {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.1;
+}
+
+.stage-type-kicker-1 { font-size: clamp(0.7rem, calc(4.2 * var(--stage-cqmin)), 1.15rem); letter-spacing: 0.28em; }
+.stage-type-title-1 { font-size: clamp(2.25rem, calc(28 * var(--stage-cqmin)), 12rem); }
+.stage-type-body-1 { font-size: clamp(1.2rem, calc(11 * var(--stage-cqmin)), 3.5rem); }
+
+.stage-type-kicker-2 { font-size: clamp(0.62rem, calc(3.6 * var(--stage-cqmin)), 1rem); letter-spacing: 0.24em; }
+.stage-type-title-2 { font-size: clamp(1.6rem, calc(20 * var(--stage-cqmin)), 6rem); }
+.stage-type-body-2 { font-size: clamp(1rem, calc(8.5 * var(--stage-cqmin)), 2.5rem); }
+
+.stage-type-kicker-4 { font-size: clamp(0.55rem, calc(3.1 * var(--stage-cqmin)), 0.9rem); letter-spacing: 0.2em; }
+.stage-type-title-4 { font-size: clamp(1.2rem, calc(15 * var(--stage-cqmin)), 3.6rem); }
+.stage-type-body-4 { font-size: clamp(0.9rem, calc(6.5 * var(--stage-cqmin)), 2rem); }
+
+.stage-type-kicker-n { font-size: clamp(0.5rem, calc(2.6 * var(--stage-cqmin)), 0.8rem); letter-spacing: 0.16em; }
+.stage-type-title-n { font-size: clamp(1rem, calc(12 * var(--stage-cqmin)), 2.5rem); }
+.stage-type-body-n { font-size: clamp(0.8rem, calc(5.2 * var(--stage-cqmin)), 1.5rem); }
+
+.stage-type-caption {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.25;
+  font-weight: 500;
+}
+
+.stage-type-caption-1 { font-size: clamp(0.7rem, calc(3.4 * var(--stage-cqmin)), 1.05rem); }
+.stage-type-caption-2 { font-size: clamp(0.62rem, calc(2.9 * var(--stage-cqmin)), 0.9rem); }
+.stage-type-caption-4 { font-size: clamp(0.55rem, calc(2.5 * var(--stage-cqmin)), 0.8rem); }
+.stage-type-caption-n { font-size: clamp(0.5rem, calc(2.1 * var(--stage-cqmin)), 0.72rem); }
+
 html.reduce-motion *,
 html.reduce-motion *::before,
 html.reduce-motion *::after {

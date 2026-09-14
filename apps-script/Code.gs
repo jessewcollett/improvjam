@@ -15,6 +15,8 @@ var TAB_AUDIO = 'Audio';
 var TAB_BANKS = 'Banks';
 var TAB_ICONS = 'Icons';
 var TAB_HELP = 'Help';
+var TAB_STAGE = 'Stage';
+var STAGE_HEADERS = ['code', 'payload', 'updatedAt'];
 
 var AUDIO_HEADERS = ['id', 'name', 'kind', 'url', 'icon', 'credit', 'creditUrl', 'notes', 'active', 'tags'];
 var SOURCES_HEADERS = ['id', 'name', 'url', 'note', 'active'];
@@ -65,10 +67,24 @@ function onOpen() {
     .addToUi();
 }
 
-function doGet() {
-  var payload = readCatalog();
+function doGet(e) {
+  var stageCode = e && e.parameter && String(e.parameter.stage || '').trim();
+  var payload = stageCode ? readStage_(stageCode) : readCatalog();
   return ContentService
     .createTextOutput(JSON.stringify(payload))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function doPost(e) {
+  var body = {};
+  try {
+    body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+  } catch (err) {
+    body = {};
+  }
+  var result = upsertStage_(body);
+  return ContentService
+    .createTextOutput(JSON.stringify(result))
     .setMimeType(ContentService.MimeType.JSON);
 }
 
@@ -96,9 +112,11 @@ function ensureImageColumns() {
 }
 
 function ensureAllTabs_(ss) {
-  return tabSchemas_().map(function (schema) {
+  var results = tabSchemas_().map(function (schema) {
     return ensureTabHeaders_(ss, schema.tab, schema.headers);
   });
+  results.push(ensureTabHeaders_(ss, TAB_STAGE, STAGE_HEADERS));
+  return results;
 }
 
 function knownHeaders_() {
@@ -182,6 +200,7 @@ function ensureTabHeaders_(ss, tab, headers) {
 }
 
 function finishTabSetup_(sheet, tab) {
+  if (tab === TAB_STAGE) return;
   if (tab === TAB_GENERATOR) ensureGroupValidation_(sheet);
   if (tab === TAB_BANKS) {
     seedBanksIfEmpty_(sheet);
@@ -458,7 +477,8 @@ function helpTabRows_() {
     ['Audio url', 'The Audio tab url column must be a Drive file share link (not a folder), Anyone with the link → Viewer, under 25MB. Community intake writes that file URL after an upload — respondents do not paste a link.'],
     ['Intake form uploads', 'File upload questions: "SFX file" and "Music file" (required, audio, under 25MB). Photos: "Game photo" / "Game photo (optional)" and "Term Photo" / "Term photo (optional)" — titles are matched loosely. Apps Script cannot create File upload questions. The default media folder is the parent Forms uploads folder (GOOGLE_MEDIA_FOLDER_ID). Improv Jam → Create intake form stores it; Set media folder can override. Move-to uses that parent, not the per-question subfolders.'],
     ['Intake form responses', 'Linking the form to THIS catalog spreadsheet only creates a Form Responses tab as a raw log. It does not write Games, Terms, Audio, or Generator. Catalog rows come from the installable onIntakeFormSubmit / onFormSubmit trigger (Improv Jam → Create intake form). The PWA does not live-update; tap Sync Data (or reopen the app) to fetch the catalog. Do not run Populate catalog after submissions.'],
-    ['Update tabs', 'Improv Jam → Update tabs adds missing columns (tags, image, Generator group) and creates the Icons, Banks, and Help tabs without overwriting catalog rows.'],
+    ['Update tabs', 'Improv Jam → Update tabs adds missing columns (tags, image, Generator group) and creates the Icons, Banks, Help, and Stage tabs without overwriting catalog rows.'],
+    ['Stage', 'A Stage session is one row (code, payload, updatedAt). The phone POSTs JSON { code, payload } to the web app; the /stage board GETs ?stage=CODE. Missing or empty rows return { code, payload: {}, updatedAt: "" }. Stage is not part of the catalog — Update tabs creates the tab; Populate catalog does not seed or overwrite sessions.'],
     ['Generator / Banks', 'Generator categories live on the Banks tab: set group to Ask-for, Skill Building, or Both, and icon to a keyword from the Icons tab (footprints, drum, sparkles) or any emoji. Leave Generator group blank to use the Banks value; fill a row to override that category.'],
     ['sourceIds', 'Pipe-separated ids that match the Sources tab (src-encyclopedia, src-learnimprov, src-jam-terms). This is what the app uses to decide which sites a card should link to.'],
     ['source', 'Display label only (for example "Improv Encyclopedia"). Not used for outbound links.'],
@@ -667,6 +687,90 @@ function defaultGeneratorGroup_(cats) {
     }
   }
   return '';
+}
+
+function emptyStage_(code) {
+  return { code: String(code || ''), payload: {}, updatedAt: '' };
+}
+
+function parseStagePayload_(raw) {
+  if (raw == null || raw === '') return {};
+  if (typeof raw === 'object' && !Array.isArray(raw)) return raw;
+  try {
+    var parsed = JSON.parse(String(raw));
+    if (parsed && typeof parsed === 'object') return parsed;
+  } catch (err) {}
+  return {};
+}
+
+function stageUpdatedAt_(raw) {
+  if (Object.prototype.toString.call(raw) === '[object Date]' && !isNaN(raw.getTime())) {
+    return raw.toISOString();
+  }
+  return String(raw == null ? '' : raw);
+}
+
+function readStage_(code) {
+  var key = String(code || '').trim();
+  var empty = emptyStage_(key);
+  if (!key) return empty;
+  var ss = SpreadsheetApp.getActive();
+  ensureTabHeaders_(ss, TAB_STAGE, STAGE_HEADERS);
+  var sheet = ss.getSheetByName(TAB_STAGE);
+  if (!sheet || sheet.getLastRow() < 2) return empty;
+  var last = Math.max(sheet.getLastColumn(), 1);
+  var headers = sheet.getRange(1, 1, 1, last).getValues()[0];
+  var codeCol = headerIndex_(headers, 'code');
+  var payloadCol = headerIndex_(headers, 'payload');
+  var updatedCol = headerIndex_(headers, 'updatedAt');
+  if (codeCol < 0) return empty;
+  var values = sheet.getDataRange().getValues();
+  var r;
+  for (r = 1; r < values.length; r++) {
+    if (String(values[r][codeCol] || '').trim() !== key) continue;
+    return {
+      code: key,
+      payload: parseStagePayload_(payloadCol >= 0 ? values[r][payloadCol] : ''),
+      updatedAt: stageUpdatedAt_(updatedCol >= 0 ? values[r][updatedCol] : ''),
+    };
+  }
+  return empty;
+}
+
+function upsertStage_(body) {
+  var code = String((body && body.code) || '').trim();
+  if (!code) {
+    return { error: 'Missing code', code: '', payload: {}, updatedAt: '' };
+  }
+  var ss = SpreadsheetApp.getActive();
+  ensureTabHeaders_(ss, TAB_STAGE, STAGE_HEADERS);
+  var sheet = ss.getSheetByName(TAB_STAGE);
+  var last = Math.max(sheet.getLastColumn(), 1);
+  var headers = sheet.getRange(1, 1, 1, last).getValues()[0];
+  var codeCol = headerIndex_(headers, 'code') + 1;
+  var payloadCol = headerIndex_(headers, 'payload') + 1;
+  var updatedCol = headerIndex_(headers, 'updatedAt') + 1;
+  var values = sheet.getDataRange().getValues();
+  var row = -1;
+  var r;
+  for (r = 1; r < values.length; r++) {
+    if (String(values[r][codeCol - 1] || '').trim() === code) {
+      row = r + 1;
+      break;
+    }
+  }
+  if (row < 0) row = sheet.getLastRow() + 1;
+  var payload = body && body.payload != null ? body.payload : {};
+  var payloadText = typeof payload === 'string' ? payload : JSON.stringify(payload);
+  var updatedAt = new Date().toISOString();
+  if (codeCol > 0) sheet.getRange(row, codeCol).setValue(code);
+  if (payloadCol > 0) sheet.getRange(row, payloadCol).setValue(payloadText);
+  if (updatedCol > 0) sheet.getRange(row, updatedCol).setValue(updatedAt);
+  return {
+    code: code,
+    payload: parseStagePayload_(payloadText),
+    updatedAt: updatedAt,
+  };
 }
 
 function readCatalog() {

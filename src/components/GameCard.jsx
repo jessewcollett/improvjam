@@ -17,6 +17,8 @@ import { splitList } from '../lib/generator.js';
 import CatalogImage from './CatalogImage.jsx';
 import { ItemSource } from './SourceCitation.jsx';
 import { trustedSourceUrl } from '../lib/sheets.js';
+import { findStageGameIndex, gameIsOnStage, gamesFromCatalog } from '../lib/stage.js';
+import StagePin, { GamePartToggles } from './StagePin.jsx';
 
 function iconClass(active, on) {
   return `flex items-center justify-center w-9 h-9 rounded-lg shrink-0 ${
@@ -29,6 +31,14 @@ export default function GameCard({ game, onCategoryClick }) {
   const sources = useAppStore((s) => s.data.sources);
   const toggleInList = useAppStore((s) => s.toggleInList);
   const toggleInCustomSet = useAppStore((s) => s.toggleInCustomSet);
+  const stagePins = useAppStore((s) => s.stagePins);
+  const stageSlots = useAppStore((s) => s.stageSlots);
+  const setStageSlot = useAppStore((s) => s.setStageSlot);
+  const toggleStagePin = useAppStore((s) => s.toggleStagePin);
+  const removeStageSlotItem = useAppStore((s) => s.removeStageSlotItem);
+  const toggleStageGamePart = useAppStore((s) => s.toggleStageGamePart);
+  const gameIndex = findStageGameIndex(stageSlots.games, game);
+  const gamePinned = stagePins.includes('games') && gameIndex >= 0;
   const isFavorite = lists.favorites.includes(game.id);
   const isToPlay = lists.toPlay.includes(game.id);
   const isPlayed = lists.played.includes(game.id);
@@ -169,6 +179,34 @@ export default function GameCard({ game, onCategoryClick }) {
             className="overflow-hidden"
           >
             <div className="px-3 pb-3 pt-0">
+              <div className="mb-2">
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <span className="text-xs font-bold text-gray-400">Show on Stage</span>
+                  <StagePin
+                    pressed={gamePinned}
+                    label={gamePinned ? 'Unpin game from Stage' : 'Pin game to Stage'}
+                    onClick={() => {
+                      if (gamePinned) {
+                        if (gameIndex >= 0) removeStageSlotItem('games', gameIndex);
+                        return;
+                      }
+                      if (gameIsOnStage(stageSlots.games, game)) {
+                        if (!stagePins.includes('games')) toggleStagePin('games');
+                        return;
+                      }
+                      const current = Array.isArray(stageSlots.games) ? stageSlots.games : [];
+                      setStageSlot('games', [...current, ...gamesFromCatalog([game], current)]);
+                      if (!stagePins.includes('games')) toggleStagePin('games');
+                    }}
+                  />
+                </div>
+                {gamePinned ? (
+                  <GamePartToggles
+                    game={stageSlots.games[gameIndex] || game}
+                    onToggle={(partId) => toggleStageGamePart(game.name, partId)}
+                  />
+                ) : null}
+              </div>
               <CatalogImage src={game.imageSrc || game.image} alt={game.name} />
               {lifeSkills.length > 0 && (
                 <div className="mb-2 flex flex-wrap gap-1 items-center">

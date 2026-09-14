@@ -16,7 +16,25 @@ import {
   clampNavId,
   clampToolId,
   mergeIdOrder,
+  moveId,
 } from '../lib/nav.js';
+import {
+  buildStagePayload,
+  clampStageSize,
+  isStageSlotId,
+  listedStageSlots,
+  mintStageCode,
+  normalizeGameParts,
+  normalizeStageBoardStyle,
+  normalizeStageCode,
+  normalizeStageLayout,
+  normalizeStagePins,
+  normalizeStageSizes,
+  normalizeStageSlots,
+  postStage,
+  publishStageGame,
+  STAGE_PUBLISH_DEBOUNCE_MS,
+} from '../lib/stage.js';
 
 const bundled = normalizePayload(fallback);
 
@@ -42,6 +60,7 @@ export const defaultSettings = {
   theme: 'dark',
   reducedMotion: false,
   libraryView: 'games',
+  generatorView: 'suggestions',
   keepAwake: false,
   hapticDing: false,
   fadeSeconds: 1.2,
@@ -52,6 +71,8 @@ export const defaultSettings = {
   lastTool: 'timer',
   navOrder: [...DEFAULT_NAV_ORDER],
   toolOrder: [...DEFAULT_TOOL_ORDER],
+  stageCode: '',
+  stageBoardStyle: 'cards',
 };
 
 export function normalizeSettings(raw) {
@@ -62,6 +83,9 @@ export function normalizeSettings(raw) {
     toolOrder: mergeIdOrder(merged.toolOrder, DEFAULT_TOOL_ORDER),
     lastRoute: clampNavId(merged.lastRoute),
     lastTool: clampToolId(merged.lastTool),
+    generatorView: merged.generatorView === 'games' ? 'games' : 'suggestions',
+    stageCode: normalizeStageCode(merged.stageCode),
+    stageBoardStyle: normalizeStageBoardStyle(merged.stageBoardStyle),
   };
 }
 
@@ -83,9 +107,55 @@ function normalizeDrawCounts(raw) {
   return next;
 }
 
+let stagePublishTimer = null;
+let stagePublishInflight = false;
+let stagePublishQueued = false;
+
+function queueStagePublish() {
+  if (stagePublishTimer) clearTimeout(stagePublishTimer);
+  stagePublishTimer = setTimeout(() => {
+    stagePublishTimer = null;
+    publishStageNow();
+  }, STAGE_PUBLISH_DEBOUNCE_MS);
+}
+
+async function publishStageNow() {
+  if (stagePublishTimer) {
+    clearTimeout(stagePublishTimer);
+    stagePublishTimer = null;
+  }
+  if (stagePublishInflight) {
+    stagePublishQueued = true;
+    return;
+  }
+  stagePublishInflight = true;
+  try {
+    const state = useAppStore.getState();
+    const code = normalizeStageCode(state.settings.stageCode);
+    if (!code) return;
+    const payload = buildStagePayload(
+      state.stagePins,
+      state.stageSlots,
+      state.stageSizes,
+      state.stageLayout,
+      state.settings.stageBoardStyle,
+    );
+    await postStage(code, payload);
+    useAppStore.setState({ stagePublishError: null });
+  } catch (error) {
+    useAppStore.setState({ stagePublishError: error.message || 'Stage publish failed.' });
+  } finally {
+    stagePublishInflight = false;
+    if (stagePublishQueued) {
+      stagePublishQueued = false;
+      publishStageNow();
+    }
+  }
+}
+
 export const useAppStore = create(
   persist(
-    (set) => ({
+    (set, get) => ({
       data: bundled,
       lists: emptyLists,
       settings: defaultSettings,
@@ -103,9 +173,152 @@ export const useAppStore = create(
       sfxSlotColors: normalizeSfxSlotColors([], defaultSfxSlots.length),
       sfxIconOverrides: {},
       musicTags: {},
+      stagePins: [],
+      stageSlots: {},
+      stageSizes: {},
+      stageLayout: '',
+      stagePublishError: null,
 
       updateSettings: (partial) => {
         set((state) => ({ settings: { ...state.settings, ...partial } }));
+      },
+
+      setStageBoardStyle: (style) => {
+        set((state) => ({
+          settings: { ...state.settings, stageBoardStyle: normalizeStageBoardStyle(style) },
+        }));
+        queueStagePublish();
+      },
+
+      toggleStageGamePart: (gameName, partId) => {
+        const name = String(typeof gameName === 'object' ? gameName?.name : gameName || '').trim();
+        const id = String(partId || '').trim();
+        if (!name || !id) return;
+        let shouldPublish = false;
+        set((state) => {
+          const current = Array.isArray(state.stageSlots.games) ? state.stageSlots.games : [];
+          const index = current.findIndex((item) => String(item?.name || '').trim() === name);
+          if (index < 0) return {};
+          shouldPublish = state.stagePins.includes('games');
+          const catalog = (state.data.games || []).find((game) => String(game.name || '').trim() === name);
+          const source = catalog || current[index];
+          const selected = normalizeGameParts(current[index].parts, source);
+          const nextParts = selected.includes(id)
+            ? selected.filter((item) => item !== id)
+            : [...selected, id];
+          const nextItem = publishStageGame(source, nextParts);
+          if (!nextItem) return {};
+          const next = current.slice();
+          next[index] = nextItem;
+          return { stageSlots: { ...state.stageSlots, games: next } };
+        });
+        if (shouldPublish) queueStagePublish();
+      },
+
+      ensureStageCode: () => {
+        const current = normalizeStageCode(get().settings.stageCode);
+        if (current) {
+          if (current !== get().settings.stageCode) {
+            set((state) => ({ settings: { ...state.settings, stageCode: current } }));
+          }
+          return current;
+        }
+        const code = mintStageCode();
+        set((state) => ({ settings: { ...state.settings, stageCode: code } }));
+        return code;
+      },
+
+      toggleStagePin: (id) => {
+        if (!isStageSlotId(id)) return;
+        get().ensureStageCode();
+        set((state) => {
+          const on = state.stagePins.includes(id);
+          return { stagePins: on ? state.stagePins.filter((item) => item !== id) : [...state.stagePins, id] };
+        });
+        queueStagePublish();
+      },
+
+      setStageSlot: (id, data) => {
+        if (!isStageSlotId(id)) return;
+        let shouldPublish = false;
+        set((state) => {
+          shouldPublish = state.stagePins.includes(id);
+          return { stageSlots: { ...state.stageSlots, [id]: data } };
+        });
+        if (shouldPublish) queueStagePublish();
+      },
+
+      publishStageTimer: (timer) => {
+        set((state) => ({ stageSlots: { ...state.stageSlots, timer } }));
+        if (get().stagePins.includes('timer')) publishStageNow();
+      },
+
+      unpinStageSlot: (id) => {
+        if (!isStageSlotId(id)) return;
+        set((state) => {
+          if (!state.stagePins.includes(id)) return {};
+          return { stagePins: state.stagePins.filter((item) => item !== id) };
+        });
+        queueStagePublish();
+      },
+
+      removeStageSlotItem: (id, index) => {
+        if (!isStageSlotId(id)) return;
+        const i = Number(index);
+        if (!Number.isInteger(i) || i < 0) return;
+        let emptied = false;
+        set((state) => {
+          const current = state.stageSlots[id];
+          if (!Array.isArray(current)) return {};
+          const next = current.filter((_, idx) => idx !== i);
+          emptied = next.length === 0;
+          return {
+            stageSlots: { ...state.stageSlots, [id]: next },
+            stagePins: emptied ? state.stagePins.filter((item) => item !== id) : state.stagePins,
+          };
+        });
+        queueStagePublish();
+      },
+
+      setStageSize: (id, size) => {
+        if (!isStageSlotId(id)) return;
+        set((state) => ({
+          stageSizes: { ...state.stageSizes, [id]: clampStageSize(size) },
+        }));
+        if (get().stagePins.includes(id)) queueStagePublish();
+      },
+
+      setStageLayout: (id) => {
+        set({ stageLayout: normalizeStageLayout(id) });
+        queueStagePublish();
+      },
+
+      moveStagePin: (id, direction) => {
+        const delta = Number(direction);
+        if (!isStageSlotId(id) || (delta !== 1 && delta !== -1)) return;
+        set((state) => {
+          const listed = listedStageSlots(
+            buildStagePayload(
+              state.stagePins,
+              state.stageSlots,
+              state.stageSizes,
+              state.stageLayout,
+              state.settings.stageBoardStyle,
+            ),
+          ).map((slot) => slot.id);
+          const from = listed.indexOf(id);
+          const to = from + delta;
+          if (from < 0 || to < 0 || to >= listed.length) return {};
+          const nextListed = moveId(listed, from, to);
+          const rest = state.stagePins.filter((pin) => !nextListed.includes(pin));
+          return { stagePins: [...nextListed, ...rest] };
+        });
+        queueStagePublish();
+      },
+
+      clearStagePins: () => {
+        set({ stagePins: [] });
+        queueStagePublish();
       },
 
       dismissTipOfTheDay: () => {
@@ -282,6 +495,17 @@ export const useAppStore = create(
         }));
       },
 
+      renameCustomSet: (setId, name) => {
+        const trimmed = String(name || '').trim();
+        if (!trimmed) return;
+        set((state) => ({
+          lists: {
+            ...state.lists,
+            customSets: state.lists.customSets.map((s) => (s.id === setId ? { ...s, name: trimmed } : s)),
+          },
+        }));
+      },
+
       deleteCustomSet: (setId) => {
         set((state) => ({
           lists: {
@@ -352,6 +576,10 @@ export const useAppStore = create(
         sfxSlotColors: state.sfxSlotColors,
         sfxIconOverrides: state.sfxIconOverrides,
         musicTags: state.musicTags,
+        stagePins: state.stagePins,
+        stageSlots: state.stageSlots,
+        stageSizes: state.stageSizes,
+        stageLayout: state.stageLayout,
       }),
       merge: (persisted, current) => ({
         ...current,
@@ -386,6 +614,11 @@ export const useAppStore = create(
             ? persisted.sfxIconOverrides
             : current.sfxIconOverrides,
         musicTags: normalizeMusicTags(persisted?.musicTags),
+        stagePins: normalizeStagePins(persisted?.stagePins),
+        stageSlots: normalizeStageSlots(persisted?.stageSlots),
+        stageSizes: normalizeStageSizes(persisted?.stageSizes),
+        stageLayout: normalizeStageLayout(persisted?.stageLayout),
+        stagePublishError: null,
       }),
     },
   ),

@@ -10,6 +10,7 @@ import {
   Palette,
   Plus,
   RefreshCw,
+  Tv,
 } from 'lucide-react';
 import ReorderList from './ReorderList.jsx';
 import {
@@ -27,6 +28,7 @@ import {
 } from '../lib/audio.js';
 import { INTAKE_FORM_URL } from '../lib/sheets.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { StageSettingsPanel } from './StageControls.jsx';
 import SyncButton from './SyncButton.jsx';
 
 function SettingsSection({ title, icon: Icon, summary, defaultOpen = false, accent, children }) {
@@ -194,6 +196,15 @@ export default function SettingsView() {
         ) : (
           <p className="text-xs text-gray-500">No sources yet. Sync the catalog.</p>
         )}
+      </SettingsSection>
+
+      <SettingsSection
+        title="Stage"
+        icon={Tv}
+        summary={settings.stageCode ? `Code ${settings.stageCode}` : 'Phone remote for a classroom board'}
+        accent="text-lime-400"
+      >
+        <StageSettingsPanel />
       </SettingsSection>
 
       <SettingsSection

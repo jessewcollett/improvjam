@@ -1,7 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Shuffle } from 'lucide-react';
+import { gamesFromCatalog } from '../lib/stage.js';
 import { useAppStore } from '../store/useAppStore.js';
 import GameCard from './GameCard.jsx';
+import StagePin, { GamePartToggles } from './StagePin.jsx';
 
 const FORMS = [
   { id: 'warmup', label: 'Warm-up', match: ['Warm-Up'] },
@@ -30,8 +32,20 @@ function inForm(game, match) {
 
 export default function RandomGameDraw() {
   const games = useAppStore((s) => s.data.games) || [];
+  const stagePins = useAppStore((s) => s.stagePins);
+  const setStageSlot = useAppStore((s) => s.setStageSlot);
+  const toggleStagePin = useAppStore((s) => s.toggleStagePin);
+  const gamesPinned = stagePins.includes('games');
+  const stageSlots = useAppStore((s) => s.stageSlots);
+  const toggleStageGamePart = useAppStore((s) => s.toggleStageGamePart);
   const [formId, setFormId] = useState('warmup');
   const [drawn, setDrawn] = useState([]);
+
+  useEffect(() => {
+    if (!drawn.length || !useAppStore.getState().stagePins.includes('games')) return;
+    const previous = useAppStore.getState().stageSlots.games;
+    setStageSlot('games', gamesFromCatalog(drawn, previous));
+  }, [drawn, setStageSlot]);
 
   const poolFor = useMemo(() => {
     const map = {};
@@ -68,51 +82,94 @@ export default function RandomGameDraw() {
   };
 
   return (
-    <section className="mb-3 rounded-2xl border border-gray-800 bg-[#1A1A1A] p-2">
-      <p className="text-2xs font-bold uppercase tracking-wider text-gray-500 px-1 mb-1.5">Random game</p>
-      <div className="flex flex-wrap gap-1 mb-2">
-        {FORMS.map((form) => (
+    <div className="flex-1 h-full flex flex-col min-h-0">
+      <div className="flex-none px-4 md:px-6 pt-3 pb-3 border-b border-gray-800">
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {FORMS.map((form) => (
+            <button
+              key={form.id}
+              type="button"
+              onClick={() => setFormId(form.id)}
+              aria-pressed={formId === form.id}
+              className={`min-h-11 px-3 rounded-full text-xs font-bold border ${
+                formId === form.id
+                  ? 'bg-lime-600 text-black border-lime-400'
+                  : 'bg-transparent text-gray-300 border-gray-700'
+              }`}
+            >
+              {form.label}
+            </button>
+          ))}
           <button
-            key={form.id}
             type="button"
-            onClick={() => setFormId(form.id)}
-            className={`min-h-10 px-2.5 rounded-full text-2xs font-bold border ${
-              formId === form.id
+            onClick={() => setFormId('setlist')}
+            aria-pressed={formId === 'setlist'}
+            className={`min-h-11 px-3 rounded-full text-xs font-bold border ${
+              formId === 'setlist'
                 ? 'bg-lime-600 text-black border-lime-400'
                 : 'bg-transparent text-gray-300 border-gray-700'
             }`}
           >
-            {form.label}
+            Set list
           </button>
-        ))}
-        <button
-          type="button"
-          onClick={() => setFormId('setlist')}
-          className={`min-h-10 px-2.5 rounded-full text-2xs font-bold border ${
-            formId === 'setlist'
-              ? 'bg-lime-600 text-black border-lime-400'
-              : 'bg-transparent text-gray-300 border-gray-700'
-          }`}
-        >
-          Set list
-        </button>
-      </div>
-      <button
-        type="button"
-        onClick={onDraw}
-        disabled={!games.length}
-        className="w-full min-h-11 rounded-xl bg-lime-700 disabled:bg-gray-800 disabled:text-gray-500 text-black font-black text-sm inline-flex items-center justify-center gap-2"
-      >
-        <Shuffle className="w-4 h-4" />
-        {formId === 'setlist' ? 'Draw a set list' : 'Draw a game'}
-      </button>
-      {drawn.length ? (
-        <div className="mt-2 space-y-1.5">
-          {drawn.map((game) => (
-            <GameCard key={game.id} game={game} />
-          ))}
         </div>
-      ) : null}
-    </section>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onDraw}
+            disabled={!games.length}
+            className="flex-1 min-h-11 rounded-xl bg-lime-700 disabled:bg-gray-800 disabled:text-gray-500 text-black font-black text-sm inline-flex items-center justify-center gap-2"
+          >
+            <Shuffle className="w-4 h-4" />
+            {formId === 'setlist' ? 'Draw a set list' : 'Draw a game'}
+          </button>
+          <StagePin
+            pressed={gamesPinned}
+            label={gamesPinned ? 'Unpin games from Stage' : 'Pin games to Stage'}
+            onClick={() => {
+              if (!gamesPinned) {
+                const previous = useAppStore.getState().stageSlots.games;
+                setStageSlot('games', gamesFromCatalog(drawn, previous));
+              }
+              toggleStagePin('games');
+            }}
+          />
+        </div>
+        {gamesPinned && drawn.length ? (
+          <div className="mt-2 space-y-1.5">
+            {drawn.map((game) => {
+              const pinned = (stageSlots.games || []).find(
+                (item) => String(item?.name || '').trim() === String(game.name || '').trim(),
+              );
+              if (!pinned) return null;
+              return (
+                <div key={game.id || game.name}>
+                  {drawn.length > 1 ? (
+                    <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold mb-1 truncate">
+                      {game.name}
+                    </p>
+                  ) : null}
+                  <GamePartToggles
+                    game={pinned}
+                    onToggle={(partId) => toggleStageGamePart(game.name, partId)}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
+      </div>
+      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide px-4 md:px-6 pt-3 pb-nav">
+        {drawn.length ? (
+          <div className="space-y-1.5">
+            {drawn.map((game) => (
+              <GameCard key={game.id} game={game} />
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-gray-500">Pick a form, then Draw a game.</p>
+        )}
+      </div>
+    </div>
   );
 }
