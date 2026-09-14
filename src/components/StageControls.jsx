@@ -1,24 +1,18 @@
 import { useEffect, useState } from 'react';
-import { Check, ChevronDown, ChevronUp, Copy, RefreshCw, Tv, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, Copy, EyeOff, QrCode, RefreshCw, Star, Type, Tv, X } from 'lucide-react';
 import { ASK_FOR_CATEGORIES } from '../lib/generator.js';
 import {
   buildStagePayload,
-  clampStageZoom,
   copyText,
-  isAutoZoom,
+  DEFAULT_STAGE_MESSAGES,
   layoutsForCount,
   listedStageSlots,
   normalizeStageBoardStyle,
   normalizeStageCode,
   normalizeStageLayout,
-  nudgeStageZoom,
   sanitizeStageCodeInput,
   slotSummary,
   suggestionLine,
-  STAGE_ZOOM_AUTO,
-  STAGE_ZOOM_MAX,
-  STAGE_ZOOM_MIN,
-  STAGE_ZOOM_STEP,
   STAGE_SLOT_LABELS,
   stageBoardUrl,
   stageIdeasUrl,
@@ -40,7 +34,7 @@ async function copyStageLink(code) {
   return copyText(stageBoardUrl(code));
 }
 
-function StageItemRows({ slots, onClearSlot, onClearItem, onMove, onZoom, onToggleGamePart }) {
+function StageItemRows({ slots, onClearSlot, onClearItem, onMove, onToggleGamePart }) {
   if (!slots.length) {
     return <p className="text-sm text-gray-500">Nothing on stage yet. Pin a panel, then it shows here and on the TV.</p>;
   }
@@ -49,9 +43,6 @@ function StageItemRows({ slots, onClearSlot, onClearItem, onMove, onZoom, onTogg
       {slots.map((slot, index) => {
         const nested = Array.isArray(slot.value) && (slot.id === 'games' || slot.id === 'suggestions' || slot.id === 'whosup');
         const name = STAGE_SLOT_LABELS[slot.id] || slot.id;
-        const zoom = slot.zoom;
-        const auto = isAutoZoom(zoom);
-        const numeric = auto ? null : clampStageZoom(zoom);
         return (
           <li key={slot.id} className="rounded-xl border border-gray-800 bg-[#1A1A1A] overflow-hidden">
             <div className="flex items-start gap-1 min-h-11 pl-3">
@@ -97,36 +88,6 @@ function StageItemRows({ slots, onClearSlot, onClearItem, onMove, onZoom, onTogg
                   aria-label={`Move ${name} down`}
                 >
                   <ChevronDown className="w-4 h-4" />
-                </button>
-              </div>
-              <div className="flex items-center pr-1">
-                <button
-                  type="button"
-                  onClick={() => onZoom(slot.id, nudgeStageZoom(zoom, -STAGE_ZOOM_STEP))}
-                  disabled={!auto && numeric <= STAGE_ZOOM_MIN}
-                  className="min-w-11 min-h-11 flex items-center justify-center text-gray-200 disabled:text-gray-600"
-                  aria-label={`Smaller type on ${name}`}
-                >
-                  <span className="text-xs font-bold leading-none">A-</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onZoom(slot.id, STAGE_ZOOM_AUTO)}
-                  aria-pressed={auto}
-                  className={`min-h-9 px-2 rounded-lg text-2xs font-bold ${
-                    auto ? 'bg-lime-700 text-white' : 'text-gray-400'
-                  }`}
-                >
-                  Auto
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onZoom(slot.id, nudgeStageZoom(zoom, STAGE_ZOOM_STEP))}
-                  disabled={!auto && numeric >= STAGE_ZOOM_MAX}
-                  className="min-w-11 min-h-11 flex items-center justify-center text-gray-200 disabled:text-gray-600"
-                  aria-label={`Larger type on ${name}`}
-                >
-                  <span className="text-sm font-black leading-none">A+</span>
                 </button>
               </div>
             </div>
@@ -260,9 +221,39 @@ function StageLayoutPicker({ count, value, onChange }) {
     <div className="mb-3">
       <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold mb-2">Layout</p>
       <div className="flex flex-wrap gap-1.5">
-        {chip('', 'Auto', 'Even or zoom packer')}
+        {chip('', 'Auto', 'Even pack')}
         {options.map((layout) => chip(layout.id, layout.short, layout.name))}
       </div>
+    </div>
+  );
+}
+
+function StageCodeVisibilityToggle() {
+  const hideCode = useAppStore((s) => s.stageHideCode);
+  const setStageHideCode = useAppStore((s) => s.setStageHideCode);
+  return (
+    <div className="flex bg-[#1A1A1A] p-1 rounded-xl border border-gray-800 mt-2 mb-2">
+      <button
+        type="button"
+        className={`flex-1 py-2 text-sm font-bold rounded-lg min-h-11 ${
+          !hideCode ? 'bg-gray-700 text-white' : 'text-gray-400'
+        }`}
+        onClick={() => setStageHideCode(false)}
+        aria-pressed={!hideCode}
+      >
+        Show code
+      </button>
+      <button
+        type="button"
+        className={`flex-1 py-2 text-sm font-bold rounded-lg min-h-11 inline-flex items-center justify-center gap-1.5 ${
+          hideCode ? 'bg-lime-700 text-white' : 'text-gray-400'
+        }`}
+        onClick={() => setStageHideCode(true)}
+        aria-pressed={hideCode}
+      >
+        <EyeOff className="w-3.5 h-3.5" />
+        Hide code
+      </button>
     </div>
   );
 }
@@ -319,6 +310,7 @@ function StageCodeField({ code, compact }) {
           New
         </button>
       </div>
+      <StageCodeVisibilityToggle />
       {compact ? null : (
         <p className="text-xs text-gray-500">
           4–5 characters (no 0, O, 1, or I). A shared code is a shared board — last write wins.
@@ -329,17 +321,24 @@ function StageCodeField({ code, compact }) {
 }
 
 function StageAudiencePanel() {
-  const stageOn = useAppStore((s) => s.settings.stageOn);
   const code = useAppStore((s) => s.settings.stageCode);
   const ideasOpen = useAppStore((s) => s.stageIdeasOpen);
+  const ideasUse = useAppStore((s) => s.stageIdeasUse);
   const ideaCats = useAppStore((s) => s.stageIdeaCats);
-  const generatorBanks = useAppStore((s) => s.generatorBanks);
+  const displayPinned = useAppStore((s) => s.stagePins.includes('display'));
   const setStageIdeasOpen = useAppStore((s) => s.setStageIdeasOpen);
+  const setStageIdeasUse = useAppStore((s) => s.setStageIdeasUse);
+  const setStageIdeaCats = useAppStore((s) => s.setStageIdeaCats);
   const toggleStageIdeaCat = useAppStore((s) => s.toggleStageIdeaCat);
+  const toggleStageDisplay = useAppStore((s) => s.toggleStageDisplay);
   const [copied, markCopied] = useCopiedFlag();
-  const enabled = new Set(generatorBanks || []);
-  const banks = ASK_FOR_CATEGORIES.filter((cat) => enabled.has(cat.id));
-  const url = stageOn && ideasOpen && code ? stageIdeasUrl(code) : '';
+  const [catsOpen, setCatsOpen] = useState(false);
+  const url = code ? stageIdeasUrl(code) : '';
+  const showCats = ideasOpen || ideasUse;
+  const selectedCats = ASK_FOR_CATEGORIES.filter((cat) => ideaCats.includes(cat.id));
+  const catSummary = selectedCats.length
+    ? selectedCats.map((cat) => cat.label).join(', ')
+    : 'None selected';
 
   const onCopy = async () => {
     if (!url) return;
@@ -349,6 +348,7 @@ function StageAudiencePanel() {
   return (
     <div className="mb-3">
       <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold mb-2">Audience ideas</p>
+      <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold mb-1">Receive</p>
       <div className="flex bg-[#1A1A1A] p-1 rounded-xl border border-gray-800 mb-2">
         <button
           type="button"
@@ -371,48 +371,229 @@ function StageAudiencePanel() {
           On
         </button>
       </div>
-      {ideasOpen ? (
-        <>
-          <p className="text-xs text-gray-500 mb-2">
-            Audience fills only these Ask-for banks. Generate draws from this session, not the catalog.
-          </p>
-          {url ? (
-            <div className="flex items-center gap-2 mb-2">
-              <p className="flex-1 min-w-0 text-xs text-gray-400 break-all">{url}</p>
+      <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold mb-1">Use session pool</p>
+      <div className="flex bg-[#1A1A1A] p-1 rounded-xl border border-gray-800 mb-2">
+        <button
+          type="button"
+          className={`flex-1 py-2 text-sm font-bold rounded-lg min-h-11 ${
+            !ideasUse ? 'bg-gray-700 text-white' : 'text-gray-400'
+          }`}
+          onClick={() => setStageIdeasUse(false)}
+          aria-pressed={!ideasUse}
+        >
+          Off
+        </button>
+        <button
+          type="button"
+          className={`flex-1 py-2 text-sm font-bold rounded-lg min-h-11 ${
+            ideasUse ? 'bg-lime-700 text-white' : 'text-gray-400'
+          }`}
+          onClick={() => setStageIdeasUse(true)}
+          aria-pressed={ideasUse}
+        >
+          On
+        </button>
+      </div>
+      <p className="text-xs text-gray-500 mb-2">
+        {ideasOpen && ideasUse
+          ? 'Audience can submit. Generate has a This session section for received ideas.'
+          : ideasOpen
+            ? 'Audience can submit. Turn on Use session pool to generate from what they send.'
+            : ideasUse
+              ? 'Generate can draw from this session. /ideas is closed until Receive is on.'
+              : 'Off until you want the room to submit or draw from this session.'}
+      </p>
+      <div className="flex flex-wrap gap-2 mb-2">
+        <button
+          type="button"
+          onClick={() => toggleStageDisplay()}
+          aria-pressed={displayPinned}
+          className={`min-h-11 px-3 rounded-xl border text-sm font-bold inline-flex items-center gap-2 ${
+            displayPinned
+              ? 'bg-lime-700 text-white border-lime-500'
+              : 'bg-gray-800 text-gray-100 border-gray-700'
+          }`}
+        >
+          <QrCode className="w-3.5 h-3.5" />
+          {displayPinned ? 'On board' : 'Show on board'}
+        </button>
+        <button
+          type="button"
+          onClick={onCopy}
+          disabled={!url}
+          className="min-h-11 px-3 rounded-xl bg-gray-800 border border-gray-700 text-sm font-bold text-gray-100 inline-flex items-center gap-2 disabled:text-gray-600"
+        >
+          {copied ? <Check className="w-3.5 h-3.5 text-lime-400" /> : <Copy className="w-3.5 h-3.5" />}
+          {copied ? 'Copied' : 'Copy link'}
+        </button>
+      </div>
+      {showCats ? (
+        <button
+          type="button"
+          onClick={() => setCatsOpen(true)}
+          className="w-full min-h-11 px-3 rounded-xl border border-gray-800 bg-[#1A1A1A] flex items-center justify-between gap-2"
+        >
+          <span className="min-w-0 text-left">
+            <span className="block text-2xs uppercase tracking-wider text-gray-500 font-bold">Categories</span>
+            <span className="block text-sm font-bold text-gray-100 truncate">{catSummary}</span>
+          </span>
+          <span className="text-xs font-bold text-lime-400 shrink-0">
+            {selectedCats.length ? 'Edit' : 'Choose'}
+          </span>
+        </button>
+      ) : null}
+      {catsOpen ? (
+        <div className="fixed inset-0 z-[80] flex flex-col justify-end">
+          <button type="button" className="absolute inset-0 bg-black/70" aria-label="Close categories" onClick={() => setCatsOpen(false)} />
+          <div className="relative bg-[#121212] border-t border-gray-800 rounded-t-3xl px-4 pt-3 pb-nav max-h-[70vh] flex flex-col">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <p className="text-sm font-black font-display text-white leading-tight">Ask the room for</p>
               <button
                 type="button"
-                onClick={onCopy}
-                className="min-h-11 px-3 rounded-xl bg-gray-800 border border-gray-700 text-sm font-bold text-gray-100 inline-flex items-center gap-2 shrink-0"
+                onClick={() => setCatsOpen(false)}
+                className="min-w-11 min-h-11 flex items-center justify-center text-gray-400"
+                aria-label="Close"
               >
-                {copied ? <Check className="w-3.5 h-3.5 text-lime-400" /> : <Copy className="w-3.5 h-3.5" />}
-                {copied ? 'Copied' : 'Copy'}
+                <X className="w-4 h-4" />
               </button>
             </div>
-          ) : (
-            <p className="text-xs text-gray-500 mb-2">Turn Stage on to share the audience link.</p>
-          )}
-          <div className="flex flex-wrap gap-1.5">
-            {(banks.length ? banks : ASK_FOR_CATEGORIES).map((cat) => {
-              const active = ideaCats.includes(cat.id);
-              return (
-                <button
-                  key={cat.id}
-                  type="button"
-                  aria-pressed={active}
-                  onClick={() => toggleStageIdeaCat(cat.id)}
-                  className={`min-h-10 px-2.5 rounded-lg text-xs font-bold border ${
-                    active ? 'bg-lime-700 text-white border-lime-500' : 'bg-[#1A1A1A] text-gray-200 border-gray-800'
-                  }`}
-                >
-                  {cat.label}
-                </button>
-              );
-            })}
+            <div className="flex items-center gap-1.5 mb-2">
+              <button
+                type="button"
+                onClick={() => setStageIdeaCats(ASK_FOR_CATEGORIES.map((cat) => cat.id))}
+                className="min-h-8 px-2.5 rounded-full bg-gray-800 border border-gray-700 text-xs font-bold text-gray-100"
+              >
+                All
+              </button>
+              <button
+                type="button"
+                onClick={() => setStageIdeaCats([])}
+                className="min-h-8 px-2.5 rounded-full bg-gray-800 border border-gray-700 text-xs font-bold text-gray-100"
+              >
+                None
+              </button>
+            </div>
+            <div className="overflow-y-auto scrollbar-hide flex flex-wrap gap-1.5 content-start pb-3">
+              {ASK_FOR_CATEGORIES.map((cat) => {
+                const active = ideaCats.includes(cat.id);
+                return (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => toggleStageIdeaCat(cat.id)}
+                    className={`min-h-8 px-2.5 rounded-full text-xs font-bold border ${
+                      active ? 'bg-lime-700 text-white border-lime-500' : 'bg-[#1A1A1A] text-gray-200 border-gray-800'
+                    }`}
+                  >
+                    {cat.label}
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              type="button"
+              onClick={() => setCatsOpen(false)}
+              className="min-h-11 rounded-xl bg-lime-600 text-black text-sm font-black"
+            >
+              Done
+            </button>
           </div>
-        </>
-      ) : (
-        <p className="text-xs text-gray-500">Off until you want the room to submit suggestions for this session.</p>
-      )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function StageMessagePanel() {
+  const text = useAppStore((s) => String(s.stageSlots.message || ''));
+  const pinned = useAppStore((s) => s.stagePins.includes('message'));
+  const extras = useAppStore((s) => s.stageMessageFavorites) || [];
+  const setStageMessage = useAppStore((s) => s.setStageMessage);
+  const toggleStageMessage = useAppStore((s) => s.toggleStageMessage);
+  const addStageMessageFavorite = useAppStore((s) => s.addStageMessageFavorite);
+  const removeStageMessageFavorite = useAppStore((s) => s.removeStageMessageFavorite);
+  const extraSet = new Set(extras.map((item) => item.toLowerCase()));
+  const defaultSet = new Set(DEFAULT_STAGE_MESSAGES.map((item) => item.toLowerCase()));
+  const saved = extras.filter((item) => !defaultSet.has(item.toLowerCase()));
+  const trimmed = text.trim();
+  const canFavorite = Boolean(trimmed) && !defaultSet.has(trimmed.toLowerCase()) && !extraSet.has(trimmed.toLowerCase());
+
+  return (
+    <div className="mb-3">
+      <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold mb-2">Board message</p>
+      <textarea
+        value={text}
+        onChange={(event) => setStageMessage(event.target.value)}
+        rows={2}
+        maxLength={160}
+        placeholder="Welcome, Thank you, Next game…"
+        className="w-full rounded-xl bg-[#1A1A1A] border border-gray-800 px-3 py-2.5 text-sm font-bold text-white placeholder:text-gray-600 mb-2"
+      />
+      <div className="flex flex-wrap gap-1.5 mb-2">
+        {DEFAULT_STAGE_MESSAGES.map((item) => (
+          <button
+            key={item}
+            type="button"
+            onClick={() => setStageMessage(item)}
+            aria-pressed={text === item}
+            className={`min-h-10 px-2.5 rounded-lg text-xs font-bold border ${
+              text === item ? 'bg-lime-700 text-white border-lime-500' : 'bg-[#1A1A1A] text-gray-200 border-gray-800'
+            }`}
+          >
+            {item}
+          </button>
+        ))}
+        {saved.map((item) => (
+          <span
+            key={item}
+            className={`inline-flex items-center min-h-10 rounded-lg border overflow-hidden ${
+              text === item ? 'bg-lime-700 text-white border-lime-500' : 'bg-[#1A1A1A] text-gray-200 border-gray-800'
+            }`}
+          >
+            <button
+              type="button"
+              onClick={() => setStageMessage(item)}
+              className="px-2.5 text-xs font-bold"
+            >
+              {item}
+            </button>
+            <button
+              type="button"
+              onClick={() => removeStageMessageFavorite(item)}
+              className="min-w-9 min-h-10 flex items-center justify-center text-gray-400 hover:text-red-300 border-l border-white/10"
+              aria-label={`Remove ${item} favorite`}
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </span>
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => toggleStageMessage()}
+          disabled={!trimmed && !pinned}
+          aria-pressed={pinned}
+          className={`min-h-11 px-3 rounded-xl border text-sm font-bold inline-flex items-center gap-2 disabled:text-gray-600 ${
+            pinned
+              ? 'bg-lime-700 text-white border-lime-500'
+              : 'bg-gray-800 text-gray-100 border-gray-700'
+          }`}
+        >
+          <Type className="w-3.5 h-3.5" />
+          {pinned ? 'On board' : 'Show on board'}
+        </button>
+        <button
+          type="button"
+          onClick={() => addStageMessageFavorite(trimmed)}
+          disabled={!canFavorite}
+          className="min-h-11 px-3 rounded-xl bg-gray-800 border border-gray-700 text-sm font-bold text-gray-100 inline-flex items-center gap-2 disabled:text-gray-600"
+        >
+          <Star className="w-3.5 h-3.5" />
+          Save favorite
+        </button>
+      </div>
     </div>
   );
 }
@@ -427,7 +608,6 @@ function useStagePreview() {
   const unpinStageSlot = useAppStore((s) => s.unpinStageSlot);
   const removeStageSlotItem = useAppStore((s) => s.removeStageSlotItem);
   const moveStagePin = useAppStore((s) => s.moveStagePin);
-  const setStageZoom = useAppStore((s) => s.setStageZoom);
   const setStageLayout = useAppStore((s) => s.setStageLayout);
   const boardStyle = useAppStore((s) => s.settings.stageBoardStyle);
   const setStageBoardStyle = useAppStore((s) => s.setStageBoardStyle);
@@ -443,12 +623,11 @@ function useStagePreview() {
     unpinStageSlot,
     removeStageSlotItem,
     moveStagePin,
-    setStageZoom,
     pinCount: pins.length,
   };
 }
 
-export function StageRemoteBody({ footer = null, extra = null }) {
+export function StageRemoteBody({ footer = null, extra = null, showPinList = true }) {
   const {
     listed,
     layout,
@@ -459,7 +638,6 @@ export function StageRemoteBody({ footer = null, extra = null }) {
     unpinStageSlot,
     removeStageSlotItem,
     moveStagePin,
-    setStageZoom,
     pinCount,
   } = useStagePreview();
   const clearStagePins = useAppStore((s) => s.clearStagePins);
@@ -471,17 +649,19 @@ export function StageRemoteBody({ footer = null, extra = null }) {
       <StageOnToggle />
       {stageOn && code ? <StageCodeField code={code} compact /> : null}
       <StageAudiencePanel />
+      <StageMessagePanel />
       <StageBoardStylePicker value={boardStyle} onChange={setStageBoardStyle} />
       <StageLayoutPicker count={listed.length} value={layout} onChange={setStageLayout} />
       {extra}
-      <StageItemRows
-        slots={listed}
-        onClearSlot={unpinStageSlot}
-        onClearItem={removeStageSlotItem}
-        onMove={moveStagePin}
-        onZoom={setStageZoom}
-        onToggleGamePart={toggleStageGamePart}
-      />
+      {showPinList ? (
+        <StageItemRows
+          slots={listed}
+          onClearSlot={unpinStageSlot}
+          onClearItem={removeStageSlotItem}
+          onMove={moveStagePin}
+          onToggleGamePart={toggleStageGamePart}
+        />
+      ) : null}
       <div className="flex flex-wrap gap-2 pt-2">
         {footer}
         <button

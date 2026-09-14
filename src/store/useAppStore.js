@@ -22,14 +22,20 @@ import {
 import {
   buildStagePayload,
   clampStageZoom,
+  dockStageTile,
   fetchStage,
+  framesCoverSlots,
   isStageSlotId,
   listedStageSlots,
   mintStageCode,
   normalizeGameParts,
   normalizeIdeaCats,
+  normalizeStageMessages,
+  normalizeStageAligns,
   normalizeStageBoardStyle,
+  normalizeStageCaptions,
   normalizeStageCode,
+  normalizeStageFloats,
   normalizeStageFrames,
   normalizeStageIdeasMap,
   normalizeStageLayout,
@@ -37,9 +43,12 @@ import {
   normalizeStageSizes,
   normalizeStageSlots,
   normalizeStageZooms,
+  popOutStageTile,
   postStage,
   publishStageGame,
-  seedStageFrames,
+  seedStageLayout,
+  stageIdeasUrl,
+  swapStageFrames,
   STAGE_PUBLISH_DEBOUNCE_MS,
 } from '../lib/stage.js';
 
@@ -120,7 +129,13 @@ let stagePublishTimer = null;
 let stagePublishInflight = false;
 let stagePublishQueued = false;
 
-function seedFrames(state, overrides = {}) {
+function displayInviteSlot(code) {
+  const normalized = normalizeStageCode(code);
+  if (!normalized) return null;
+  return { code: normalized, url: stageIdeasUrl(normalized) };
+}
+
+function seedLayout(state, overrides = {}) {
   const pins = overrides.stagePins ?? state.stagePins;
   const layout = overrides.stageLayout ?? state.stageLayout;
   const listed = listedStageSlots(buildStagePayload(
@@ -131,7 +146,8 @@ function seedFrames(state, overrides = {}) {
     state.settings.stageBoardStyle,
     state.stageZooms,
   ));
-  return seedStageFrames(listed, true, layout);
+  const seeded = seedStageLayout(listed, true, layout);
+  return { stageFrames: seeded.frames, stageFloats: seeded.floats };
 }
 
 function queueStagePublish() {
@@ -166,8 +182,15 @@ async function publishStageNow() {
       state.stageZooms,
       state.stageFrames,
     );
+    payload.hideCode = Boolean(state.stageHideCode);
+    payload.floats = normalizeStageFloats(state.stageFloats, payload.order);
+    const aligns = normalizeStageAligns(state.stageAligns);
+    if (Object.keys(aligns).length) payload.aligns = aligns;
+    const captions = normalizeStageCaptions(state.stageCaptions);
+    if (Object.keys(captions).length) payload.captions = captions;
     await postStage(code, payload, {
       ideasOpen: Boolean(state.stageIdeasOpen),
+      ideasUse: Boolean(state.stageIdeasUse),
       ideaCats: normalizeIdeaCats(state.stageIdeaCats),
     });
     useAppStore.setState({ stagePublishError: null });
@@ -192,6 +215,7 @@ export const useAppStore = create(
       generatorSkills: defaultGeneratorSkills,
       generatorBankFavorites: defaultGeneratorBankFavorites,
       generatorDrawCounts: emptyDrawCounts,
+      generatorSessionBanks: [],
       lastSynced: null,
       syncError: null,
       isSyncing: false,
@@ -207,10 +231,16 @@ export const useAppStore = create(
       stageSizes: {},
       stageZooms: {},
       stageFrames: {},
+      stageFloats: [],
       stageLayout: '',
+      stageAligns: {},
+      stageCaptions: {},
+      stageHideCode: false,
       stageIdeasOpen: false,
+      stageIdeasUse: false,
       stageIdeaCats: [...defaultGeneratorBanks],
       stageIdeas: {},
+      stageMessageFavorites: [],
       stagePublishError: null,
 
       updateSettings: (partial) => {
@@ -267,7 +297,14 @@ export const useAppStore = create(
         if (!code) return '';
         const prev = normalizeStageCode(get().settings.stageCode);
         if (code === prev) return code;
-        set((state) => ({ settings: { ...state.settings, stageCode: code } }));
+        set((state) => {
+          const next = { settings: { ...state.settings, stageCode: code } };
+          const invite = displayInviteSlot(code);
+          if (state.stagePins.includes('display') && invite) {
+            next.stageSlots = { ...state.stageSlots, display: invite };
+          }
+          return next;
+        });
         queueStagePublish();
         return code;
       },
@@ -276,7 +313,14 @@ export const useAppStore = create(
         const prev = normalizeStageCode(get().settings.stageCode);
         let code = mintStageCode();
         if (code === prev) code = mintStageCode();
-        set((state) => ({ settings: { ...state.settings, stageCode: code } }));
+        set((state) => {
+          const next = { settings: { ...state.settings, stageCode: code } };
+          const invite = displayInviteSlot(code);
+          if (state.stagePins.includes('display') && invite) {
+            next.stageSlots = { ...state.stageSlots, display: invite };
+          }
+          return next;
+        });
         queueStagePublish();
         return code;
       },
@@ -308,7 +352,7 @@ export const useAppStore = create(
         set((state) => {
           const on = state.stagePins.includes(id);
           const stagePins = on ? state.stagePins.filter((item) => item !== id) : [...state.stagePins, id];
-          return { stagePins, stageFrames: seedFrames(state, { stagePins }) };
+          return { stagePins, ...seedLayout(state, { stagePins }) };
         });
         publishStageNow();
       },
@@ -333,7 +377,7 @@ export const useAppStore = create(
         set((state) => {
           if (!state.stagePins.includes(id)) return {};
           const stagePins = state.stagePins.filter((item) => item !== id);
-          return { stagePins, stageFrames: seedFrames(state, { stagePins }) };
+          return { stagePins, ...seedLayout(state, { stagePins }) };
         });
         publishStageNow();
       },
@@ -352,7 +396,12 @@ export const useAppStore = create(
           return {
             stageSlots: { ...state.stageSlots, [id]: next },
             stagePins,
-            stageFrames: emptied ? seedFrames(state, { stagePins }) : state.stageFrames,
+            ...(emptied
+              ? seedLayout(state, { stagePins })
+              : {
+                stageFrames: state.stageFrames,
+                stageFloats: normalizeStageFloats(state.stageFloats, stagePins),
+              }),
           };
         });
         publishStageNow();
@@ -370,7 +419,7 @@ export const useAppStore = create(
       setStageLayout: (id) => {
         set((state) => {
           const stageLayout = normalizeStageLayout(id);
-          return { stageLayout, stageFrames: seedFrames(state, { stageLayout }) };
+          return { stageLayout, ...seedLayout(state, { stageLayout }) };
         });
         queueStagePublish();
       },
@@ -380,9 +429,129 @@ export const useAppStore = create(
         queueStagePublish();
       },
 
-      resetStageFrames: () => {
-        set({ stageFrames: {} });
+      applyStageLayout: (frames, floats) => {
+        const state = get();
+        const listed = listedStageSlots(buildStagePayload(
+          state.stagePins,
+          state.stageSlots,
+          state.stageSizes,
+          state.stageLayout,
+          state.settings.stageBoardStyle,
+          state.stageZooms,
+          frames,
+        )).map((slot) => slot.id);
+        set({
+          stageFrames: normalizeStageFrames(frames),
+          stageFloats: normalizeStageFloats(floats, listed),
+        });
         queueStagePublish();
+      },
+
+      popOutStagePin: (id) => {
+        if (!isStageSlotId(id)) return;
+        set((state) => {
+          const ids = listedStageSlots(buildStagePayload(
+            state.stagePins,
+            state.stageSlots,
+            state.stageSizes,
+            state.stageLayout,
+            state.settings.stageBoardStyle,
+            state.stageZooms,
+            state.stageFrames,
+          )).map((slot) => slot.id);
+          const base = framesCoverSlots(state.stageFrames, ids)
+            ? { stageFrames: state.stageFrames, stageFloats: state.stageFloats }
+            : seedLayout(state);
+          const next = popOutStageTile(base.stageFrames, base.stageFloats, id, ids);
+          return { stageFrames: next.frames, stageFloats: next.floats };
+        });
+        queueStagePublish();
+      },
+
+      dockStagePin: (id) => {
+        if (!isStageSlotId(id)) return;
+        set((state) => {
+          const ids = listedStageSlots(buildStagePayload(
+            state.stagePins,
+            state.stageSlots,
+            state.stageSizes,
+            state.stageLayout,
+            state.settings.stageBoardStyle,
+            state.stageZooms,
+            state.stageFrames,
+          )).map((slot) => slot.id);
+          const base = framesCoverSlots(state.stageFrames, ids)
+            ? { stageFrames: state.stageFrames, stageFloats: state.stageFloats }
+            : seedLayout(state);
+          const next = dockStageTile(base.stageFrames, base.stageFloats, id, ids);
+          return { stageFrames: next.frames, stageFloats: next.floats };
+        });
+        queueStagePublish();
+      },
+
+      swapStagePins: (a, b) => {
+        if (!isStageSlotId(a) || !isStageSlotId(b) || a === b) return;
+        set((state) => {
+          const pins = [...state.stagePins];
+          const ia = pins.indexOf(a);
+          const ib = pins.indexOf(b);
+          if (ia < 0 || ib < 0) return {};
+          [pins[ia], pins[ib]] = [pins[ib], pins[ia]];
+          return {
+            stagePins: pins,
+            stageFrames: swapStageFrames(state.stageFrames, a, b),
+          };
+        });
+        queueStagePublish();
+      },
+
+      resetStageFrames: () => {
+        set((state) => seedLayout(state));
+        queueStagePublish();
+      },
+
+      setStageAlign: (id, align) => {
+        if (!isStageSlotId(id)) return;
+        set((state) => {
+          const next = { ...state.stageAligns };
+          if (normalizeStageAligns({ [id]: align })[id] === 'left') next[id] = 'left';
+          else delete next[id];
+          return { stageAligns: next };
+        });
+        if (get().stagePins.includes(id)) queueStagePublish();
+      },
+
+      setStageCaptions: (id, on) => {
+        if (!isStageSlotId(id)) return;
+        set((state) => {
+          const next = { ...state.stageCaptions };
+          if (on) delete next[id];
+          else next[id] = false;
+          return { stageCaptions: next };
+        });
+        if (get().stagePins.includes(id)) queueStagePublish();
+      },
+
+      setStageHideCode: (hidden) => {
+        set({ stageHideCode: Boolean(hidden) });
+        if (get().settings.stageOn) publishStageNow();
+      },
+
+      toggleStageDisplay: () => {
+        get().ensureStageCode();
+        set((state) => {
+          const code = normalizeStageCode(state.settings.stageCode);
+          const invite = displayInviteSlot(code);
+          if (!invite) return {};
+          const on = state.stagePins.includes('display');
+          const stagePins = on ? state.stagePins.filter((item) => item !== 'display') : [...state.stagePins, 'display'];
+          return {
+            stageSlots: { ...state.stageSlots, display: invite },
+            stagePins,
+            ...seedLayout(state, { stagePins }),
+          };
+        });
+        publishStageNow();
       },
 
       setStageIdeasOpen: (open) => {
@@ -394,15 +563,30 @@ export const useAppStore = create(
             : (state.generatorBanks || []).filter(Boolean);
           return {
             stageIdeasOpen: next,
+            stageIdeasUse: next ? true : state.stageIdeasUse,
             stageIdeaCats: next && !cats.length ? seeded : state.stageIdeaCats,
           };
         });
         if (get().settings.stageOn) publishStageNow();
       },
 
+      setStageIdeasUse: (on) => {
+        const next = Boolean(on);
+        set((state) => {
+          const cats = normalizeIdeaCats(state.stageIdeaCats);
+          const seeded = cats.length
+            ? cats
+            : (state.generatorBanks || []).filter(Boolean);
+          return {
+            stageIdeasUse: next,
+            stageIdeaCats: next && !cats.length ? seeded : state.stageIdeaCats,
+          };
+        });
+      },
+
       setStageIdeaCats: (ids) => {
         set({ stageIdeaCats: normalizeIdeaCats(ids) });
-        if (get().settings.stageOn && get().stageIdeasOpen) publishStageNow();
+        if (get().settings.stageOn && (get().stageIdeasOpen || get().stageIdeasUse)) publishStageNow();
       },
 
       toggleStageIdeaCat: (id) => {
@@ -415,12 +599,51 @@ export const useAppStore = create(
             : [...current, key];
           return { stageIdeaCats: next };
         });
-        if (get().settings.stageOn && get().stageIdeasOpen) publishStageNow();
+        if (get().settings.stageOn && (get().stageIdeasOpen || get().stageIdeasUse)) publishStageNow();
+      },
+
+      setStageMessage: (raw) => {
+        const text = String(raw || '').slice(0, 160);
+        set((state) => ({ stageSlots: { ...state.stageSlots, message: text } }));
+        if (get().stagePins.includes('message')) publishStageNow();
+      },
+
+      toggleStageMessage: () => {
+        set((state) => {
+          const text = String(state.stageSlots.message || '').trim();
+          const on = state.stagePins.includes('message');
+          if (on) {
+            const stagePins = state.stagePins.filter((item) => item !== 'message');
+            return { stagePins, ...seedLayout(state, { stagePins }) };
+          }
+          if (!text) return {};
+          const stagePins = [...state.stagePins, 'message'];
+          return { stagePins, ...seedLayout(state, { stagePins }) };
+        });
+        publishStageNow();
+      },
+
+      addStageMessageFavorite: (raw) => {
+        const text = String(raw || '').trim().slice(0, 80);
+        if (!text) return;
+        set((state) => ({
+          stageMessageFavorites: normalizeStageMessages([...(state.stageMessageFavorites || []), text], []),
+        }));
+      },
+
+      removeStageMessageFavorite: (raw) => {
+        const text = String(raw || '').trim().toLowerCase();
+        if (!text) return;
+        set((state) => ({
+          stageMessageFavorites: (state.stageMessageFavorites || []).filter(
+            (item) => String(item).trim().toLowerCase() !== text,
+          ),
+        }));
       },
 
       pullStageIdeas: async () => {
         const state = get();
-        if (!state.settings.stageOn || !state.stageIdeasOpen) return;
+        if (!state.settings.stageOn || !(state.stageIdeasOpen || state.stageIdeasUse)) return;
         const code = normalizeStageCode(state.settings.stageCode);
         if (!code) return;
         try {
@@ -452,13 +675,13 @@ export const useAppStore = create(
           const nextListed = moveId(listed, from, to);
           const rest = state.stagePins.filter((pin) => !nextListed.includes(pin));
           const stagePins = [...nextListed, ...rest];
-          return { stagePins, stageFrames: seedFrames(state, { stagePins }) };
+          return { stagePins, ...seedLayout(state, { stagePins }) };
         });
         queueStagePublish();
       },
 
       clearStagePins: () => {
-        set({ stagePins: [], stageFrames: {} });
+        set({ stagePins: [], stageFrames: {}, stageFloats: [] });
         publishStageNow();
       },
 
@@ -600,6 +823,18 @@ export const useAppStore = create(
         });
       },
 
+      toggleGeneratorSessionBank: (id) => {
+        const key = String(id || '').trim();
+        if (!key) return;
+        set((state) => {
+          const current = normalizeIdeaCats(state.generatorSessionBanks);
+          const next = current.includes(key)
+            ? current.filter((item) => item !== key)
+            : [...current, key];
+          return { generatorSessionBanks: next };
+        });
+      },
+
       setGeneratorDrawCount: (id, count) => {
         const key = String(id || '').trim();
         if (!key) return;
@@ -709,6 +944,7 @@ export const useAppStore = create(
         generatorSkills: state.generatorSkills,
         generatorBankFavorites: state.generatorBankFavorites,
         generatorDrawCounts: state.generatorDrawCounts,
+        generatorSessionBanks: state.generatorSessionBanks,
         lastSynced: state.lastSynced,
         dismissedTipDate: state.dismissedTipDate,
         sfxHidden: state.sfxHidden,
@@ -722,9 +958,15 @@ export const useAppStore = create(
         stageSizes: state.stageSizes,
         stageZooms: state.stageZooms,
         stageFrames: state.stageFrames,
+        stageFloats: state.stageFloats,
         stageLayout: state.stageLayout,
+        stageAligns: state.stageAligns,
+        stageCaptions: state.stageCaptions,
+        stageHideCode: state.stageHideCode,
         stageIdeasOpen: state.stageIdeasOpen,
+        stageIdeasUse: state.stageIdeasUse,
         stageIdeaCats: state.stageIdeaCats,
+        stageMessageFavorites: state.stageMessageFavorites,
       }),
       merge: (persisted, current) => ({
         ...current,
@@ -747,6 +989,9 @@ export const useAppStore = create(
           ? persisted.generatorBankFavorites
           : current.generatorBankFavorites,
         generatorDrawCounts: normalizeDrawCounts(persisted?.generatorDrawCounts),
+        generatorSessionBanks: normalizeIdeaCats(
+          Array.isArray(persisted?.generatorSessionBanks) ? persisted.generatorSessionBanks : current.generatorSessionBanks,
+        ),
         sfxHidden: Array.isArray(persisted?.sfxHidden) ? persisted.sfxHidden : current.sfxHidden,
         sfxOrder: Array.isArray(persisted?.sfxOrder) ? persisted.sfxOrder : current.sfxOrder,
         sfxSlots: normalizeSfxSlots(persisted?.sfxSlots, persisted?.sfxOrder, persisted?.sfxHidden),
@@ -764,11 +1009,17 @@ export const useAppStore = create(
         stageSizes: normalizeStageSizes(persisted?.stageSizes),
         stageZooms: normalizeStageZooms(persisted?.stageZooms, persisted?.stageSizes),
         stageFrames: normalizeStageFrames(persisted?.stageFrames),
+        stageFloats: normalizeStageFloats(persisted?.stageFloats, normalizeStagePins(persisted?.stagePins)),
         stageLayout: normalizeStageLayout(persisted?.stageLayout),
+        stageAligns: normalizeStageAligns(persisted?.stageAligns),
+        stageCaptions: normalizeStageCaptions(persisted?.stageCaptions),
+        stageHideCode: persisted?.stageHideCode === true,
         stageIdeasOpen: persisted?.stageIdeasOpen === true,
+        stageIdeasUse: persisted?.stageIdeasUse === true,
         stageIdeaCats: normalizeIdeaCats(
           Array.isArray(persisted?.stageIdeaCats) ? persisted.stageIdeaCats : current.stageIdeaCats,
         ),
+        stageMessageFavorites: normalizeStageMessages(persisted?.stageMessageFavorites, []),
         stageIdeas: normalizeStageIdeasMap(persisted?.stageIdeas),
         stagePublishError: null,
       }),

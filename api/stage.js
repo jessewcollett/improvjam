@@ -27,6 +27,7 @@ function emptyRecord(code) {
     ideas: {},
     ideaCats: [],
     ideasOpen: false,
+    ideasUse: false,
     updatedAt: '',
   };
 }
@@ -93,6 +94,7 @@ function normalizeRecord(code, raw) {
     ideas: normalizeIdeas(raw.ideas),
     ideaCats: ideaCats(raw.ideaCats),
     ideasOpen: raw.ideasOpen === true,
+    ideasUse: raw.ideasUse === true,
     updatedAt: String(raw.updatedAt || ''),
   };
 }
@@ -225,7 +227,7 @@ export default async function handler(req, res) {
       }
       const code = String(body.code || '').trim();
       if (!code) {
-        res.status(400).json({ error: 'Missing code', code: '', payload: {}, ideas: {}, ideaCats: [], ideasOpen: false, updatedAt: '' });
+        res.status(400).json({ error: 'Missing code', code: '', payload: {}, ideas: {}, ideaCats: [], ideasOpen: false, ideasUse: false, updatedAt: '' });
         return;
       }
       const prev = normalizeRecord(code, (await readLocal(code)) || emptyRecord(code));
@@ -241,6 +243,9 @@ export default async function handler(req, res) {
       }
       if (Object.prototype.hasOwnProperty.call(body, 'ideasOpen')) {
         record.ideasOpen = body.ideasOpen === true;
+      }
+      if (Object.prototype.hasOwnProperty.call(body, 'ideasUse')) {
+        record.ideasUse = body.ideasUse === true;
       }
       if (Array.isArray(body.ideaCats)) {
         record.ideaCats = ideaCats(body.ideaCats);

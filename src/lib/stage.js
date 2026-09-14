@@ -1,5 +1,5 @@
 export const STAGE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-export const STAGE_SLOT_IDS = ['suggestions', 'games', 'timer', 'hat', 'coin', 'whosup', 'set'];
+export const STAGE_SLOT_IDS = ['suggestions', 'games', 'timer', 'hat', 'coin', 'whosup', 'set', 'display', 'message'];
 export const STAGE_CODE_RE = new RegExp(`^[${STAGE_ALPHABET}]{4,5}$`);
 
 const SLOT_SET = new Set(STAGE_SLOT_IDS);
@@ -66,6 +66,12 @@ function slotHasContent(id, value) {
   if (id === 'set') {
     return Boolean(String(value.name || '').trim() || (Array.isArray(value.games) && value.games.length));
   }
+  if (id === 'display') {
+    return Boolean(String(value?.url || value?.code || '').trim());
+  }
+  if (id === 'message') {
+    return Boolean(String(typeof value === 'string' ? value : value?.text || '').trim());
+  }
   if (Array.isArray(value)) return value.length > 0;
   if (typeof value === 'string') return Boolean(value.trim());
   return true;
@@ -87,7 +93,7 @@ export function buildStagePayload(pins, slots, sizes, layout, boardStyle, zooms,
     if (!slotHasContent(id, value)) return;
     payload[id] = value;
     order.push(id);
-    const resolved = resolveStageZoom(zooms?.[id], sizes?.[id]);
+    const resolved = resolveStageZoom();
     zoomMap[id] = resolved.zoom;
     sizeMap[id] = resolved.size;
   });
@@ -108,7 +114,7 @@ export function payloadHasSlots(payload) {
   return STAGE_SLOT_IDS.some((id) => slotHasContent(id, payload[id]));
 }
 
-export const STAGE_DISPLAY_ORDER = ['timer', 'suggestions', 'games', 'set', 'whosup', 'hat', 'coin'];
+export const STAGE_DISPLAY_ORDER = ['timer', 'suggestions', 'message', 'display', 'games', 'set', 'whosup', 'hat', 'coin'];
 
 export const STAGE_SLOT_LABELS = {
   timer: 'Timer',
@@ -118,7 +124,12 @@ export const STAGE_SLOT_LABELS = {
   whosup: "Who's up",
   hat: 'Hat',
   coin: 'Coin',
+  display: 'Ideas link',
+  message: 'Message',
 };
+
+export const DEFAULT_STAGE_MESSAGES = ['Welcome', 'Thank you', 'Intermission', 'Next game'];
+export const SESSION_BANK_PREFIX = 'session:';
 
 export const STAGE_SIZE_MIN = 1;
 export const STAGE_SIZE_MAX = 3;
@@ -171,17 +182,7 @@ export function packerSizeFromZoom(zoom) {
   return 2;
 }
 
-export function resolveStageZoom(zoomRaw, sizeRaw) {
-  const hasZoom = zoomRaw != null && zoomRaw !== '';
-  if (hasZoom) {
-    if (isAutoZoom(zoomRaw)) return { zoom: STAGE_ZOOM_AUTO, size: 1 };
-    const zoom = clampStageZoom(zoomRaw);
-    return { zoom, size: packerSizeFromZoom(zoom) };
-  }
-  if (sizeRaw != null && sizeRaw !== '') {
-    const size = clampStageSize(sizeRaw);
-    return { zoom: zoomFromLegacySize(size), size };
-  }
+export function resolveStageZoom() {
   return { zoom: STAGE_ZOOM_AUTO, size: 1 };
 }
 
@@ -234,7 +235,15 @@ export function normalizeStageFrames(raw) {
 }
 
 export function framesFromPacked(packed) {
-  if (!packed || packed.mode === 'pip') return {};
+  if (!packed) return {};
+  if (packed.mode === 'pip') {
+    const base = (packed.placements || []).find((item) => !item.overlay);
+    const pip = (packed.placements || []).find((item) => item.overlay);
+    const out = {};
+    if (base?.id) out[base.id] = { x: 0, y: 0, w: 100, h: 100 };
+    if (pip?.id) out[pip.id] = { x: 65.5, y: 65.5, w: 32, h: 32 };
+    return out;
+  }
   const cols = Math.max(1, packed.cols || 1);
   const rows = Math.max(1, packed.rows || 1);
   const out = {};
@@ -248,6 +257,12 @@ export function framesFromPacked(packed) {
     };
   });
   return out;
+}
+
+export function floatsFromPacked(packed) {
+  if (packed?.mode !== 'pip') return [];
+  const pip = (packed.placements || []).find((item) => item.overlay);
+  return pip?.id ? [pip.id] : [];
 }
 
 export function framesCoverSlots(frames, ids) {
@@ -350,6 +365,214 @@ export function applySplitterDrag(frames, splitter, nextAt) {
   return next;
 }
 
+export function normalizeStageFloats(raw, ids) {
+  const allowed = new Set((ids || STAGE_SLOT_IDS).filter(Boolean));
+  const list = Array.isArray(raw) ? raw : [];
+  const seen = new Set();
+  const out = [];
+  list.forEach((id) => {
+    const key = String(id || '').trim();
+    if (!key || seen.has(key) || !allowed.has(key)) return;
+    seen.add(key);
+    out.push(key);
+  });
+  return out;
+}
+
+function rangesOverlap(a0, a1, b0, b1) {
+  return a0 < b1 - 0.5 && b0 < a1 - 0.5;
+}
+
+export function yOverlapFrames(a, b) {
+  return a && b && rangesOverlap(a.y, a.y + a.h, b.y, b.y + b.h);
+}
+
+export function xOverlapFrames(a, b) {
+  return a && b && rangesOverlap(a.x, a.x + a.w, b.x, b.x + b.w);
+}
+
+export function applyNeighborPush(frames, id, edge, nextAt, dockedIds) {
+  const next = { ...frames };
+  const a = next[id];
+  if (!a) return next;
+  const others = (dockedIds || []).filter((other) => other !== id && next[other]);
+  if (edge === 'right') {
+    const neighbors = others.filter((other) => near(next[other].x, a.x + a.w) && yOverlapFrames(a, next[other]));
+    if (!neighbors.length) return next;
+    let at = nextAt;
+    at = Math.max(at, a.x + STAGE_FRAME_MIN);
+    neighbors.forEach((other) => {
+      at = Math.min(at, next[other].x + next[other].w - STAGE_FRAME_MIN);
+    });
+    next[id] = clampStageFrame({ ...a, w: at - a.x });
+    neighbors.forEach((other) => {
+      const b = next[other];
+      const end = b.x + b.w;
+      next[other] = clampStageFrame({ ...b, x: at, w: end - at });
+    });
+    return next;
+  }
+  if (edge === 'left') {
+    const neighbors = others.filter((other) => near(next[other].x + next[other].w, a.x) && yOverlapFrames(a, next[other]));
+    if (!neighbors.length) return next;
+    let at = nextAt;
+    at = Math.min(at, a.x + a.w - STAGE_FRAME_MIN);
+    neighbors.forEach((other) => {
+      at = Math.max(at, next[other].x + STAGE_FRAME_MIN);
+    });
+    const end = a.x + a.w;
+    next[id] = clampStageFrame({ ...a, x: at, w: end - at });
+    neighbors.forEach((other) => {
+      const b = next[other];
+      next[other] = clampStageFrame({ ...b, w: at - b.x });
+    });
+    return next;
+  }
+  if (edge === 'bottom') {
+    const neighbors = others.filter((other) => near(next[other].y, a.y + a.h) && xOverlapFrames(a, next[other]));
+    if (!neighbors.length) return next;
+    let at = nextAt;
+    at = Math.max(at, a.y + STAGE_FRAME_MIN);
+    neighbors.forEach((other) => {
+      at = Math.min(at, next[other].y + next[other].h - STAGE_FRAME_MIN);
+    });
+    next[id] = clampStageFrame({ ...a, h: at - a.y });
+    neighbors.forEach((other) => {
+      const b = next[other];
+      const end = b.y + b.h;
+      next[other] = clampStageFrame({ ...b, y: at, h: end - at });
+    });
+    return next;
+  }
+  if (edge === 'top') {
+    const neighbors = others.filter((other) => near(next[other].y + next[other].h, a.y) && xOverlapFrames(a, next[other]));
+    if (!neighbors.length) return next;
+    let at = nextAt;
+    at = Math.min(at, a.y + a.h - STAGE_FRAME_MIN);
+    neighbors.forEach((other) => {
+      at = Math.max(at, next[other].y + STAGE_FRAME_MIN);
+    });
+    const end = a.y + a.h;
+    next[id] = clampStageFrame({ ...a, y: at, h: end - at });
+    neighbors.forEach((other) => {
+      const b = next[other];
+      next[other] = clampStageFrame({ ...b, h: at - b.y });
+    });
+    return next;
+  }
+  return next;
+}
+
+export function resizeFloatFrame(frame, edge, nextAt) {
+  const a = clampStageFrame(frame);
+  if (edge === 'right') {
+    const at = Math.max(a.x + STAGE_FRAME_MIN, Math.min(100, nextAt));
+    return clampStageFrame({ ...a, w: at - a.x });
+  }
+  if (edge === 'left') {
+    const end = a.x + a.w;
+    const at = Math.max(0, Math.min(end - STAGE_FRAME_MIN, nextAt));
+    return clampStageFrame({ ...a, x: at, w: end - at });
+  }
+  if (edge === 'bottom') {
+    const at = Math.max(a.y + STAGE_FRAME_MIN, Math.min(100, nextAt));
+    return clampStageFrame({ ...a, h: at - a.y });
+  }
+  if (edge === 'top') {
+    const end = a.y + a.h;
+    const at = Math.max(0, Math.min(end - STAGE_FRAME_MIN, nextAt));
+    return clampStageFrame({ ...a, y: at, h: end - at });
+  }
+  return a;
+}
+
+export function resizeFloatCorner(frame, corner, xPct, yPct) {
+  const a = clampStageFrame(frame);
+  const x = Number(xPct);
+  const y = Number(yPct);
+  let next = { ...a };
+  if (corner === 'nw' || corner === 'sw') {
+    const end = a.x + a.w;
+    const at = Math.max(0, Math.min(end - STAGE_FRAME_MIN, x));
+    next = { ...next, x: at, w: end - at };
+  }
+  if (corner === 'ne' || corner === 'se') {
+    const at = Math.max(next.x + STAGE_FRAME_MIN, Math.min(100, x));
+    next = { ...next, w: at - next.x };
+  }
+  if (corner === 'nw' || corner === 'ne') {
+    const end = a.y + a.h;
+    const at = Math.max(0, Math.min(end - STAGE_FRAME_MIN, y));
+    next = { ...next, y: at, h: end - at };
+  }
+  if (corner === 'sw' || corner === 'se') {
+    const at = Math.max(next.y + STAGE_FRAME_MIN, Math.min(100, y));
+    next = { ...next, h: at - next.y };
+  }
+  return clampStageFrame(next);
+}
+
+export function moveFloatFrame(frame, dx, dy) {
+  const a = clampStageFrame(frame);
+  const x = Math.max(0, Math.min(100 - a.w, a.x + dx));
+  const y = Math.max(0, Math.min(100 - a.h, a.y + dy));
+  return clampStageFrame({ ...a, x, y });
+}
+
+export function swapStageFrames(frames, a, b) {
+  const next = { ...frames };
+  const fa = next[a];
+  const fb = next[b];
+  if (!fa || !fb) return next;
+  next[a] = fb;
+  next[b] = fa;
+  return next;
+}
+
+export function popOutStageTile(frames, floats, id, slotIds) {
+  const key = String(id || '').trim();
+  const ids = (slotIds || []).filter(Boolean);
+  if (!key || !ids.includes(key)) return { frames: normalizeStageFrames(frames), floats: normalizeStageFloats(floats, ids) };
+  const floatsNext = normalizeStageFloats([...floats, key], ids);
+  const remaining = ids.filter((item) => !floatsNext.includes(item));
+  const packed = packStageGrid(remaining.map((item) => ({ id: item, size: 1 })), true, '');
+  const floatFrame = clampStageFrame({ x: 65.5, y: 65.5, w: 32, h: 32 });
+  const kept = {};
+  floatsNext.forEach((fid) => {
+    if (fid === key) return;
+    if (frames?.[fid]) kept[fid] = frames[fid];
+  });
+  return {
+    frames: { ...framesFromPacked(packed), ...kept, [key]: floatFrame },
+    floats: floatsNext,
+  };
+}
+
+export function dockStageTile(frames, floats, id, slotIds) {
+  const key = String(id || '').trim();
+  const ids = (slotIds || []).filter(Boolean);
+  const floatsNext = normalizeStageFloats(floats, ids).filter((item) => item !== key);
+  const remaining = ids.filter((item) => !floatsNext.includes(item));
+  const packed = packStageGrid(remaining.map((item) => ({ id: item, size: 1 })), true, '');
+  const kept = {};
+  floatsNext.forEach((fid) => {
+    if (frames?.[fid]) kept[fid] = frames[fid];
+  });
+  return {
+    frames: { ...kept, ...framesFromPacked(packed) },
+    floats: floatsNext,
+  };
+}
+
+export function frameAtPoint(frames, ids, xPct, yPct) {
+  const list = [...(ids || [])].reverse();
+  return list.find((id) => {
+    const frame = frames?.[id];
+    if (!frame) return false;
+    return xPct >= frame.x && xPct <= frame.x + frame.w && yPct >= frame.y && yPct <= frame.y + frame.h;
+  }) || '';
+}
+
 export function normalizeIdeaCats(raw) {
   if (!Array.isArray(raw)) return [];
   const seen = new Set();
@@ -361,6 +584,45 @@ export function normalizeIdeaCats(raw) {
     out.push(key);
   });
   return out;
+}
+
+export function sessionBankId(catId) {
+  const key = String(catId || '').trim();
+  return key ? `${SESSION_BANK_PREFIX}${key}` : '';
+}
+
+export function parseSessionBankId(id) {
+  const raw = String(id || '');
+  if (!raw.startsWith(SESSION_BANK_PREFIX)) return '';
+  return raw.slice(SESSION_BANK_PREFIX.length).trim();
+}
+
+export function stageMessageText(value) {
+  if (typeof value === 'string') return value.trim();
+  return String(value?.text || '').trim();
+}
+
+export function normalizeStageMessages(raw, fallback = DEFAULT_STAGE_MESSAGES) {
+  const source = Array.isArray(raw) ? raw : fallback;
+  const seen = new Set();
+  const out = [];
+  source.forEach((item) => {
+    const text = String(item || '').trim().slice(0, 80);
+    if (!text) return;
+    const key = text.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(text);
+  });
+  return out.slice(0, 24);
+}
+
+export function compactStageUrl(url) {
+  return String(url || '').replace(/^https?:\/\//i, '').replace(/\/$/, '');
+}
+
+export function stageIdeasJoinUrl(origin = typeof window !== 'undefined' ? window.location.origin : '') {
+  return origin ? `${origin}/ideas` : '/ideas';
 }
 
 export function normalizeIdeaBucket(raw) {
@@ -409,6 +671,36 @@ const STAGE_LAYOUT_BY_ID = Object.fromEntries(STAGE_LAYOUTS.map((layout) => [lay
 export function normalizeStageLayout(raw) {
   const id = String(raw || '').trim();
   return STAGE_LAYOUT_BY_ID[id] ? id : '';
+}
+
+export function normalizeStageAlign(raw) {
+  return String(raw || '').trim().toLowerCase() === 'left' ? 'left' : 'center';
+}
+
+export function normalizeStageAligns(raw) {
+  const out = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  STAGE_SLOT_IDS.forEach((id) => {
+    if (raw[id] == null) return;
+    const align = normalizeStageAlign(raw[id]);
+    if (align === 'left') out[id] = 'left';
+  });
+  return out;
+}
+
+export function normalizeStageCaptions(raw) {
+  const out = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  STAGE_SLOT_IDS.forEach((id) => {
+    if (raw[id] === false) out[id] = false;
+  });
+  return out;
+}
+
+export function slotHasSuggestionCaptions(value) {
+  return (Array.isArray(value) ? value : []).some((item) => (
+    (item?.texts || []).some((entry) => Boolean(suggestionLine(entry).extra))
+  ));
 }
 
 export function layoutsForCount(count) {
@@ -515,20 +807,34 @@ export function listedStageSlots(payload) {
     ids.push(id);
   });
   const frames = normalizeStageFrames(payload?.frames);
+  const aligns = normalizeStageAligns(payload?.aligns);
+  const captions = payload?.captions && typeof payload.captions === 'object' && !Array.isArray(payload.captions)
+    ? payload.captions
+    : {};
   return ids.map((id) => {
-    const resolved = resolveStageZoom(payload.zooms?.[id], payload.sizes?.[id]);
+    const resolved = resolveStageZoom();
     return {
       id,
       value: payload[id],
       zoom: resolved.zoom,
       size: resolved.size,
       frame: frames[id],
+      align: aligns[id] || 'center',
+      captions: captions[id] !== false,
     };
   });
 }
 
 export function seedStageFrames(slots, landscape, layout) {
-  return framesFromPacked(packStageGrid(slots, landscape, layout));
+  return seedStageLayout(slots, landscape, layout).frames;
+}
+
+export function seedStageLayout(slots, landscape, layout) {
+  const packed = packStageGrid(slots, landscape, layout);
+  return {
+    frames: framesFromPacked(packed),
+    floats: floatsFromPacked(packed),
+  };
 }
 
 export function packStageGrid(slots, landscape, layout) {
@@ -680,6 +986,8 @@ export function slotSummary(id, value) {
       .filter(Boolean)
       .join(', ');
   }
+  if (id === 'display') return String(value?.code || value?.url || 'Ideas link');
+  if (id === 'message') return stageMessageText(value);
   return '';
 }
 
@@ -789,6 +1097,7 @@ export async function fetchStage(code) {
     ideas: normalizeStageIdeasMap(data.ideas),
     ideaCats: normalizeIdeaCats(data.ideaCats),
     ideasOpen: data.ideasOpen === true,
+    ideasUse: data.ideasUse === true,
     updatedAt: data.updatedAt || '',
   };
 }

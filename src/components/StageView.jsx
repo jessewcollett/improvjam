@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Tv } from 'lucide-react';
+import { Eye, EyeOff, Tv } from 'lucide-react';
 import { StageSlotGrid } from './StageBoardContent.jsx';
 import {
   fetchStage,
@@ -60,19 +60,35 @@ function JoinForm() {
   );
 }
 
-function BoardStandby({ code, connecting, hardError }) {
+const TV_HIDE_CODE_KEY = 'improv-jam-tv-hide-code';
+
+function readLocalHideCode() {
+  try {
+    return window.sessionStorage.getItem(TV_HIDE_CODE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeLocalHideCode(hidden) {
+  try {
+    if (hidden) window.sessionStorage.setItem(TV_HIDE_CODE_KEY, '1');
+    else window.sessionStorage.removeItem(TV_HIDE_CODE_KEY);
+  } catch {
+    /* private mode */
+  }
+}
+
+function BoardStandby({ code, connecting, hardError, hideCode }) {
   const headline = connecting ? 'Connecting…' : hardError ? 'Couldn’t reach the board.' : 'Waiting.';
   return (
     <div className="h-full flex flex-col items-center justify-center text-center px-6">
-      <p className="text-[clamp(2.5rem,14vmin,7rem)] font-black font-display tracking-[0.18em] leading-none mb-4">
-        {code}
-      </p>
-      <p className="text-[clamp(1.5rem,6vmin,4rem)] font-black font-display text-gray-400">{headline}</p>
-      {!connecting && !hardError ? (
-        <p className="text-sm md:text-lg text-gray-500 mt-3 max-w-lg">
-          Pin a panel on the phone. This board fills the screen with whatever is pinned.
+      {hideCode ? null : (
+        <p className="text-[clamp(2.5rem,14vmin,7rem)] font-black font-display tracking-[0.18em] leading-none mb-4">
+          {code}
         </p>
-      ) : null}
+      )}
+      <p className="text-[clamp(1.5rem,6vmin,4rem)] font-black font-display text-gray-400">{headline}</p>
     </div>
   );
 }
@@ -81,6 +97,7 @@ function StageBoard({ code }) {
   const [payload, setPayload] = useState({});
   const [hardError, setHardError] = useState('');
   const [ready, setReady] = useState(false);
+  const [localHide, setLocalHide] = useState(readLocalHideCode);
 
   useEffect(() => {
     let cancelled = false;
@@ -137,19 +154,55 @@ function StageBoard({ code }) {
 
   const slots = listedStageSlots(payload);
   const hasBoard = payloadHasSlots(payload);
+  const publishedHide = payload.hideCode === true;
+  const hideCode = publishedHide || localHide;
+
+  const toggleLocalHide = () => {
+    const next = !localHide;
+    writeLocalHideCode(next);
+    setLocalHide(next);
+  };
 
   return (
     <div className="h-dvh w-full bg-black text-white flex flex-col overflow-hidden">
-      <header className="shrink-0 flex items-baseline justify-between gap-4 px-4 md:px-8 py-3 border-b border-white/10">
+      <header className="shrink-0 flex items-center justify-between gap-3 px-4 md:px-8 py-1.5 border-b border-white/10">
         <p className="text-xs uppercase tracking-[0.3em] text-gray-500 font-bold">Improv Jam</p>
-        <p className="text-lg md:text-2xl font-black font-display tracking-[0.22em] text-gray-200">{code}</p>
+        <div className="flex items-center gap-2 min-w-0">
+          {hideCode ? null : (
+            <p className="text-base md:text-xl font-black font-display tracking-[0.22em] text-gray-200 truncate">
+              {code}
+            </p>
+          )}
+          {publishedHide ? null : (
+            <button
+              type="button"
+              onClick={toggleLocalHide}
+              className="min-h-11 px-3 rounded-lg text-xs font-bold text-gray-300 hover:text-white inline-flex items-center gap-1.5"
+              aria-pressed={localHide}
+            >
+              {localHide ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+              {localHide ? 'Show' : 'Hide'}
+            </button>
+          )}
+        </div>
       </header>
 
       <div className="flex-1 min-h-0">
         {hasBoard ? (
-          <StageSlotGrid slots={slots} layout={payload.layout} boardStyle={payload.boardStyle} frames={payload.frames} />
+          <StageSlotGrid
+            slots={slots}
+            layout={payload.layout}
+            boardStyle={payload.boardStyle}
+            frames={payload.frames}
+            floats={Array.isArray(payload.floats) ? payload.floats : undefined}
+          />
         ) : (
-          <BoardStandby code={code} connecting={!ready && !hardError} hardError={Boolean(hardError && !ready)} />
+          <BoardStandby
+            code={code}
+            connecting={!ready && !hardError}
+            hardError={Boolean(hardError && !ready)}
+            hideCode={hideCode}
+          />
         )}
       </div>
     </div>

@@ -18,7 +18,7 @@ export default function StageManagerView() {
         </div>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide px-4 md:px-6 pt-3 pb-nav">
-        <StageRemoteBody extra={<StageLayoutEditor />} />
+        <StageRemoteBody extra={<StageLayoutEditor />} showPinList={false} />
         {publishError ? (
           <p className="text-xs text-amber-300 bg-amber-900/20 border border-amber-800/40 rounded-lg p-2 mt-3">
             {publishError}

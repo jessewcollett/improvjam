@@ -3,9 +3,11 @@ import {
   formatStageTime,
   framesCoverSlots,
   gamePartText,
-  isAutoZoom,
   isLineSuggestion,
+  floatsFromPacked,
+  framesFromPacked,
   normalizeStageBoardStyle,
+  normalizeStageFloats,
   normalizeStageFrames,
   packStageGrid,
   parseTimerEndMs,
@@ -13,15 +15,37 @@ import {
   remainingFromTimer,
   STAGE_GAME_PARTS,
   STAGE_TIMER_TICK_MS,
-  STAGE_ZOOM_AUTO,
-  stageFontFactor,
+  compactStageUrl,
+  stageIdeasJoinUrl,
+  stageMessageText,
   stageTypeScale,
   suggestionLine,
 } from '../lib/stage.js';
+import StageQrCode from './StageQrCode.jsx';
 
-const StageTileContext = createContext({ landscape: false });
-const TILE_LANDSCAPE_RATIO = 1.2;
+const StageTileContext = createContext({ landscape: false, align: 'center', showCaptions: true });
+const TILE_LANDSCAPE_RATIO = 1.65;
 const TILE_SCALE_FLOOR = 0.25;
+const TILE_FONT_MIN = 0.55;
+const TILE_FONT_MAX = 1.9;
+const TILE_FILL = 0.88;
+const TILE_FONT_STEPS = 8;
+
+function useTileAlign() {
+  return useContext(StageTileContext).align === 'left' ? 'left' : 'center';
+}
+
+function useShowCaptions() {
+  return useContext(StageTileContext).showCaptions !== false;
+}
+
+function alignText(align) {
+  return align === 'left' ? 'text-left' : 'text-center';
+}
+
+function alignItems(align) {
+  return align === 'left' ? 'items-start' : 'items-center';
+}
 
 function useTileLandscape() {
   return useContext(StageTileContext).landscape;
@@ -31,9 +55,9 @@ function siblingColumns(count, landscape) {
   return Boolean(landscape && count >= 2);
 }
 
-function siblingBoxClass(columns, stacked = 'gap-2') {
+function siblingBoxClass(columns, stacked = 'gap-3') {
   return columns
-    ? 'grid grid-cols-2 gap-2 min-w-0 h-full auto-rows-fr'
+    ? 'grid grid-cols-2 gap-3 min-w-0 h-full auto-rows-fr'
     : `h-full min-h-0 flex flex-col ${stacked} min-w-0`;
 }
 
@@ -87,84 +111,72 @@ function useStageTimerRemaining(timer) {
   return Math.max(0, Math.ceil((endMs - Date.now()) / 1000));
 }
 
-function StageTileFrame({ children, zoom = STAGE_ZOOM_AUTO, allowColumns = true }) {
+function StageTileFrame({ children, allowColumns = true, fitKey = '', align = 'center', showCaptions = true }) {
   const boxRef = useRef(null);
   const innerRef = useRef(null);
   const [scale, setScale] = useState(1);
   const [landscape, setLandscape] = useState(false);
-  const auto = isAutoZoom(zoom);
-  const factor = auto ? 1 : stageFontFactor(zoom);
+  const resolvedAlign = align === 'left' ? 'left' : 'center';
 
   useLayoutEffect(() => {
     const box = boxRef.current;
     const inner = innerRef.current;
     if (!box || !inner) return undefined;
 
-    let frame = 0;
-    let measuring = false;
+    const contentFits = (maxW, maxH) => {
+      const iw = Math.max(inner.scrollWidth, inner.offsetWidth, 1);
+      const ih = Math.max(inner.scrollHeight, inner.offsetHeight, 1);
+      return iw <= maxW + 1 && ih <= maxH + 1;
+    };
+
     const measure = () => {
-      if (measuring) return;
-      measuring = true;
       const w = box.clientWidth;
       const h = box.clientHeight;
-      if (w < 4 || h < 4) {
-        measuring = false;
-        return;
-      }
+      if (w < 4 || h < 4) return;
       box.style.setProperty('--stage-cqmin', `${Math.min(w, h) / 100}px`);
       const nextLandscape = allowColumns && w >= h * TILE_LANDSCAPE_RATIO;
       setLandscape((prev) => (prev === nextLandscape ? prev : nextLandscape));
       inner.style.transform = 'none';
-      if (auto) {
-        let lo = 0.45;
-        let hi = 3.4;
-        for (let i = 0; i < 11; i += 1) {
+      const targetW = w * TILE_FILL;
+      const targetH = h * TILE_FILL;
+      let lo = TILE_FONT_MIN;
+      let hi = TILE_FONT_MAX;
+      box.style.setProperty('--stage-font', String(TILE_FONT_MAX));
+      if (contentFits(targetW, targetH)) {
+        lo = TILE_FONT_MAX;
+      } else {
+        for (let i = 0; i < TILE_FONT_STEPS; i += 1) {
           const mid = (lo + hi) / 2;
           box.style.setProperty('--stage-font', String(mid));
-          const iw = Math.max(inner.scrollWidth, inner.offsetWidth, 1);
-          const ih = Math.max(inner.scrollHeight, inner.offsetHeight, 1);
-          if (iw <= w + 1 && ih <= h + 1) lo = mid;
+          if (contentFits(targetW, targetH)) lo = mid;
           else hi = mid;
         }
-        box.style.setProperty('--stage-font', String(lo));
-        const iw = Math.max(inner.scrollWidth, inner.offsetWidth, 1);
-        const ih = Math.max(inner.scrollHeight, inner.offsetHeight, 1);
-        const next = Math.min(1, w / iw, h / ih);
-        const clamped = Math.max(TILE_SCALE_FLOOR, Number.isFinite(next) ? next : 1);
-        setScale((prev) => (Math.abs(prev - clamped) < 0.015 ? prev : clamped));
-        measuring = false;
-        return;
       }
-      box.style.setProperty('--stage-font', String(factor));
+      box.style.setProperty('--stage-font', String(lo));
       const iw = Math.max(inner.scrollWidth, inner.offsetWidth, 1);
       const ih = Math.max(inner.scrollHeight, inner.offsetHeight, 1);
-      const next = Math.min(1, w / iw, h / ih);
-      const clamped = Math.max(TILE_SCALE_FLOOR, Number.isFinite(next) ? next : 1);
+      const shrink = Math.min(1, w / iw, h / ih);
+      const clamped = Math.max(TILE_SCALE_FLOOR, Number.isFinite(shrink) ? shrink : 1);
       setScale((prev) => (Math.abs(prev - clamped) < 0.015 ? prev : clamped));
-      measuring = false;
-    };
-    const apply = () => {
-      measure();
-      window.cancelAnimationFrame(frame);
-      frame = window.requestAnimationFrame(measure);
     };
 
-    const ro = new ResizeObserver(apply);
+    const ro = new ResizeObserver(measure);
     ro.observe(box);
-    ro.observe(inner);
-    apply();
-    return () => {
-      window.cancelAnimationFrame(frame);
-      ro.disconnect();
-    };
-  }, [allowColumns, auto, factor]);
+    measure();
+    return () => ro.disconnect();
+  }, [allowColumns, fitKey]);
 
   return (
-    <StageTileContext.Provider value={{ landscape }}>
-      <div ref={boxRef} className="stage-tile h-full min-h-0 min-w-0">
+    <StageTileContext.Provider value={{ landscape, align: resolvedAlign, showCaptions: showCaptions !== false }}>
+      <div
+        ref={boxRef}
+        className={`stage-tile h-full min-h-0 min-w-0 flex ${
+          resolvedAlign === 'left' ? 'items-start justify-start' : 'items-center justify-center'
+        }`}
+      >
         <div
           ref={innerRef}
-          className="stage-tile-inner"
+          className={`stage-tile-inner ${resolvedAlign === 'left' ? 'w-full' : ''}`}
           style={scale < 0.995 ? { transform: `scale(${scale})` } : undefined}
         >
           {children}
@@ -180,7 +192,8 @@ export function LiveStageTime({ timer, className }) {
 }
 
 function InnerCard({ cards, children, className = '' }) {
-  const fill = 'min-w-0 min-h-0 h-full flex-1 flex flex-col justify-center';
+  const align = useTileAlign();
+  const fill = `min-w-0 min-h-0 h-full flex-1 flex flex-col justify-center ${alignItems(align)} ${alignText(align)}`;
   if (!cards) return <div className={`${fill} ${className}`}>{children}</div>;
   return (
     <div className={`rounded-2xl bg-[#1A1A1A] border border-white/10 px-3 py-2.5 ${fill} ${className}`}>
@@ -191,6 +204,7 @@ function InnerCard({ cards, children, className = '' }) {
 
 function TileTimer({ timer, scale, cards }) {
   const remaining = useStageTimerRemaining(timer);
+  const align = useTileAlign();
   const digits = (
     <p className={`font-black font-display tabular-nums leading-none text-white whitespace-nowrap ${scale.title}`}>
       {formatStageTime(remaining)}
@@ -198,7 +212,7 @@ function TileTimer({ timer, scale, cards }) {
   );
   if (!cards) {
     return (
-      <div className="h-full min-h-0 flex flex-col items-center justify-center text-center px-2">
+      <div className={`h-full min-h-0 flex flex-col justify-center px-2 ${alignItems(align)} ${alignText(align)}`}>
         <p className={`mb-2 shrink-0 text-cyan-400 ${scale.kicker}`}>Timer</p>
         {digits}
       </div>
@@ -206,20 +220,21 @@ function TileTimer({ timer, scale, cards }) {
   }
   return (
     <TileShell kicker="Timer" kickerClass="text-cyan-400" scale={scale}>
-      <InnerCard cards className="text-center items-center">{digits}</InnerCard>
+      <InnerCard cards>{digits}</InnerCard>
     </TileShell>
   );
 }
 
 function TileShell({ kicker, kickerClass, scale, children }) {
+  const align = useTileAlign();
   return (
-    <div className="h-full min-h-0 flex flex-col overflow-hidden px-2 py-1.5">
+    <div className="h-full min-h-0 flex flex-col overflow-hidden px-3 py-2">
       {kicker ? (
-        <p className={`mb-1.5 shrink-0 ${scale.kicker} ${kickerClass || 'text-gray-400'}`}>
+        <p className={`mb-2 shrink-0 ${alignText(align)} ${scale.kicker} ${kickerClass || 'text-gray-400'}`}>
           {kicker}
         </p>
       ) : null}
-      <div className="flex-1 min-h-0 min-w-0 flex flex-col">{children}</div>
+      <div className="flex-1 min-h-0 min-w-0 flex flex-col justify-center">{children}</div>
     </div>
   );
 }
@@ -231,6 +246,8 @@ function tileTypeScale(count) {
 function SuggestionTexts({ item, scale }) {
   const line = isLineSuggestion(item);
   const landscape = useTileLandscape();
+  const align = useTileAlign();
+  const showCaptions = useShowCaptions();
   const entries = (item.texts || [])
     .map((entry, index) => ({ ...suggestionLine(entry), index }))
     .filter((row) => row.text);
@@ -239,13 +256,13 @@ function SuggestionTexts({ item, scale }) {
   return (
     <div className={siblingBoxClass(columns)}>
       {entries.map((row) => (
-        <div key={`${row.text}-${row.index}`} className={`min-w-0 ${line ? 'text-center' : ''}`}>
+        <div key={`${row.text}-${row.index}`} className={`min-w-0 ${alignText(align)}`}>
           <p
             className={`font-black font-display break-words ${line ? 'italic text-emerald-300' : 'text-white'} ${scale.body}`}
           >
             {line ? quotedStageLine(row.text) : row.text}
           </p>
-          {row.extra ? <p className={`text-gray-500 break-words ${scale.caption}`}>{row.extra}</p> : null}
+          {showCaptions && row.extra ? <p className={`text-gray-500 break-words ${scale.caption}`}>{row.extra}</p> : null}
         </div>
       ))}
     </div>
@@ -254,13 +271,14 @@ function SuggestionTexts({ item, scale }) {
 
 function GamePartBlocks({ game, scale }) {
   const selected = Array.isArray(game?.parts) ? game.parts : [];
+  const align = useTileAlign();
   if (!selected.length) return null;
   return STAGE_GAME_PARTS.map((part) => {
     if (!selected.includes(part.id)) return null;
     const text = gamePartText(game, part.id);
     if (!text) return null;
     return (
-      <div key={part.id} className="mt-2 min-w-0">
+      <div key={part.id} className={`mt-2 min-w-0 ${alignText(align)}`}>
         <p className={`mb-0.5 text-gray-500 ${scale.kicker}`}>{part.label}</p>
         <p className={`font-bold text-gray-100 whitespace-pre-wrap break-words ${scale.body}`}>{text}</p>
       </div>
@@ -272,6 +290,8 @@ export function StageSlotTile({ id, value, count, boardStyle }) {
   const scale = tileTypeScale(count);
   const cards = normalizeStageBoardStyle(boardStyle) !== 'compact';
   const landscape = useTileLandscape();
+  const align = useTileAlign();
+  const showCaptions = useShowCaptions();
   if (id === 'timer') return <TileTimer timer={value} scale={scale} cards={cards} />;
 
   if (id === 'suggestions') {
@@ -281,7 +301,7 @@ export function StageSlotTile({ id, value, count, boardStyle }) {
         <div className={siblingBoxClass(siblingColumns(items.length, landscape))}>
           {items.map((item, index) => (
             <InnerCard key={`${item.label || 'item'}-${index}`} cards={cards}>
-              <p className={`mb-0.5 text-gray-500 ${scale.kicker}`}>{item.label}</p>
+              <p className={`mb-1 text-gray-500 ${scale.kicker}`}>{item.label}</p>
               <SuggestionTexts item={item} scale={scale} />
             </InnerCard>
           ))}
@@ -334,7 +354,7 @@ export function StageSlotTile({ id, value, count, boardStyle }) {
     return (
       <TileShell kicker="Who's up" kickerClass="text-blue-300" scale={scale}>
         <InnerCard cards={cards}>
-          <ul className={`text-center ${siblingBoxClass(siblingColumns(names.length, landscape), 'gap-1')}`}>
+          <ul className={`${alignText(align)} ${siblingBoxClass(siblingColumns(names.length, landscape), 'gap-1')}`}>
             {names.map((name, index) => (
               <li key={`${name}-${index}`} className={`font-black font-display break-words text-blue-100 ${scale.title}`}>
                 {name}
@@ -357,7 +377,7 @@ export function StageSlotTile({ id, value, count, boardStyle }) {
               ['Relationship', value?.relationship],
               ['Object', value?.object],
             ].map(([label, text]) => (
-              <div key={label} className="min-w-0">
+              <div key={label} className={`min-w-0 ${alignText(align)}`}>
                 <p className={`mb-0.5 text-gray-500 ${scale.kicker}`}>{label}</p>
                 <p className={`font-black font-display break-words ${scale.body}`}>{text}</p>
               </div>
@@ -371,9 +391,53 @@ export function StageSlotTile({ id, value, count, boardStyle }) {
   if (id === 'coin') {
     return (
       <TileShell kicker="Coin" kickerClass="text-amber-300" scale={scale}>
-        <InnerCard cards={cards} className="text-center">
-          <p className={`font-black font-display break-words text-center ${scale.title}`}>{value}</p>
+        <InnerCard cards={cards}>
+          <p className={`font-black font-display break-words ${scale.title}`}>{value}</p>
         </InnerCard>
+      </TileShell>
+    );
+  }
+
+  if (id === 'message') {
+    const text = stageMessageText(value);
+    if (!text) return null;
+    return (
+      <TileShell kicker="Message" kickerClass="text-lime-300" scale={scale}>
+        <InnerCard cards={cards}>
+          <p className={`font-black font-display break-words ${scale.title}`}>{text}</p>
+        </InnerCard>
+      </TileShell>
+    );
+  }
+
+  if (id === 'display') {
+    const url = String(value?.url || '').trim();
+    const code = String(value?.code || '').trim();
+    const joinUrl = compactStageUrl(stageIdeasJoinUrl());
+    const stacked = !siblingColumns(2, landscape);
+    return (
+      <TileShell kicker="Ideas" kickerClass="text-lime-400" scale={scale}>
+        <div className={stacked
+          ? `h-full min-h-0 flex flex-col justify-center gap-3 ${alignItems(align)}`
+          : 'h-full min-h-0 flex items-center gap-4 min-w-0'}
+        >
+          <StageQrCode
+            value={url}
+            label="Audience ideas QR code"
+            className="w-[min(100%,11rem)] aspect-square rounded-xl overflow-hidden shrink-0"
+          />
+          <div className={`min-w-0 ${alignText(align)}`}>
+            <p className={`font-black font-display tracking-[0.18em] ${scale.title}`}>{code}</p>
+            {showCaptions ? (
+              <>
+                <p className={`text-gray-400 mt-1 ${scale.caption}`}>
+                  Scan to send ideas, or type this code here:
+                </p>
+                <p className={`text-gray-300 break-all mt-0.5 ${scale.caption}`}>{joinUrl}</p>
+              </>
+            ) : null}
+          </div>
+        </div>
       </TileShell>
     );
   }
@@ -382,32 +446,47 @@ export function StageSlotTile({ id, value, count, boardStyle }) {
 }
 
 function StageCell({ slot, count, boardStyle, className = '', style, allowColumns = true }) {
+  const align = slot?.align === 'left' ? 'left' : 'center';
+  const showCaptions = slot?.captions !== false;
   return (
     <div className={`min-h-0 min-w-0 overflow-hidden border border-white/10 ${className}`} style={style}>
-      <StageTileFrame zoom={slot.zoom} allowColumns={allowColumns}>
+      <StageTileFrame
+        allowColumns={allowColumns}
+        align={align}
+        showCaptions={showCaptions}
+        fitKey={`${slot.id}|${count}|${boardStyle}|${align}|${showCaptions}|${JSON.stringify(slot.value)}`}
+      >
         <StageSlotTile id={slot.id} value={slot.value} count={count} boardStyle={boardStyle} />
       </StageTileFrame>
     </div>
   );
 }
 
-export function StageSlotGrid({ slots, layout, boardStyle, frames, className = '' }) {
+export function StageSlotGrid({ slots, layout, boardStyle, frames, floats, className = '' }) {
   const landscape = useLandscape();
   if (!slots?.length) return null;
   const fromSlots = {};
   slots.forEach((slot) => {
     if (slot?.frame) fromSlots[slot.id] = slot.frame;
   });
-  const frameMap = { ...fromSlots, ...normalizeStageFrames(frames) };
   const packed = packStageGrid(slots, landscape, layout);
-  const overlay = packed.mode === 'pip' ? packed.placements.find((slot) => slot.overlay) : null;
-  const mainSlots = overlay ? slots.filter((slot) => slot.id !== overlay.id) : slots;
-  const useFrames = framesCoverSlots(frameMap, mainSlots.map((slot) => slot.id));
+  const packedFrames = framesFromPacked(packed);
+  const packedFloats = floatsFromPacked(packed);
+  const frameMap = { ...packedFrames, ...fromSlots, ...normalizeStageFrames(frames) };
+  const ids = slots.map((slot) => slot.id);
+  const floatIds = normalizeStageFloats(
+    Array.isArray(floats) ? floats : packedFloats,
+    ids,
+  );
+  const floatSet = new Set(floatIds);
+  const docked = slots.filter((slot) => !floatSet.has(slot.id));
+  const floating = slots.filter((slot) => floatSet.has(slot.id));
+  const useFrames = framesCoverSlots(frameMap, ids);
 
   if (useFrames) {
     return (
-      <div className={`h-full min-h-0 relative ${className}`}>
-        {mainSlots.map((slot) => {
+      <div className={`h-full min-h-0 relative isolate ${className}`}>
+        {docked.map((slot) => {
           const frame = frameMap[slot.id];
           return (
             <StageCell
@@ -415,7 +494,7 @@ export function StageSlotGrid({ slots, layout, boardStyle, frames, className = '
               slot={slot}
               count={slots.length}
               boardStyle={boardStyle}
-              className="absolute border-white/10"
+              className="absolute z-0 border-white/10 bg-black"
               style={{
                 left: `${frame.x}%`,
                 top: `${frame.y}%`,
@@ -425,15 +504,25 @@ export function StageSlotGrid({ slots, layout, boardStyle, frames, className = '
             />
           );
         })}
-        {overlay ? (
-          <StageCell
-            slot={overlay}
-            count={slots.length}
-            boardStyle={boardStyle}
-            className="absolute right-[2.5%] bottom-[2.5%] w-[32%] h-[32%] border-white/20 bg-black z-10 shadow-2xl"
-            allowColumns={false}
-          />
-        ) : null}
+        {floating.map((slot) => {
+          const frame = frameMap[slot.id];
+          return (
+            <StageCell
+              key={slot.id}
+              slot={slot}
+              count={slots.length}
+              boardStyle={boardStyle}
+              className="absolute border-white/20 bg-black z-20 shadow-2xl"
+              allowColumns={false}
+              style={{
+                left: `${frame.x}%`,
+                top: `${frame.y}%`,
+                width: `${frame.w}%`,
+                height: `${frame.h}%`,
+              }}
+            />
+          );
+        })}
       </div>
     );
   }

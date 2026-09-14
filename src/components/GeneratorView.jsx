@@ -14,8 +14,8 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore } from '../store/useAppStore.js';
-import { askForCategoriesFromRows, rowCategories, rowExtra, skillItemsFromRows } from '../lib/generator.js';
-import { suggestionsFromGenerator, STAGE_IDEAS_POLL_MS } from '../lib/stage.js';
+import { ASK_FOR_CATEGORIES, askForCategoriesFromRows, rowCategories, rowExtra, skillItemsFromRows } from '../lib/generator.js';
+import { sessionBankId, suggestionsFromGenerator, STAGE_IDEAS_POLL_MS } from '../lib/stage.js';
 import ActionDock from './ActionDock.jsx';
 import CatalogIcon from './CatalogIcon.jsx';
 import SearchField from './SearchField.jsx';
@@ -151,10 +151,12 @@ export default function GeneratorView() {
   const banks = useAppStore((s) => s.data.banks) || [];
   const selectedIds = useAppStore((s) => s.generatorBanks) || [];
   const selectedSkills = useAppStore((s) => s.generatorSkills) || [];
+  const selectedSessionIds = useAppStore((s) => s.generatorSessionBanks) || [];
   const favoriteIds = useAppStore((s) => s.generatorBankFavorites) || [];
   const toggleGeneratorBank = useAppStore((s) => s.toggleGeneratorBank);
   const toggleGeneratorBankFavorite = useAppStore((s) => s.toggleGeneratorBankFavorite);
   const toggleGeneratorSkill = useAppStore((s) => s.toggleGeneratorSkill);
+  const toggleGeneratorSessionBank = useAppStore((s) => s.toggleGeneratorSessionBank);
   const drawCounts = useAppStore((s) => s.generatorDrawCounts) || {};
   const setGeneratorDrawCount = useAppStore((s) => s.setGeneratorDrawCount);
   const showStats = useAppStore((s) => s.settings.showStats) !== false;
@@ -166,7 +168,7 @@ export default function GeneratorView() {
   const suggestionsPinned = stagePins.includes('suggestions');
   const stageOn = useAppStore((s) => s.settings.stageOn);
   const ideasOpen = useAppStore((s) => s.stageIdeasOpen);
-  const ideaCats = useAppStore((s) => s.stageIdeaCats) || [];
+  const ideasUse = useAppStore((s) => s.stageIdeasUse);
   const stageIdeas = useAppStore((s) => s.stageIdeas) || {};
   const pullStageIdeas = useAppStore((s) => s.pullStageIdeas);
   const countFor = (id) => clampDrawCount(drawCounts[id] ?? 1);
@@ -207,6 +209,37 @@ export default function GeneratorView() {
     [skillItems, selectedSkills],
   );
 
+  const sessionCats = useMemo(() => {
+    if (!stageOn || !ideasUse) return [];
+    const byId = new Map(askForCategories.map((cat) => [cat.id, cat]));
+    ASK_FOR_CATEGORIES.forEach((cat) => {
+      if (!byId.has(cat.id)) byId.set(cat.id, cat);
+    });
+    const out = [];
+    const seen = new Set();
+    const consider = (id) => {
+      const key = String(id || '').trim();
+      if (!key || seen.has(key)) return;
+      const rows = (stageIdeas[key] || []).filter(Boolean);
+      if (!rows.length) return;
+      seen.add(key);
+      const cat = byId.get(key) || { id: key, label: key };
+      out.push({
+        ...cat,
+        count: rows.length,
+        sessionId: sessionBankId(key),
+      });
+    };
+    ASK_FOR_CATEGORIES.forEach((cat) => consider(cat.id));
+    Object.keys(stageIdeas || {}).forEach(consider);
+    return out;
+  }, [askForCategories, ideasUse, stageIdeas, stageOn]);
+
+  const selectedSessionCats = useMemo(
+    () => sessionCats.filter((cat) => selectedSessionIds.includes(cat.sessionId)),
+    [sessionCats, selectedSessionIds],
+  );
+
   const selectedRows = useMemo(() => {
     if (!selectedIds.length) return [];
     const wanted = new Set(selectedIds);
@@ -225,11 +258,11 @@ export default function GeneratorView() {
   const visibleCatalogue = filteredCatalogue.slice(0, CATALOGUE_CAP);
 
   useEffect(() => {
-    if (!stageOn || !ideasOpen) return undefined;
+    if (!stageOn || !(ideasOpen || ideasUse)) return undefined;
     pullStageIdeas();
     const id = window.setInterval(pullStageIdeas, STAGE_IDEAS_POLL_MS);
     return () => window.clearInterval(id);
-  }, [stageOn, ideasOpen, pullStageIdeas]);
+  }, [stageOn, ideasOpen, ideasUse, pullStageIdeas]);
 
   const drawMany = (rows, n, previous = []) => {
     if (!rows.length || n < 1) return [];
@@ -300,41 +333,44 @@ export default function GeneratorView() {
 
   const generate = () => {
     setBanksOpen(false);
-    if (selectedCats.length) {
-      setKit(
-        selectedCats.map((cat) => {
-          const audienceBank = Boolean(stageOn && ideasOpen && ideaCats.includes(cat.id));
-          const sessionRows = audienceBank
-            ? (stageIdeas[cat.id] || []).map((text, index) => ({
-              id: `idea:${cat.id}:${index}:${text}`,
-              text,
-            }))
-            : [];
-          if (audienceBank && !sessionRows.length) {
-            return {
-              id: cat.id,
-              label: cat.label,
-              icon: cat.icon,
-              rows: [],
-              waiting: true,
-            };
-          }
-          const rows = audienceBank
-            ? sessionRows
-            : generator.filter((row) => rowCategories(row).includes(cat.id) && row.text);
-          const previous = kit?.find((item) => item.id === cat.id)?.rows || [];
-          return {
-            id: cat.id,
-            label: cat.label,
-            icon: cat.icon,
-            rows: drawMany(rows, countFor(cat.id), previous),
-            waiting: false,
-          };
-        }),
-      );
-    } else {
-      setKit(null);
-    }
+    const sessionKit = selectedSessionCats.map((cat) => {
+      const sessionRows = (stageIdeas[cat.id] || []).map((text, index) => ({
+        id: `idea:${cat.id}:${index}:${text}`,
+        text,
+      }));
+      if (!sessionRows.length) {
+        return {
+          id: cat.sessionId,
+          label: cat.label,
+          icon: cat.icon,
+          rows: [],
+          waiting: true,
+          session: true,
+        };
+      }
+      const previous = kit?.find((item) => item.id === cat.sessionId)?.rows || [];
+      return {
+        id: cat.sessionId,
+        label: cat.label,
+        icon: cat.icon,
+        rows: drawMany(sessionRows, countFor(cat.sessionId), previous),
+        waiting: false,
+        session: true,
+      };
+    });
+    const catalogKit = selectedCats.map((cat) => {
+      const rows = generator.filter((row) => rowCategories(row).includes(cat.id) && row.text);
+      const previous = kit?.find((item) => item.id === cat.id)?.rows || [];
+      return {
+        id: cat.id,
+        label: cat.label,
+        icon: cat.icon,
+        rows: drawMany(rows, countFor(cat.id), previous),
+        waiting: false,
+      };
+    });
+    const nextKit = [...sessionKit, ...catalogKit];
+    setKit(nextKit.length ? nextKit : null);
 
     setSkillResults((prev) =>
       selectedSkillItems.flatMap((skill) => {
@@ -365,7 +401,7 @@ export default function GeneratorView() {
     });
   };
 
-  const canGenerate = selectedCats.length > 0 || selectedSkillItems.length > 0;
+  const canGenerate = selectedSessionCats.length > 0 || selectedCats.length > 0 || selectedSkillItems.length > 0;
   const hasOutput = Boolean(kit?.length || skillResults.length);
 
   useEffect(() => {
@@ -373,11 +409,16 @@ export default function GeneratorView() {
     setStageSlot('suggestions', suggestionsFromGenerator(kit, skillResults));
   }, [hasOutput, kit, skillResults, setStageSlot]);
   const selectedSummary = [
+    ...selectedSessionCats.map((cat) => cat.label),
     ...selectedCats.map((cat) => cat.label),
     ...selectedSkillItems.map((item) => item.label),
   ].join(', ') || 'Nothing selected';
 
-  const selectedDrawItems = [...selectedCats, ...selectedSkillItems];
+  const selectedDrawItems = [
+    ...selectedSessionCats.map((cat) => ({ ...cat, id: cat.sessionId, session: true })),
+    ...selectedCats,
+    ...selectedSkillItems,
+  ];
   const renderGenerateBlock = () => (
     <div className="rounded-2xl border border-lime-800/40 bg-[#1A1A1A] p-2 flex flex-col gap-2">
       {selectedDrawItems.length ? (
@@ -390,7 +431,8 @@ export default function GeneratorView() {
               count={countFor(item.id)}
               onCount={(n) => setGeneratorDrawCount(item.id, n)}
               onRemove={() => {
-                if (selectedIds.includes(item.id)) toggleGeneratorBank(item.id);
+                if (item.session) toggleGeneratorSessionBank(item.id);
+                else if (selectedIds.includes(item.id)) toggleGeneratorBank(item.id);
                 else toggleGeneratorSkill(item.id);
               }}
             />
@@ -450,6 +492,27 @@ export default function GeneratorView() {
         </div>
 
         <div className={generatorView === 'suggestions' ? 'mt-3' : 'hidden'}>
+          {stageOn && ideasUse ? (
+            <section className="mb-2">
+              <p className="text-2xs uppercase tracking-wider text-lime-400 font-bold px-0.5 mb-1">This session</p>
+              {sessionCats.length ? (
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-1">
+                  {sessionCats.map((cat) => (
+                    <CheckRow
+                      key={cat.sessionId}
+                      checked={selectedSessionIds.includes(cat.sessionId)}
+                      icon={cat.icon}
+                      label={cat.label}
+                      count={showStats ? cat.count : undefined}
+                      onToggle={() => toggleGeneratorSessionBank(cat.sessionId)}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-gray-500 px-0.5">No audience ideas yet. They’ll land here as they come in.</p>
+              )}
+            </section>
+          ) : null}
           <section className="mb-2">
             <button
               type="button"
@@ -461,7 +524,7 @@ export default function GeneratorView() {
                 <p className="text-xs text-gray-500 leading-snug">
                   {showStats ? (
                     <>
-                      {selectedCats.length + selectedSkillItems.length} selected
+                      {selectedSessionCats.length + selectedCats.length + selectedSkillItems.length} selected
                       {favoriteCats.length ? ` · ${favoriteCats.length} favorite${favoriteCats.length === 1 ? '' : 's'}` : ''}
                       {' · '}
                     </>
@@ -571,6 +634,7 @@ export default function GeneratorView() {
                           <CatalogIcon name={item.icon} className="w-3.5 h-3.5 text-lime-400 mt-0.5 shrink-0" fallback={Tag} />
                           <div className="min-w-0">
                             <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold">
+                              {item.session ? 'Session · ' : ''}
                               {item.label}
                               {rows.length > 1 ? ` · ${rows.length}` : ''}
                             </p>

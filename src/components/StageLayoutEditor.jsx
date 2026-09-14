@@ -1,14 +1,43 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  applySplitterDrag,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  LayoutGrid,
+  Lock,
+  LockOpen,
+  PictureInPicture2,
+  SlidersHorizontal,
+  X,
+} from 'lucide-react';
+import {
+  applyNeighborPush,
   buildStagePayload,
+  dockStageTile,
+  frameAtPoint,
   framesCoverSlots,
-  layoutSplitters,
   listedStageSlots,
-  seedStageFrames,
+  moveFloatFrame,
+  normalizeStageAlign,
+  normalizeStageFloats,
+  popOutStageTile,
+  resizeFloatCorner,
+  resizeFloatFrame,
+  seedStageLayout,
+  slotHasSuggestionCaptions,
+  STAGE_SLOT_LABELS,
 } from '../lib/stage.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { StageSlotGrid } from './StageBoardContent.jsx';
+import { GamePartToggles } from './StagePin.jsx';
+
+const EDGE_ICON = {
+  left: ChevronLeft,
+  right: ChevronRight,
+  top: ChevronUp,
+  bottom: ChevronDown,
+};
 
 function useLandscapePreview() {
   const [landscape, setLandscape] = useState(() => (
@@ -23,6 +52,96 @@ function useLandscapePreview() {
   return landscape;
 }
 
+function frameStyle(frame) {
+  return {
+    left: `${frame.x}%`,
+    top: `${frame.y}%`,
+    width: `${frame.w}%`,
+    height: `${frame.h}%`,
+  };
+}
+
+function TileCustomizeOverlay({ slot }) {
+  const setStageAlign = useAppStore((s) => s.setStageAlign);
+  const setStageCaptions = useAppStore((s) => s.setStageCaptions);
+  const toggleStageGamePart = useAppStore((s) => s.toggleStageGamePart);
+  const removeStageSlotItem = useAppStore((s) => s.removeStageSlotItem);
+  const align = slot.align === 'left' ? 'left' : 'center';
+  const captionsOn = slot.captions !== false;
+  const showCaptionsToggle = (slot.id === 'suggestions' && slotHasSuggestionCaptions(slot.value))
+    || slot.id === 'display';
+  const nested = Array.isArray(slot.value) && (slot.id === 'games' || slot.id === 'suggestions' || slot.id === 'whosup');
+
+  return (
+    <div
+      className="absolute z-[15] top-10 left-2 right-10 bottom-10 overflow-auto scrollbar-hide rounded-lg bg-black/70 p-2 pointer-events-auto"
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      <p className="text-2xs uppercase tracking-wider text-gray-400 font-bold mb-1">Align</p>
+      <div className="flex gap-1 mb-2">
+        {[['left', 'Left'], ['center', 'Center']].map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            aria-pressed={align === id}
+            onClick={() => setStageAlign(slot.id, id)}
+            className={`min-h-8 px-2 rounded-md text-2xs font-bold ${
+              align === id ? 'bg-lime-700 text-white' : 'bg-white/10 text-gray-200'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {showCaptionsToggle ? (
+        <button
+          type="button"
+          aria-pressed={captionsOn}
+          onClick={() => setStageCaptions(slot.id, !captionsOn)}
+          className={`min-h-8 px-2 mb-2 rounded-md text-2xs font-bold ${
+            captionsOn ? 'bg-lime-700 text-white' : 'bg-white/10 text-gray-200'
+          }`}
+        >
+          Captions {captionsOn ? 'on' : 'off'}
+        </button>
+      ) : null}
+      {nested ? (
+        <ul className="space-y-1.5">
+          {slot.value.map((item, index) => {
+            const label = slot.id === 'games'
+              ? item?.name
+              : slot.id === 'whosup'
+                ? item
+                : item?.label || 'Item';
+            return (
+              <li key={`${slot.id}-${index}`} className="rounded-md bg-black/40 p-1.5">
+                <div className="flex items-center gap-1">
+                  <span className="flex-1 min-w-0 text-2xs font-bold text-gray-100 truncate">{label}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeStageSlotItem(slot.id, index)}
+                    className="min-w-8 min-h-8 inline-flex items-center justify-center text-gray-400 hover:text-red-300"
+                    aria-label={`Remove ${label}`}
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                {slot.id === 'games' ? (
+                  <GamePartToggles
+                    game={item}
+                    onToggle={(partId) => toggleStageGamePart(item, partId)}
+                    className="mt-1"
+                  />
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
 export default function StageLayoutEditor() {
   const pins = useAppStore((s) => s.stagePins);
   const slots = useAppStore((s) => s.stageSlots);
@@ -30,123 +149,343 @@ export default function StageLayoutEditor() {
   const zooms = useAppStore((s) => s.stageZooms);
   const layout = useAppStore((s) => s.stageLayout);
   const frames = useAppStore((s) => s.stageFrames);
+  const floats = useAppStore((s) => s.stageFloats);
+  const aligns = useAppStore((s) => s.stageAligns);
+  const captions = useAppStore((s) => s.stageCaptions);
   const boardStyle = useAppStore((s) => s.settings.stageBoardStyle);
-  const setStageFrames = useAppStore((s) => s.setStageFrames);
+  const applyStageLayout = useAppStore((s) => s.applyStageLayout);
   const resetStageFrames = useAppStore((s) => s.resetStageFrames);
-  const listed = listedStageSlots(buildStagePayload(pins, slots, sizes, layout, boardStyle, zooms, frames));
+  const swapStagePins = useAppStore((s) => s.swapStagePins);
+  const unpinStageSlot = useAppStore((s) => s.unpinStageSlot);
+  const listed = listedStageSlots(buildStagePayload(pins, slots, sizes, layout, boardStyle, zooms, frames)).map((slot) => ({
+    ...slot,
+    align: normalizeStageAlign(aligns?.[slot.id]),
+    captions: captions?.[slot.id] !== false,
+  }));
   const boxRef = useRef(null);
   const dragRef = useRef(null);
   const phoneLandscape = useLandscapePreview();
   const ids = listed.map((slot) => slot.id);
-  const working = framesCoverSlots(frames, ids) ? frames : seedStageFrames(listed, true, layout);
-  const splitters = layoutSplitters(working);
-  const [dragId, setDragId] = useState('');
+  const seeded = seedStageLayout(listed, true, layout);
+  const covering = framesCoverSlots(frames, ids);
+  const working = covering ? frames : seeded.frames;
+  const workingFloats = covering ? normalizeStageFloats(floats, ids) : seeded.floats;
+  const [activeId, setActiveId] = useState('');
+  const [hoverId, setHoverId] = useState('');
+  const [overlayOn, setOverlayOn] = useState(false);
+  const [resizeLocked, setResizeLocked] = useState(false);
 
-  const splitterId = (splitter) => (
-    splitter.axis === 'x'
-      ? `v:${(splitter.left || []).join('-')}|${(splitter.right || []).join('-')}`
-      : `h:${(splitter.top || []).join('-')}|${(splitter.bottom || []).join('-')}`
-  );
+  const pointPct = (event) => {
+    const box = boxRef.current;
+    if (!box) return { x: 0, y: 0 };
+    const rect = box.getBoundingClientRect();
+    if (rect.width < 8 || rect.height < 8) return { x: 0, y: 0 };
+    return {
+      x: ((event.clientX - rect.left) / rect.width) * 100,
+      y: ((event.clientY - rect.top) / rect.height) * 100,
+    };
+  };
 
-  const onPointerDown = (event, splitter) => {
-    if (!boxRef.current) return;
-    event.preventDefault();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    dragRef.current = { splitter, frames: working };
-    setDragId(splitterId(splitter));
+  const commit = (nextFrames, nextFloats) => {
+    applyStageLayout(nextFrames, nextFloats);
   };
 
   const onPointerMove = (event) => {
     const drag = dragRef.current;
-    const box = boxRef.current;
-    if (!drag || !box) return;
-    const rect = box.getBoundingClientRect();
-    if (rect.width < 8 || rect.height < 8) return;
-    const nextAt = drag.splitter.axis === 'x'
-      ? ((event.clientX - rect.left) / rect.width) * 100
-      : ((event.clientY - rect.top) / rect.height) * 100;
-    const next = applySplitterDrag(drag.frames, drag.splitter, nextAt);
-    drag.frames = next;
-    setStageFrames(next);
+    if (!drag) return;
+    const pct = pointPct(event);
+    if (drag.type === 'resize') {
+      const nextAt = drag.edge === 'left' || drag.edge === 'right' ? pct.x : pct.y;
+      if (drag.floats.includes(drag.id)) {
+        const next = {
+          ...drag.frames,
+          [drag.id]: resizeFloatFrame(drag.frames[drag.id], drag.edge, nextAt),
+        };
+        drag.frames = next;
+        commit(next, drag.floats);
+      } else {
+        const docked = ids.filter((id) => !drag.floats.includes(id));
+        const next = applyNeighborPush(drag.frames, drag.id, drag.edge, nextAt, docked);
+        drag.frames = next;
+        commit(next, drag.floats);
+      }
+      return;
+    }
+    if (drag.type === 'corner') {
+      const next = {
+        ...drag.frames,
+        [drag.id]: resizeFloatCorner(drag.frames[drag.id], drag.corner, pct.x, pct.y),
+      };
+      drag.frames = next;
+      commit(next, drag.floats);
+      return;
+    }
+    if (drag.type === 'move') {
+      const next = {
+        ...drag.frames,
+        [drag.id]: moveFloatFrame(drag.startFrame, pct.x - drag.originX, pct.y - drag.originY),
+      };
+      drag.frames = next;
+      commit(next, drag.floats);
+      return;
+    }
+    if (drag.type === 'swap') {
+      const docked = ids.filter((id) => !drag.floats.includes(id) && id !== drag.id);
+      setHoverId(frameAtPoint(drag.frames, docked, pct.x, pct.y));
+    }
   };
 
   const onPointerUp = (event) => {
-    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
+    const drag = dragRef.current;
+    try {
+      if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+    } catch {
+      /* synthetic / ended pointer */
+    }
+    if (drag?.type === 'swap') {
+      const pct = pointPct(event);
+      const docked = ids.filter((id) => !drag.floats.includes(id) && id !== drag.id);
+      const hit = frameAtPoint(drag.frames, docked, pct.x, pct.y);
+      if (hit) {
+        applyStageLayout(drag.frames, drag.floats);
+        swapStagePins(drag.id, hit);
+      }
     }
     dragRef.current = null;
-    setDragId('');
+    setActiveId('');
+    setHoverId('');
+  };
+
+  const capturePointer = (event) => {
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      /* synthetic / unsupported */
+    }
+  };
+
+  const startResize = (event, id, edge) => {
+    if (!boxRef.current || resizeLocked) return;
+    event.preventDefault();
+    event.stopPropagation();
+    dragRef.current = { type: 'resize', id, edge, frames: working, floats: workingFloats };
+    capturePointer(event);
+    setActiveId(id);
+  };
+
+  const startCorner = (event, id, corner) => {
+    if (!boxRef.current || resizeLocked) return;
+    event.preventDefault();
+    event.stopPropagation();
+    dragRef.current = { type: 'corner', id, corner, frames: working, floats: workingFloats };
+    capturePointer(event);
+    setActiveId(id);
+  };
+
+  const startBody = (event, id) => {
+    if (!boxRef.current || resizeLocked) return;
+    event.preventDefault();
+    const pct = pointPct(event);
+    const floating = workingFloats.includes(id);
+    dragRef.current = {
+      type: floating ? 'move' : 'swap',
+      id,
+      originX: pct.x,
+      originY: pct.y,
+      startFrame: working[id],
+      frames: working,
+      floats: workingFloats,
+    };
+    capturePointer(event);
+    setActiveId(id);
+  };
+
+  const toggleFloat = (event, id) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const next = workingFloats.includes(id)
+      ? dockStageTile(working, workingFloats, id, ids)
+      : popOutStageTile(working, workingFloats, id, ids);
+    commit(next.frames, next.floats);
   };
 
   if (!listed.length) {
     return (
       <div className="mb-3">
-        <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold mb-2">Layout preview</p>
-        <p className="text-sm text-gray-500">Pin a panel to resize tiles here.</p>
+        <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold mb-2">Stage board</p>
+        <p className="text-sm text-gray-500">Pin a panel from Generator or Tools and it shows up here.</p>
       </div>
     );
   }
 
   return (
     <div className="mb-3">
-      <div className="flex items-center justify-between gap-2 mb-2">
-        <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold">Layout preview</p>
-        <button
-          type="button"
-          onClick={() => resetStageFrames()}
-          className="min-h-11 px-3 rounded-lg bg-gray-800 border border-gray-700 text-xs font-bold text-gray-100"
-        >
-          Auto layout
-        </button>
+      <div className="mb-2">
+        <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold mb-1.5">Stage board</p>
+        <div className="flex flex-wrap items-center gap-1">
+          <button
+            type="button"
+            aria-pressed={overlayOn}
+            onClick={() => setOverlayOn((on) => !on)}
+            className={`min-h-10 px-2.5 rounded-lg text-xs font-bold inline-flex items-center gap-1.5 border ${
+              overlayOn ? 'bg-lime-700 text-white border-lime-500' : 'bg-gray-800 text-gray-100 border-gray-700'
+            }`}
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            Overlay
+          </button>
+          <button
+            type="button"
+            aria-pressed={resizeLocked}
+            onClick={() => setResizeLocked((on) => !on)}
+            className={`min-h-10 px-2.5 rounded-lg text-xs font-bold inline-flex items-center gap-1.5 border ${
+              resizeLocked ? 'bg-gray-700 text-white border-gray-600' : 'bg-gray-800 text-gray-100 border-gray-700'
+            }`}
+          >
+            {resizeLocked ? <Lock className="w-3.5 h-3.5" /> : <LockOpen className="w-3.5 h-3.5" />}
+            {resizeLocked ? 'Locked' : 'Resize'}
+          </button>
+          <button
+            type="button"
+            onClick={() => resetStageFrames()}
+            className="min-h-10 px-2.5 rounded-lg bg-gray-800 border border-gray-700 text-xs font-bold text-gray-100"
+          >
+            Auto layout
+          </button>
+        </div>
       </div>
       <div
         ref={boxRef}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
         className={`relative w-full rounded-xl overflow-hidden border border-gray-800 bg-black touch-none ${
-          phoneLandscape ? 'h-[min(52vh,20rem)]' : 'aspect-video max-h-52'
+          phoneLandscape ? 'h-[min(58vh,24rem)]' : 'aspect-video max-h-[min(52vh,20rem)]'
         }`}
       >
         <div className="absolute inset-0 pointer-events-none">
-          <StageSlotGrid slots={listed} layout={layout} boardStyle={boardStyle} frames={working} />
+          <StageSlotGrid
+            slots={listed}
+            layout={layout}
+            boardStyle={boardStyle}
+            frames={working}
+            floats={workingFloats}
+          />
         </div>
-        {splitters.vertical.map((splitter) => (
-          <div
-            key={splitterId(splitter)}
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="Resize columns"
-            onPointerDown={(event) => onPointerDown(event, splitter)}
-            onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
-            onPointerCancel={onPointerUp}
-            className={`absolute z-20 top-0 h-full w-11 -ml-[22px] cursor-ew-resize touch-none ${
-              dragId === splitterId(splitter) ? 'bg-lime-400/10' : ''
-            }`}
-            style={{ left: `${splitter.at}%` }}
-          >
-            <span className="absolute left-1/2 top-2 bottom-2 w-1 -ml-0.5 rounded-full bg-lime-400/90 pointer-events-none" />
-          </div>
-        ))}
-        {splitters.horizontal.map((splitter) => (
-          <div
-            key={splitterId(splitter)}
-            role="separator"
-            aria-orientation="horizontal"
-            aria-label="Resize rows"
-            onPointerDown={(event) => onPointerDown(event, splitter)}
-            onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
-            onPointerCancel={onPointerUp}
-            className={`absolute z-20 left-0 w-full h-11 -mt-[22px] cursor-ns-resize touch-none ${
-              dragId === splitterId(splitter) ? 'bg-lime-400/10' : ''
-            }`}
-            style={{ top: `${splitter.at}%` }}
-          >
-            <span className="absolute top-1/2 left-2 right-2 h-1 -mt-0.5 rounded-full bg-lime-400/90 pointer-events-none" />
-          </div>
-        ))}
+        {listed.map((slot) => {
+          const id = slot.id;
+          const frame = working[id];
+          if (!frame) return null;
+          const floating = workingFloats.includes(id);
+          const name = STAGE_SLOT_LABELS[id] || id;
+          const PopIcon = floating ? LayoutGrid : PictureInPicture2;
+          const popLabel = floating ? 'Dock tile' : 'Pop out tile';
+          return (
+            <div
+              key={id}
+              className={`absolute ${floating ? 'z-30' : 'z-20'} ${hoverId === id ? 'ring-1 ring-lime-400/80' : ''}`}
+              style={frameStyle(frame)}
+            >
+              {resizeLocked ? null : (
+                <div
+                  role="presentation"
+                  onPointerDown={(event) => startBody(event, id)}
+                  onPointerMove={onPointerMove}
+                  onPointerUp={onPointerUp}
+                  onPointerCancel={onPointerUp}
+                  className="absolute inset-0 touch-none cursor-grab"
+                />
+              )}
+              {resizeLocked ? null : ['left', 'right', 'top', 'bottom'].map((edge) => {
+                const vertical = edge === 'left' || edge === 'right';
+                const Icon = EDGE_ICON[edge];
+                return (
+                  <button
+                    key={edge}
+                    type="button"
+                    aria-label={`Resize ${edge}`}
+                    onPointerDown={(event) => startResize(event, id, edge)}
+                    onPointerMove={onPointerMove}
+                    onPointerUp={onPointerUp}
+                    onPointerCancel={onPointerUp}
+                    className={`absolute z-10 touch-none text-lime-300/90 ${
+                      vertical ? 'top-10 bottom-10 w-11 cursor-ew-resize' : 'left-10 right-10 h-11 cursor-ns-resize'
+                    } ${edge === 'left' ? 'left-0' : ''} ${edge === 'right' ? 'right-0' : ''} ${
+                      edge === 'top' ? 'top-0' : ''
+                    } ${edge === 'bottom' ? 'bottom-0' : ''}`}
+                  >
+                    <span
+                      className={`absolute bg-lime-400/55 pointer-events-none ${
+                        vertical
+                          ? 'left-1/2 top-5 bottom-5 w-px -ml-px'
+                          : 'top-1/2 left-5 right-5 h-px -mt-px'
+                      }`}
+                    />
+                    <Icon className="absolute left-1/2 top-1/2 w-3.5 h-3.5 -translate-x-1/2 -translate-y-1/2 pointer-events-none" />
+                  </button>
+                );
+              })}
+              {resizeLocked || !floating ? null : ['nw', 'ne', 'sw', 'se'].map((corner) => (
+                <button
+                  key={corner}
+                  type="button"
+                  aria-label={`Resize ${corner}`}
+                  onPointerDown={(event) => startCorner(event, id, corner)}
+                  onPointerMove={onPointerMove}
+                  onPointerUp={onPointerUp}
+                  onPointerCancel={onPointerUp}
+                  className={`absolute z-10 w-11 h-11 touch-none ${
+                    corner === 'nw' || corner === 'sw' ? 'left-0' : 'right-0'
+                  } ${corner === 'nw' || corner === 'ne' ? 'top-0' : 'bottom-0'} ${
+                    corner === 'nw' || corner === 'se' ? 'cursor-nwse-resize' : 'cursor-nesw-resize'
+                  }`}
+                >
+                  <span
+                    className={`absolute w-2.5 h-2.5 border-lime-400/80 pointer-events-none ${
+                      corner === 'nw' ? 'top-1.5 left-1.5 border-t border-l' : ''
+                    } ${corner === 'ne' ? 'top-1.5 right-1.5 border-t border-r' : ''} ${
+                      corner === 'sw' ? 'bottom-1.5 left-1.5 border-b border-l' : ''
+                    } ${corner === 'se' ? 'bottom-1.5 right-1.5 border-b border-r' : ''}`}
+                  />
+                </button>
+              ))}
+              {overlayOn ? <TileCustomizeOverlay slot={slot} /> : null}
+              <button
+                type="button"
+                aria-label={`Remove ${name} from stage`}
+                title={`Remove ${name}`}
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }}
+                onClick={() => unpinStageSlot(id)}
+                className="absolute z-30 top-0 right-0 w-11 h-11 inline-flex items-center justify-center text-gray-300 hover:text-red-300 bg-black/40"
+              >
+                <X className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                aria-label={popLabel}
+                title={popLabel}
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }}
+                onClick={(event) => toggleFloat(event, id)}
+                className="absolute z-30 bottom-0 right-0 w-11 h-11 inline-flex items-center justify-center text-lime-300/90 hover:text-lime-200 bg-black/40"
+              >
+                <PopIcon className="w-4 h-4" />
+              </button>
+            </div>
+          );
+        })}
       </div>
       <p className="text-xs text-gray-500 mt-2">
-        Drag the lime bars to resize tiles. Auto layout re-packs the board.
+        {resizeLocked
+          ? 'Resize is locked. X unpins a window. Bottom-right pops it out or docks it.'
+          : 'Drag edges to resize. Drag a window onto another to swap. Popped-out windows also resize from corners.'}
       </p>
     </div>
   );

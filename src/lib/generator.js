@@ -37,6 +37,7 @@ const ASK_FOR_IDS = [
   'Famous',
   'Genres',
   'Jobs',
+  'Lines',
   'Locations',
   'Nouns',
   'Objects',
@@ -56,7 +57,7 @@ export const ASK_FOR_CATEGORIES = ASK_FOR_IDS.map((id) => BANK_CATEGORIES.find((
 const DEFAULT_CATEGORY_GROUP = {
   FUT: 'skill',
   PlayStyle: 'skill',
-  Lines: 'skill',
+  Lines: 'both',
   Objectives: 'skill',
   CORE: 'skill',
   Core: 'skill',
@@ -158,6 +159,7 @@ function applyGroupFlags(group, flags) {
 
 export function groupForCategory(category, rows, banks) {
   const flags = { skill: false, ask: false };
+  applyGroupFlags(DEFAULT_CATEGORY_GROUP[category] || '', flags);
   applyGroupFlags(normalizeGroup(findBank(banks, category)?.group), flags);
   asArray(rows).forEach((row) => {
     if (!rowCategories(row).includes(category)) return;
