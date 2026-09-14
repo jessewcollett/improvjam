@@ -8,6 +8,8 @@ import {
   Plus,
   Trash2,
   ChevronLeft,
+  ChevronDown,
+  ChevronUp,
   ListTodo,
 } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
@@ -30,6 +32,31 @@ function setSlotFromIds(id, name, ids, games) {
   };
 }
 
+function MoveButtons({ label, onUp, onDown, canUp, canDown }) {
+  return (
+    <div className="flex flex-col shrink-0">
+      <button
+        type="button"
+        aria-label={`Move ${label} up`}
+        disabled={!canUp}
+        onClick={onUp}
+        className="min-w-11 min-h-11 flex items-center justify-center text-gray-200 disabled:text-gray-600"
+      >
+        <ChevronUp className="w-4 h-4" />
+      </button>
+      <button
+        type="button"
+        aria-label={`Move ${label} down`}
+        disabled={!canDown}
+        onClick={onDown}
+        className="min-w-11 min-h-11 flex items-center justify-center text-gray-200 disabled:text-gray-600"
+      >
+        <ChevronDown className="w-4 h-4" />
+      </button>
+    </div>
+  );
+}
+
 export default function MySetsView() {
   const data = useAppStore((s) => s.data);
   const lists = useAppStore((s) => s.lists);
@@ -39,6 +66,8 @@ export default function MySetsView() {
   const renameCustomSet = useAppStore((s) => s.renameCustomSet);
   const deleteCustomSet = useAppStore((s) => s.deleteCustomSet);
   const clearCustomSet = useAppStore((s) => s.clearCustomSet);
+  const moveCustomSet = useAppStore((s) => s.moveCustomSet);
+  const moveCustomSetGame = useAppStore((s) => s.moveCustomSetGame);
   const stagePins = useAppStore((s) => s.stagePins);
   const stageSlots = useAppStore((s) => s.stageSlots);
   const setStageSlot = useAppStore((s) => s.setStageSlot);
@@ -183,8 +212,17 @@ export default function MySetsView() {
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2 lg:gap-3">
-                {lists.customSets.map((set) => (
+                {lists.customSets.map((set, index) => (
                   <div key={set.id} className="bg-[#1A1A1A] border border-gray-800 rounded-xl p-4 flex justify-between items-center gap-1">
+                    {lists.customSets.length > 1 && renamingId !== set.id ? (
+                      <MoveButtons
+                        label={set.name}
+                        canUp={index > 0}
+                        canDown={index < lists.customSets.length - 1}
+                        onUp={() => moveCustomSet(set.id, -1)}
+                        onDown={() => moveCustomSet(set.id, 1)}
+                      />
+                    ) : null}
                     {renamingId === set.id ? (
                       <form
                         className="flex-1 flex gap-2 min-w-0"
@@ -341,8 +379,21 @@ export default function MySetsView() {
 
             <AnimatePresence>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2 lg:gap-3">
-                {currentListGames.map((game) => (
-                  <GameCard key={game.id} game={game} />
+                {currentListGames.map((game, index) => (
+                  <div key={game.id} className="flex items-stretch gap-0.5 min-w-0">
+                    {activeTab === 'custom' && currentListGames.length > 1 ? (
+                      <MoveButtons
+                        label={game.name}
+                        canUp={index > 0}
+                        canDown={index < currentListGames.length - 1}
+                        onUp={() => moveCustomSetGame(activeCustomSetId, game.id, -1)}
+                        onDown={() => moveCustomSetGame(activeCustomSetId, game.id, 1)}
+                      />
+                    ) : null}
+                    <div className="flex-1 min-w-0">
+                      <GameCard game={game} />
+                    </div>
+                  </div>
                 ))}
               </div>
             </AnimatePresence>

@@ -942,6 +942,42 @@ export const useAppStore = create(
         }));
       },
 
+      moveCustomSet: (setId, direction) => {
+        const delta = Number(direction);
+        if (delta !== 1 && delta !== -1) return;
+        set((state) => {
+          const sets = state.lists.customSets;
+          const from = sets.findIndex((item) => item.id === setId);
+          const to = from + delta;
+          if (from < 0 || to < 0 || to >= sets.length) return {};
+          const ids = moveId(sets.map((item) => item.id), from, to);
+          const byId = new Map(sets.map((item) => [item.id, item]));
+          return {
+            lists: {
+              ...state.lists,
+              customSets: ids.map((id) => byId.get(id)).filter(Boolean),
+            },
+          };
+        });
+      },
+
+      moveCustomSetGame: (setId, gameId, direction) => {
+        const delta = Number(direction);
+        if (delta !== 1 && delta !== -1) return;
+        set((state) => ({
+          lists: {
+            ...state.lists,
+            customSets: state.lists.customSets.map((item) => {
+              if (item.id !== setId) return item;
+              const from = item.games.indexOf(gameId);
+              const to = from + delta;
+              if (from < 0 || to < 0 || to >= item.games.length) return item;
+              return { ...item, games: moveId(item.games, from, to) };
+            }),
+          },
+        }));
+      },
+
       syncFromSheet: async () => {
         set({ isSyncing: true, syncError: null });
         try {
