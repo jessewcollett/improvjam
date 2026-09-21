@@ -13,6 +13,7 @@ import {
   parseTimerEndMs,
   quotedStageLine,
   remainingFromTimer,
+  stageTileFitValue,
   STAGE_GAME_PARTS,
   STAGE_TIMER_TICK_MS,
   compactStageUrl,
@@ -66,7 +67,15 @@ function useLandscape() {
     typeof window !== 'undefined' ? window.innerWidth >= window.innerHeight : true
   ));
   useEffect(() => {
-    const sync = () => setLandscape(window.innerWidth >= window.innerHeight);
+    const sync = () => {
+      const wide = window.innerWidth >= window.innerHeight;
+      const gap = Math.abs(window.innerWidth - window.innerHeight);
+      setLandscape((prev) => {
+        if (prev === wide) return prev;
+        if (gap < 48) return prev;
+        return wide;
+      });
+    };
     sync();
     window.addEventListener('resize', sync);
     return () => window.removeEventListener('resize', sync);
@@ -136,10 +145,12 @@ function StageTileFrame({ children, allowColumns = true, fitKey = '', align = 'c
       box.style.setProperty('--stage-cqmin', `${Math.min(w, h) / 100}px`);
       const nextLandscape = allowColumns && w >= h * TILE_LANDSCAPE_RATIO;
       setLandscape((prev) => (prev === nextLandscape ? prev : nextLandscape));
+      const prevTransform = inner.style.transform;
       inner.style.transform = 'none';
       const targetH = h * TILE_FILL;
       let lo = TILE_FONT_MIN;
       let hi = TILE_FONT_MAX;
+      const prevFont = box.style.getPropertyValue('--stage-font');
       box.style.setProperty('--stage-font', String(TILE_FONT_MAX));
       if (contentFits(w, targetH)) {
         lo = TILE_FONT_MAX;
@@ -151,11 +162,12 @@ function StageTileFrame({ children, allowColumns = true, fitKey = '', align = 'c
           else hi = mid;
         }
       }
-      box.style.setProperty('--stage-font', String(lo));
+      box.style.setProperty('--stage-font', String(lo || prevFont || TILE_FONT_MAX));
       const iw = Math.max(inner.scrollWidth, inner.offsetWidth, 1);
       const ih = Math.max(inner.scrollHeight, inner.offsetHeight, 1);
       const shrink = Math.min(1, w / iw, h / ih);
       const clamped = Math.max(TILE_SCALE_FLOOR, Number.isFinite(shrink) ? shrink : 1);
+      inner.style.transform = prevTransform;
       setScale((prev) => (Math.abs(prev - clamped) < 0.015 ? prev : clamped));
     };
 
@@ -453,7 +465,7 @@ function StageCell({ slot, count, boardStyle, className = '', style, allowColumn
         allowColumns={allowColumns}
         align={align}
         showCaptions={showCaptions}
-        fitKey={`${slot.id}|${count}|${boardStyle}|${align}|${showCaptions}|${JSON.stringify(slot.value)}`}
+        fitKey={`${slot.id}|${count}|${boardStyle}|${align}|${showCaptions}|${JSON.stringify(stageTileFitValue(slot.id, slot.value))}`}
       >
         <StageSlotTile id={slot.id} value={slot.value} count={count} boardStyle={boardStyle} />
       </StageTileFrame>

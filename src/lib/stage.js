@@ -121,6 +121,23 @@ export function payloadHasSlots(payload) {
   return STAGE_SLOT_IDS.some((id) => slotHasContent(id, payload[id]));
 }
 
+/** Keep the last live board when a poll returns a cold/empty miss. Host clears always send `order: []`. */
+export function coalesceStagePayload(prev, next) {
+  const incoming = next && typeof next === 'object' && !Array.isArray(next) ? next : {};
+  const previous = prev && typeof prev === 'object' && !Array.isArray(prev) ? prev : {};
+  if (payloadHasSlots(incoming)) return incoming;
+  if (!payloadHasSlots(previous)) return incoming;
+  if (Array.isArray(incoming.order)) return incoming;
+  return previous;
+}
+
+export function stageTileFitValue(id, value) {
+  if (id === 'timer' && value && typeof value === 'object' && !Array.isArray(value)) {
+    return { running: Boolean(value.running), endsAt: value.endsAt || '', endMs: value.endMs || null };
+  }
+  return value;
+}
+
 export const STAGE_DISPLAY_ORDER = ['timer', 'suggestions', 'message', 'display', 'games', 'set', 'whosup', 'hat', 'coin'];
 
 export const STAGE_SLOT_LABELS = {

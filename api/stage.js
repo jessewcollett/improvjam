@@ -229,9 +229,13 @@ export default async function handler(req, res) {
         try {
           parsed = normalizeRecord(code, JSON.parse(text));
         } catch {
-          parsed = emptyRecord(code);
+          res.status(200).json(emptyRecord(code));
+          return;
         }
-        remember(code, parsed);
+        const payload = parsed.payload || {};
+        if (Array.isArray(payload.order) || Object.keys(payload).length > 0) {
+          remember(code, parsed);
+        }
         res.status(upstream.ok ? 200 : upstream.status).json(parsed);
         return;
       }

@@ -6,6 +6,7 @@ import {
   isTransientStageError,
   listedStageSlots,
   normalizeStageCode,
+  coalesceStagePayload,
   payloadHasSlots,
   STAGE_BOARD_POLL_MS,
   stageBoardPath,
@@ -131,8 +132,11 @@ function StageBoard({ code }) {
       try {
         const data = await fetchStage(code);
         if (cancelled) return;
-        const next = data.payload && typeof data.payload === 'object' ? data.payload : {};
-        setPayload((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+        const incoming = data.payload && typeof data.payload === 'object' ? data.payload : {};
+        setPayload((prev) => {
+          const next = coalesceStagePayload(prev, incoming);
+          return JSON.stringify(prev) === JSON.stringify(next) ? prev : next;
+        });
         setHardError('');
         setReady(true);
       } catch (err) {
