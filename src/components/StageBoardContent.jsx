@@ -138,42 +138,74 @@ function StageTileFrame({ children, allowColumns = true, fitKey = '', align = 'c
       return iw <= maxW + 1 && ih <= maxH + 1;
     };
 
-    const measure = () => {
+    const applyFont = (value) => {
+      const text = String(value);
+      if (box.style.getPropertyValue('--stage-font') !== text) {
+        box.style.setProperty('--stage-font', text);
+      }
+    };
+
+    const searchFont = (min, max, targetW, targetH) => {
+      let lo = min;
+      let hi = max;
+      for (let i = 0; i < TILE_FONT_STEPS; i += 1) {
+        const mid = (lo + hi) / 2;
+        applyFont(mid);
+        if (contentFits(targetW, targetH)) lo = mid;
+        else hi = mid;
+      }
+      return lo;
+    };
+
+    let busy = false;
+    let lastW = -1;
+    let lastH = -1;
+
+    const measure = (force) => {
+      if (busy) return;
       const w = box.clientWidth;
       const h = box.clientHeight;
       if (w < 4 || h < 4) return;
-      box.style.setProperty('--stage-cqmin', `${Math.min(w, h) / 100}px`);
-      const nextLandscape = allowColumns && w >= h * TILE_LANDSCAPE_RATIO;
-      setLandscape((prev) => (prev === nextLandscape ? prev : nextLandscape));
-      const prevTransform = inner.style.transform;
-      inner.style.transform = 'none';
-      const targetH = h * TILE_FILL;
-      let lo = TILE_FONT_MIN;
-      let hi = TILE_FONT_MAX;
-      const prevFont = box.style.getPropertyValue('--stage-font');
-      box.style.setProperty('--stage-font', String(TILE_FONT_MAX));
-      if (contentFits(w, targetH)) {
-        lo = TILE_FONT_MAX;
-      } else {
-        for (let i = 0; i < TILE_FONT_STEPS; i += 1) {
-          const mid = (lo + hi) / 2;
-          box.style.setProperty('--stage-font', String(mid));
-          if (contentFits(w, targetH)) lo = mid;
-          else hi = mid;
+      if (!force && lastW === w && lastH === h) return;
+      const grew = lastW >= 0 && (w > lastW + 4 || h > lastH + 4);
+      lastW = w;
+      lastH = h;
+      busy = true;
+      try {
+        const cqmin = `${Math.min(w, h) / 100}px`;
+        if (box.style.getPropertyValue('--stage-cqmin') !== cqmin) {
+          box.style.setProperty('--stage-cqmin', cqmin);
         }
+        const nextLandscape = allowColumns && w >= h * TILE_LANDSCAPE_RATIO;
+        setLandscape((prev) => (prev === nextLandscape ? prev : nextLandscape));
+        const targetH = h * TILE_FILL;
+        const fontRaw = box.style.getPropertyValue('--stage-font');
+        const hasCommitted = Boolean(fontRaw);
+        const committed = Number(fontRaw) || TILE_FONT_MAX;
+        let nextFont = committed;
+        if (!hasCommitted) {
+          applyFont(TILE_FONT_MAX);
+          nextFont = contentFits(w, targetH) ? TILE_FONT_MAX : searchFont(TILE_FONT_MIN, TILE_FONT_MAX, w, targetH);
+        } else if (!contentFits(w, targetH)) {
+          nextFont = searchFont(TILE_FONT_MIN, committed, w, targetH);
+        } else if (grew && committed < TILE_FONT_MAX) {
+          applyFont(TILE_FONT_MAX);
+          nextFont = contentFits(w, targetH) ? TILE_FONT_MAX : searchFont(committed, TILE_FONT_MAX, w, targetH);
+        }
+        applyFont(nextFont);
+        const iw = Math.max(inner.scrollWidth, inner.offsetWidth, 1);
+        const ih = Math.max(inner.scrollHeight, inner.offsetHeight, 1);
+        const shrink = Math.min(1, w / iw, h / ih);
+        const clamped = Math.max(TILE_SCALE_FLOOR, Number.isFinite(shrink) ? shrink : 1);
+        setScale((prev) => (Math.abs(prev - clamped) < 0.015 ? prev : clamped));
+      } finally {
+        busy = false;
       }
-      box.style.setProperty('--stage-font', String(lo || prevFont || TILE_FONT_MAX));
-      const iw = Math.max(inner.scrollWidth, inner.offsetWidth, 1);
-      const ih = Math.max(inner.scrollHeight, inner.offsetHeight, 1);
-      const shrink = Math.min(1, w / iw, h / ih);
-      const clamped = Math.max(TILE_SCALE_FLOOR, Number.isFinite(shrink) ? shrink : 1);
-      inner.style.transform = prevTransform;
-      setScale((prev) => (Math.abs(prev - clamped) < 0.015 ? prev : clamped));
     };
 
-    const ro = new ResizeObserver(measure);
+    const ro = new ResizeObserver(() => measure(false));
     ro.observe(box);
-    measure();
+    measure(true);
     return () => ro.disconnect();
   }, [allowColumns, fitKey]);
 

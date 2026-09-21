@@ -159,6 +159,29 @@ export function stageTileFitValue(id, value) {
   return value;
 }
 
+/** Ignore timer remaining and object-key churn so Stage polls do not remount tiles. */
+export function stagePayloadSyncKey(payload) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return '';
+  const slots = {};
+  STAGE_SLOT_IDS.forEach((id) => {
+    if (payload[id] == null) return;
+    slots[id] = stageTileFitValue(id, payload[id]);
+  });
+  return JSON.stringify({
+    order: Array.isArray(payload.order) ? payload.order : [],
+    slots,
+    layout: payload.layout || '',
+    boardStyle: payload.boardStyle || '',
+    frames: payload.frames || null,
+    floats: payload.floats || null,
+    aligns: payload.aligns || null,
+    captions: payload.captions || null,
+    hideCode: payload.hideCode === true,
+    theme: payload.theme || '',
+    spotlight: payload.spotlight || '',
+  });
+}
+
 export const STAGE_DISPLAY_ORDER = ['timer', 'suggestions', 'message', 'display', 'games', 'set', 'whosup', 'hat', 'coin'];
 
 export const STAGE_SLOT_LABELS = {

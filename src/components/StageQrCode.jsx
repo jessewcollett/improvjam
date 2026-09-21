@@ -19,7 +19,7 @@ export default function StageQrCode({ value, className = '', label = 'QR code' }
     }).then((out) => {
       if (!cancelled) setSvg(out);
     }).catch(() => {
-      if (!cancelled) setSvg('');
+      /* keep last svg */
     });
     return () => {
       cancelled = true;

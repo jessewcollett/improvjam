@@ -8,6 +8,7 @@ import {
   normalizeStageCode,
   coalesceStagePayload,
   payloadHasSlots,
+  stagePayloadSyncKey,
   STAGE_BOARD_POLL_MS,
   stageBoardPath,
 } from '../lib/stage.js';
@@ -135,7 +136,7 @@ function StageBoard({ code }) {
         const incoming = data.payload && typeof data.payload === 'object' ? data.payload : {};
         setPayload((prev) => {
           const next = coalesceStagePayload(prev, incoming);
-          return JSON.stringify(prev) === JSON.stringify(next) ? prev : next;
+          return stagePayloadSyncKey(prev) === stagePayloadSyncKey(next) ? prev : next;
         });
         setHardError('');
         setReady(true);
