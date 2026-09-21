@@ -337,7 +337,7 @@ export const useAppStore = create(
           }
           return next;
         });
-        queueStagePublish();
+        publishStageNow();
         return code;
       },
 
@@ -353,7 +353,7 @@ export const useAppStore = create(
           }
           return next;
         });
-        queueStagePublish();
+        publishStageNow();
         return code;
       },
 
@@ -375,7 +375,14 @@ export const useAppStore = create(
             lastRoute: state.settings.lastRoute === STAGE_MANAGER_ID ? 'generator' : state.settings.lastRoute,
           },
         }));
-        if (code) postStage(code, {}).catch(() => {});
+        if (code) {
+          postStage(code, {}, {
+            ideasOpen: false,
+            ideasUse: Boolean(get().stageIdeasUse),
+            ideasHold: Boolean(get().stageIdeasHold),
+            ideaCats: normalizeIdeaCats(get().stageIdeaCats),
+          }).catch(() => {});
+        }
       },
 
       toggleStagePin: (id) => {

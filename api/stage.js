@@ -30,6 +30,7 @@ function emptyRecord(code) {
     ideasOpen: false,
     ideasUse: false,
     ideasHold: false,
+    ideaFlags: false,
     updatedAt: '',
   };
 }
@@ -117,6 +118,7 @@ function normalizeRecord(code, raw) {
     ideasOpen: raw.ideasOpen === true,
     ideasUse: raw.ideasUse === true,
     ideasHold: raw.ideasHold === true,
+    ideaFlags: raw.ideaFlags === true,
     updatedAt: String(raw.updatedAt || ''),
   };
 }
@@ -221,19 +223,29 @@ export default async function handler(req, res) {
       if (UPSTREAM && !UPSTREAM.includes('/api/catalog') && !UPSTREAM.includes('/api/stage')) {
         const upstream = await fetch(execUrl(code), { redirect: 'follow', cache: 'no-store' });
         const text = await upstream.text();
+        const latest = await readLocal(code);
+        if (latest) {
+          res.status(200).json(latest);
+          return;
+        }
         if (loginPage(text)) {
           res.status(200).json(emptyRecord(code));
           return;
         }
+        let raw = null;
         let parsed = emptyRecord(code);
         try {
-          parsed = normalizeRecord(code, JSON.parse(text));
+          raw = JSON.parse(text);
+          parsed = normalizeRecord(code, raw);
         } catch {
           res.status(200).json(emptyRecord(code));
           return;
         }
+        const hostFlags = raw && Object.prototype.hasOwnProperty.call(raw, 'ideasOpen');
+        parsed.ideaFlags = hostFlags === true;
+        if (!hostFlags) parsed.ideasOpen = false;
         const payload = parsed.payload || {};
-        if (Array.isArray(payload.order) || Object.keys(payload).length > 0) {
+        if (hostFlags && (Array.isArray(payload.order) || Object.keys(payload).length > 0)) {
           remember(code, parsed);
         }
         res.status(upstream.ok ? 200 : upstream.status).json(parsed);
@@ -269,6 +281,7 @@ export default async function handler(req, res) {
       }
       if (Object.prototype.hasOwnProperty.call(body, 'ideasOpen')) {
         record.ideasOpen = body.ideasOpen === true;
+        record.ideaFlags = true;
       }
       if (Object.prototype.hasOwnProperty.call(body, 'ideasUse')) {
         record.ideasUse = body.ideasUse === true;

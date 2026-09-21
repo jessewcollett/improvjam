@@ -121,6 +121,27 @@ export function payloadHasSlots(payload) {
   return STAGE_SLOT_IDS.some((id) => slotHasContent(id, payload[id]));
 }
 
+/** Keep last known Receive state when a poll is an empty miss or Apps Script payload-only row. */
+export function coalesceStageSession(prev, next) {
+  const incoming = next && typeof next === 'object' ? next : {};
+  const previous = prev && typeof prev === 'object' ? prev : null;
+  if (previous?.ideaFlags && !incoming.ideaFlags) {
+    return {
+      ...incoming,
+      ideasOpen: previous.ideasOpen,
+      ideasUse: previous.ideasUse,
+      ideasHold: previous.ideasHold,
+      ideaCats: Array.isArray(incoming.ideaCats) && incoming.ideaCats.length
+        ? incoming.ideaCats
+        : previous.ideaCats,
+      ideaFlags: true,
+      updatedAt: incoming.updatedAt || previous.updatedAt,
+    };
+  }
+  if (!incoming.updatedAt && previous?.updatedAt) return previous;
+  return incoming;
+}
+
 /** Keep the last live board when a poll returns a cold/empty miss. Host clears always send `order: []`. */
 export function coalesceStagePayload(prev, next) {
   const incoming = next && typeof next === 'object' && !Array.isArray(next) ? next : {};
@@ -1145,6 +1166,7 @@ export async function fetchStage(code) {
     ideasOpen: data.ideasOpen === true,
     ideasUse: data.ideasUse === true,
     ideasHold: data.ideasHold === true,
+    ideaFlags: data.ideaFlags === true,
     updatedAt: data.updatedAt || '',
   };
 }

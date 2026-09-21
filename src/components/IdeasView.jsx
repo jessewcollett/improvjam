@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Lightbulb } from 'lucide-react';
 import { ASK_FOR_CATEGORIES } from '../lib/generator.js';
 import {
+  coalesceStageSession,
   fetchStage,
   normalizeStageCode,
   postStage,
@@ -67,13 +68,14 @@ function IdeasForm({ code }) {
 
   useEffect(() => {
     let cancelled = false;
+    let seq = 0;
     const load = async () => {
+      const my = ++seq;
       try {
         const data = await fetchStage(code);
-        if (!cancelled) {
-          setSession(data);
-          setError('');
-        }
+        if (cancelled || my !== seq) return;
+        setSession((prev) => coalesceStageSession(prev, data));
+        setError('');
       } catch (err) {
         if (!cancelled) setError(err.message || 'Couldn’t reach this session.');
       }
@@ -117,6 +119,7 @@ function IdeasForm({ code }) {
         ideaCats: data.ideaCats || prev?.ideaCats || [],
         ideasOpen: data.ideasOpen === true || prev?.ideasOpen,
         ideasHold: data.ideasHold === true,
+        ideaFlags: data.ideaFlags === true || prev?.ideaFlags,
       }));
     } catch (err) {
       setError(err.message || 'Couldn’t send ideas.');
@@ -125,7 +128,10 @@ function IdeasForm({ code }) {
     }
   };
 
-  if (session && !session.ideasOpen) {
+  const ideasClosed = Boolean(session?.ideaFlags && !session.ideasOpen);
+  const ideasWaiting = !session || (!session.ideasOpen && !session.ideaFlags);
+
+  if (ideasClosed) {
     return (
       <div className="min-h-dvh w-full bg-black text-white flex flex-col items-center justify-center px-6 py-10">
         <Lightbulb className="w-12 h-12 text-gray-500 mb-4" />
@@ -148,7 +154,7 @@ function IdeasForm({ code }) {
         <p className="text-xs text-gray-500 mb-6">Keep it show-safe — the host may hold or drop anything that isn’t.</p>
         {error ? <p className="text-sm text-amber-300 mb-3">{error}</p> : null}
         {status ? <p className="text-sm text-lime-300 mb-3">{status}</p> : null}
-        {!session ? (
+        {ideasWaiting ? (
           <p className="text-gray-500">Connecting…</p>
         ) : !cats.length ? (
           <p className="text-gray-400">The host has not opened any banks yet.</p>
