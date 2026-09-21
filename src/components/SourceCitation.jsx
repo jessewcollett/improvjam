@@ -76,11 +76,12 @@ export function ItemSource({ item, sources, className = '' }) {
 export function LibraryFooter({ sources }) {
   const encyclopedia = sources.find((s) => s.id === 'src-encyclopedia');
   const learnImprov = sources.find((s) => s.id === 'src-learnimprov');
+  const ircWiki = sources.find((s) => s.id === 'src-irc-wiki');
   return (
     <div className="mt-8 mb-4 pt-4 border-t border-gray-800 flex flex-col items-center justify-center text-center">
       <p className="text-xs text-gray-500 mb-2">
-        Catalog entries adapted from jam teaching notes, the Improv Encyclopedia, and Learn Improv.
-        Encyclopedia and Learn Improv content is used with attribution (Learn Improv is CC BY-SA 4.0).
+        Catalog entries adapted from jam teaching notes, the Improv Encyclopedia, Learn Improv, and the IRC Improv Wiki.
+        Encyclopedia, Learn Improv (CC BY-SA 4.0), and IRC wiki (GFDL / CC BY-SA) content is used with attribution.
       </p>
       <div className="flex flex-wrap items-center justify-center gap-2">
       <a
@@ -101,6 +102,16 @@ export function LibraryFooter({ sources }) {
       >
         <BookOpen className="w-4 h-4 mr-2" />
         Learn Improv
+        <ExternalLink className="w-3 h-3 ml-2 opacity-70" />
+      </a>
+      <a
+        href={ircWiki?.url || 'https://wiki.improvresourcecenter.com/'}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center text-sm font-medium text-blue-400 hover:text-blue-300 transition-colors bg-blue-900/20 px-4 py-2 rounded-lg border border-blue-800/50"
+      >
+        <BookOpen className="w-4 h-4 mr-2" />
+        IRC Improv Wiki
         <ExternalLink className="w-3 h-3 ml-2 opacity-70" />
       </a>
       </div>

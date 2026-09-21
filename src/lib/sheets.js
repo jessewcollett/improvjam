@@ -7,7 +7,7 @@ export const SHEETS_URL = import.meta.env.VITE_SHEETS_URL || '';
 export const INTAKE_FORM_URL =
   'https://docs.google.com/forms/d/e/1FAIpQLScoQ1oUaXuDKDReAzZE4l105L7QyT-AC_GrMiF-XGQQAL7ghg/viewform';
 
-export const ATTRIBUTION_SOURCE_IDS = ['src-jam-terms', 'src-encyclopedia', 'src-learnimprov'];
+export const ATTRIBUTION_SOURCE_IDS = ['src-jam-terms', 'src-encyclopedia', 'src-learnimprov', 'src-irc-wiki'];
 
 const DEFAULT_ATTRIBUTION_SOURCES = [
   {
@@ -27,6 +27,12 @@ const DEFAULT_ATTRIBUTION_SOURCES = [
     name: 'Learn Improv',
     url: 'https://www.learnimprov.com/',
     note: 'CC BY-SA 4.0. https://www.learnimprov.com/about/legal/',
+  },
+  {
+    id: 'src-irc-wiki',
+    name: 'IRC Improv Wiki',
+    url: 'https://wiki.improvresourcecenter.com/',
+    note: 'GFDL 1.2 / CC BY-SA 3.0. Rehearsal cards are adapted from the wiki with attribution.',
   },
 ];
 
@@ -285,6 +291,7 @@ export function urlBelongsToSource(url, source) {
   if (sourceHost && (hrefHost === sourceHost || hrefHost.endsWith(`.${sourceHost}`))) return true;
   if (source.id === 'src-learnimprov' && hrefHost.endsWith('learnimprov.com')) return true;
   if (source.id === 'src-encyclopedia' && hrefHost.endsWith('improvencyclopedia.org')) return true;
+  if (source.id === 'src-irc-wiki' && hrefHost.endsWith('improvresourcecenter.com')) return true;
   return false;
 }
 

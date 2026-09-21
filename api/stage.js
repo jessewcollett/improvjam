@@ -25,19 +25,39 @@ function emptyRecord(code) {
     code: String(code || ''),
     payload: {},
     ideas: {},
+    ideasPending: {},
     ideaCats: [],
     ideasOpen: false,
     ideasUse: false,
+    ideasHold: false,
     updatedAt: '',
   };
 }
 
+function ideaEntry(raw) {
+  if (raw == null) return null;
+  if (typeof raw === 'string') {
+    const text = raw.trim();
+    return text ? { text } : null;
+  }
+  const text = String(raw.text || '').trim();
+  if (!text) return null;
+  return raw.flag === 'nsfw' ? { text, flag: 'nsfw' } : { text };
+}
+
 function ideaList(raw) {
   if (!Array.isArray(raw)) return [];
-  return raw
-    .map((item) => (typeof item === 'string' ? item.trim() : String(item?.text || '').trim()))
-    .filter(Boolean)
-    .slice(-200);
+  const out = [];
+  const seen = new Set();
+  raw.forEach((item) => {
+    const entry = ideaEntry(item);
+    if (!entry) return;
+    const id = entry.text.toLowerCase();
+    if (seen.has(id)) return;
+    seen.add(id);
+    out.push(entry);
+  });
+  return out.slice(-200);
 }
 
 function normalizeIdeas(raw) {
@@ -58,12 +78,12 @@ function mergeIdeas(current, incoming) {
     const key = String(cat || '').trim();
     if (!key) return;
     const prev = ideaList(out[key]);
-    const seen = new Set(prev.map((text) => text.toLowerCase()));
-    ideaList(rows).forEach((text) => {
-      const id = text.toLowerCase();
+    const seen = new Set(prev.map((row) => row.text.toLowerCase()));
+    ideaList(rows).forEach((entry) => {
+      const id = entry.text.toLowerCase();
       if (seen.has(id)) return;
       seen.add(id);
-      prev.push(text);
+      prev.push(entry);
     });
     out[key] = prev.slice(-200);
   });
@@ -92,9 +112,11 @@ function normalizeRecord(code, raw) {
     code: String(raw.code || code || ''),
     payload,
     ideas: normalizeIdeas(raw.ideas),
+    ideasPending: normalizeIdeas(raw.ideasPending),
     ideaCats: ideaCats(raw.ideaCats),
     ideasOpen: raw.ideasOpen === true,
     ideasUse: raw.ideasUse === true,
+    ideasHold: raw.ideasHold === true,
     updatedAt: String(raw.updatedAt || ''),
   };
 }
@@ -227,7 +249,7 @@ export default async function handler(req, res) {
       }
       const code = String(body.code || '').trim();
       if (!code) {
-        res.status(400).json({ error: 'Missing code', code: '', payload: {}, ideas: {}, ideaCats: [], ideasOpen: false, ideasUse: false, updatedAt: '' });
+        res.status(400).json({ error: 'Missing code', code: '', payload: {}, ideas: {}, ideasPending: {}, ideaCats: [], ideasOpen: false, ideasUse: false, ideasHold: false, updatedAt: '' });
         return;
       }
       const prev = normalizeRecord(code, (await readLocal(code)) || emptyRecord(code));
@@ -247,12 +269,24 @@ export default async function handler(req, res) {
       if (Object.prototype.hasOwnProperty.call(body, 'ideasUse')) {
         record.ideasUse = body.ideasUse === true;
       }
+      if (Object.prototype.hasOwnProperty.call(body, 'ideasHold')) {
+        record.ideasHold = body.ideasHold === true;
+      }
       if (Array.isArray(body.ideaCats)) {
         record.ideaCats = ideaCats(body.ideaCats);
       }
-      if (body.ideas && typeof body.ideas === 'object' && !Array.isArray(body.ideas)) {
+      const hostWrite = Object.prototype.hasOwnProperty.call(body, 'payload');
+      if (hostWrite) {
+        if (Object.prototype.hasOwnProperty.call(body, 'ideas') && body.ideas && typeof body.ideas === 'object' && !Array.isArray(body.ideas)) {
+          record.ideas = normalizeIdeas(body.ideas);
+        }
+        if (Object.prototype.hasOwnProperty.call(body, 'ideasPending') && body.ideasPending && typeof body.ideasPending === 'object' && !Array.isArray(body.ideasPending)) {
+          record.ideasPending = normalizeIdeas(body.ideasPending);
+        }
+      } else if (body.ideas && typeof body.ideas === 'object' && !Array.isArray(body.ideas)) {
         if (record.ideasOpen || body.ideasOpen === true) {
-          record.ideas = mergeIdeas(prev.ideas, body.ideas);
+          const target = record.ideasHold ? 'ideasPending' : 'ideas';
+          record[target] = mergeIdeas(prev[target], body.ideas);
         }
       }
       remember(code, record);

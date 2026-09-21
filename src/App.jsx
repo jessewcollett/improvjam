@@ -9,6 +9,7 @@ import MySetsView from './components/MySetsView.jsx';
 import SettingsView from './components/SettingsView.jsx';
 import { applyTheme } from './lib/theme.js';
 import { STAGE_MANAGER_ID, clampNavId } from './lib/nav.js';
+import { decodeSharedSet } from './lib/setShare.js';
 import { useAppStore } from './store/useAppStore.js';
 
 const views = [
@@ -24,6 +25,7 @@ export default function App() {
   const syncFromSheet = useAppStore((s) => s.syncFromSheet);
   const settings = useAppStore((s) => s.settings);
   const updateSettings = useAppStore((s) => s.updateSettings);
+  const importSharedSet = useAppStore((s) => s.importSharedSet);
   const stageOn = Boolean(settings.stageOn);
   const activeRoute = clampNavId(settings.lastRoute, stageOn);
 
@@ -32,6 +34,25 @@ export default function App() {
     document.documentElement.classList.toggle('reduce-motion', Boolean(settings.reducedMotion));
     window.__improvJamHapticDing = Boolean(settings.hapticDing);
   }, [settings.theme, settings.reducedMotion, settings.hapticDing]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const raw = params.get('set');
+    if (!raw) return;
+    params.delete('set');
+    const next = params.toString();
+    const path = `${window.location.pathname}${next ? `?${next}` : ''}${window.location.hash}`;
+    window.history.replaceState({}, '', path);
+    const decoded = decodeSharedSet(raw);
+    if (!decoded) return;
+    const apply = () => {
+      importSharedSet(decoded);
+      updateSettings({ lastRoute: 'mysets' });
+    };
+    if (useAppStore.persist?.hasHydrated?.()) apply();
+    else if (useAppStore.persist?.onFinishHydration) useAppStore.persist.onFinishHydration(apply);
+    else apply();
+  }, [importSharedSet, updateSettings]);
 
   useEffect(() => {
     syncFromSheet().catch(() => {});

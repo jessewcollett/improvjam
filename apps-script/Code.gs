@@ -63,6 +63,7 @@ function onOpen() {
     .addItem('Set media folder', 'setMediaFolder')
     .addSeparator()
     .addItem('Apply Learn Improv patches', 'applyLearnImprovPatches')
+    .addItem('Apply IRC Wiki patches', 'applyIrcWikiPatches')
     .addItem('Populate catalog (overwrite tabs)', 'populateCatalog')
     .addToUi();
 }
@@ -435,6 +436,108 @@ function applyLearnImprovPatches() {
   return { updated: updated, missing: missing };
 }
 
+function applyIrcWikiPatches() {
+  if (typeof IRC_WIKI_PATCHES === 'undefined') {
+    throw new Error('IrcWikiPatches.gs is missing. Push the apps-script folder with clasp.');
+  }
+  var ss = SpreadsheetApp.getActive();
+  ensureAllTabs_(ss);
+  ensureKnownSources_(ss);
+  upsertSource_(ss, typeof IRC_WIKI_SOURCE === 'undefined' ? {
+    id: 'src-irc-wiki',
+    name: 'IRC Improv Wiki',
+    url: 'https://wiki.improvresourcecenter.com/',
+    note: 'GFDL 1.2 / CC BY-SA 3.0. Rehearsal cards are adapted from the wiki with attribution.',
+  } : IRC_WIKI_SOURCE);
+  var created = [];
+  var updated = [];
+  var skipped = [];
+  IRC_WIKI_PATCHES.forEach(function (patch) {
+    var result = mergeCatalogPatch_(ss, patch);
+    if (result === 'created') created.push(patch.id);
+    else if (result === 'updated') updated.push(patch.id);
+    else skipped.push(patch.id);
+  });
+  ensureActiveCheckboxes_(ss.getSheetByName(TAB_GAMES));
+  ensureActiveCheckboxes_(ss.getSheetByName(TAB_TERMS));
+  var msg = 'Created ' + created.length + ' rows.\nUpdated ' + updated.length + ' existing rows.';
+  if (skipped.length) msg += '\nSkipped: ' + skipped.join(', ');
+  msg += '\nNo catalog rows were deleted. Descriptions already on the sheet were left as-is.';
+  SpreadsheetApp.getUi().alert('IRC Wiki patches', msg, SpreadsheetApp.getUi().ButtonSet.OK);
+  return { created: created, updated: updated, skipped: skipped };
+}
+
+function mergeCatalogPatch_(ss, patch) {
+  if (!patch || !patch.id) return 'skipped';
+  var tab = patch.tab === 'Terms' ? TAB_TERMS : TAB_GAMES;
+  var sheet = ss.getSheetByName(tab);
+  if (!sheet) return 'skipped';
+  var last = Math.max(sheet.getLastColumn(), 1);
+  var headers = sheet.getRange(1, 1, 1, last).getValues()[0];
+  var idCol = headerIndex_(headers, 'id');
+  if (idCol < 0) return 'skipped';
+  var values = sheet.getDataRange().getValues();
+  var r;
+  for (r = 1; r < values.length; r++) {
+    if (String(values[r][idCol]) !== patch.id) continue;
+    applyMergePatchRow_(sheet, headers, r, values[r], patch);
+    return 'updated';
+  }
+  if (!patch.create) return 'skipped';
+  var rowIndex = sheet.getLastRow() + 1;
+  sheet.getRange(rowIndex, idCol + 1).setValue(patch.id);
+  var empty = headers.map(function () { return ''; });
+  applyMergePatchRow_(sheet, headers, rowIndex - 1, empty, patch);
+  var activeCol = headerIndex_(headers, 'active');
+  if (activeCol >= 0) sheet.getRange(rowIndex, activeCol + 1).setValue(true);
+  return 'created';
+}
+
+function isPlaceholderCell_(value) {
+  var text = String(value == null ? '' : value);
+  return /open the wiki source/i.test(text) || /open the wiki for the original notes/i.test(text);
+}
+
+function isListHeader_(header) {
+  return header === 'category' || header === 'tags' || header === 'sourceIds' || header === 'synonyms' || header === 'relatedIds' || header === 'lifeSkills' || header === 'variations';
+}
+
+function isLockedHeader_(header) {
+  return header === 'id' || header === 'image' || header === 'active';
+}
+
+function applyMergePatchRow_(sheet, headers, zeroIndex, currentRow, patch) {
+  Object.keys(patch).forEach(function (key) {
+    if (key === 'id' || key === 'tab' || key === 'create' || key === 'replacePlaceholder') return;
+    var col = headerIndex_(headers, key);
+    if (col < 0) return;
+    var header = canonHeader_(headers[col]);
+    if (isLockedHeader_(header)) return;
+    var incoming = patch[key];
+    if (incoming == null || incoming === '') return;
+    var current = currentRow[col];
+    if (isListHeader_(header)) {
+      sheet.getRange(zeroIndex + 1, col + 1).setValue(unionListCell_(current, incoming));
+      return;
+    }
+    var curText = String(current == null ? '' : current).trim();
+    if (curText && !(patch.replacePlaceholder && isPlaceholderCell_(curText))) return;
+    sheet.getRange(zeroIndex + 1, col + 1).setValue(patchCellValue_(key, incoming));
+  });
+}
+
+function unionListCell_(current, incoming) {
+  var have = splitCats_(current);
+  var seen = {};
+  have.forEach(function (item) { seen[item.toLowerCase()] = true; });
+  splitCats_(incoming).forEach(function (item) {
+    if (seen[item.toLowerCase()]) return;
+    seen[item.toLowerCase()] = true;
+    have.push(item);
+  });
+  return have.join('|');
+}
+
 function knownAttributionSources_() {
   return [
     {
@@ -454,6 +557,12 @@ function knownAttributionSources_() {
       name: 'Learn Improv',
       url: 'https://www.learnimprov.com/',
       note: 'CC BY-SA 4.0. https://www.learnimprov.com/about/legal/',
+    },
+    {
+      id: 'src-irc-wiki',
+      name: 'IRC Improv Wiki',
+      url: 'https://wiki.improvresourcecenter.com/',
+      note: 'GFDL 1.2 / CC BY-SA 3.0. Rehearsal cards are adapted from the wiki with attribution. https://wiki.improvresourcecenter.com/',
     },
   ];
 }
@@ -485,6 +594,7 @@ function helpTabRows_() {
     ['sourceUrl', 'Optional per-row page URL for that game or term. The app uses it only when the URL belongs to one of the row’s sourceIds (same site). A Learn Improv URL is ignored on an Encyclopedia-only or jam-only row.'],
     ['Sources tab url', 'Homepage / attribution URL for a sourceId. Used when the row has no matching sourceUrl for that source.'],
     ['Merging Learn Improv', 'Apply Learn Improv patches adds src-learnimprov and may set sourceUrl to the Learn Improv page. Existing Improv Encyclopedia page URLs are preserved. Encyclopedia and jam source rows are not removed.'],
+    ['Merging IRC Wiki', 'Improv Jam → Apply IRC Wiki patches unions tags/categories/sourceIds, fills empty descriptions only (or replaces the old “open the wiki source” placeholder), and appends missing forms/warm-ups/concepts with in-app how-to-play. It never deletes rows. Opening is an extra category/tag. Do not run Populate catalog for this.'],
   ];
 }
 
@@ -533,7 +643,7 @@ function upsertSource_(ss, source) {
     if (!current) sheet.getRange(row, col).setValue(source[key]);
   });
   var activeCol = headerIndex_(headers, 'active') + 1;
-  if (activeCol > 0 && (created || source.id === 'src-encyclopedia' || source.id === 'src-learnimprov' || source.id === 'src-jam-terms')) {
+  if (activeCol > 0 && (created || source.id === 'src-encyclopedia' || source.id === 'src-learnimprov' || source.id === 'src-jam-terms' || source.id === 'src-irc-wiki')) {
     sheet.getRange(row, activeCol).setValue(true);
   }
   return created;

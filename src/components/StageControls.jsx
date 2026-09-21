@@ -14,6 +14,7 @@ import {
   slotSummary,
   suggestionLine,
   STAGE_SLOT_LABELS,
+  STAGE_IDEAS_POLL_MS,
   stageBoardUrl,
   stageIdeasUrl,
 } from '../lib/stage.js';
@@ -21,6 +22,7 @@ import { useAppStore } from '../store/useAppStore.js';
 import { STAGE_MANAGER_ID } from '../lib/nav.js';
 import { LiveStageTime } from './StageBoardContent.jsx';
 import { GamePartToggles } from './StagePin.jsx';
+import IdeaQueue from './IdeaQueue.jsx';
 
 function useCopiedFlag() {
   const [copied, setCopied] = useState(false);
@@ -325,13 +327,16 @@ function StageAudiencePanel() {
   const code = useAppStore((s) => s.settings.stageCode);
   const ideasOpen = useAppStore((s) => s.stageIdeasOpen);
   const ideasUse = useAppStore((s) => s.stageIdeasUse);
+  const ideasHold = useAppStore((s) => s.stageIdeasHold);
   const ideaCats = useAppStore((s) => s.stageIdeaCats);
   const displayPinned = useAppStore((s) => s.stagePins.includes('display'));
   const setStageIdeasOpen = useAppStore((s) => s.setStageIdeasOpen);
   const setStageIdeasUse = useAppStore((s) => s.setStageIdeasUse);
+  const setStageIdeasHold = useAppStore((s) => s.setStageIdeasHold);
   const setStageIdeaCats = useAppStore((s) => s.setStageIdeaCats);
   const toggleStageIdeaCat = useAppStore((s) => s.toggleStageIdeaCat);
   const toggleStageDisplay = useAppStore((s) => s.toggleStageDisplay);
+  const pullStageIdeas = useAppStore((s) => s.pullStageIdeas);
   const [copied, markCopied] = useCopiedFlag();
   const [catsOpen, setCatsOpen] = useState(false);
   const url = code ? stageIdeasUrl(code) : '';
@@ -340,6 +345,13 @@ function StageAudiencePanel() {
   const catSummary = selectedCats.length
     ? selectedCats.map((cat) => cat.label).join(', ')
     : 'None selected';
+
+  useEffect(() => {
+    if (!(ideasOpen || ideasUse)) return undefined;
+    pullStageIdeas();
+    const id = window.setInterval(pullStageIdeas, STAGE_IDEAS_POLL_MS);
+    return () => window.clearInterval(id);
+  }, [ideasOpen, ideasUse, pullStageIdeas]);
 
   const onCopy = async () => {
     if (!url) return;
@@ -395,11 +407,38 @@ function StageAudiencePanel() {
           On
         </button>
       </div>
+      <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold mb-1">Approve before Stage</p>
+      <div className="flex bg-[#1A1A1A] p-1 rounded-xl border border-gray-800 mb-2">
+        <button
+          type="button"
+          className={`flex-1 py-2 text-sm font-bold rounded-lg min-h-11 ${
+            !ideasHold ? 'bg-gray-700 text-white' : 'text-gray-400'
+          }`}
+          onClick={() => setStageIdeasHold(false)}
+          aria-pressed={!ideasHold}
+        >
+          Off
+        </button>
+        <button
+          type="button"
+          className={`flex-1 py-2 text-sm font-bold rounded-lg min-h-11 ${
+            ideasHold ? 'bg-amber-700 text-white' : 'text-gray-400'
+          }`}
+          onClick={() => setStageIdeasHold(true)}
+          aria-pressed={ideasHold}
+        >
+          On
+        </button>
+      </div>
       <p className="text-xs text-gray-500 mb-2">
         {ideasOpen && ideasUse
-          ? 'Audience can submit. Generate has a This session section for received ideas.'
+          ? ideasHold
+            ? 'Audience can submit. Approve a line before it hits Generate or the board.'
+            : 'Audience can submit. Generate has a This session section for received ideas.'
           : ideasOpen
-            ? 'Audience can submit. Turn on Use session pool to generate from what they send.'
+            ? ideasHold
+              ? 'Audience can submit to a pending queue. Turn on Use session pool after you approve.'
+              : 'Audience can submit. Turn on Use session pool to generate from what they send.'
             : ideasUse
               ? 'Generate can draw from this session. /ideas is closed until Receive is on.'
               : 'Off until you want the room to submit or draw from this session.'}
@@ -500,6 +539,12 @@ function StageAudiencePanel() {
               Done
             </button>
           </div>
+        </div>
+      ) : null}
+      {(ideasOpen || ideasUse) ? (
+        <div className="mt-3">
+          <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold mb-2">Queue</p>
+          <IdeaQueue />
         </div>
       ) : null}
     </div>

@@ -632,12 +632,34 @@ export function stageIdeasJoinUrl(origin = typeof window !== 'undefined' ? windo
   return origin ? `${origin}/ideas` : '/ideas';
 }
 
+export function ideaEntry(raw) {
+  if (raw == null) return null;
+  if (typeof raw === 'string') {
+    const text = raw.trim();
+    return text ? { text } : null;
+  }
+  const text = String(raw.text || '').trim();
+  if (!text) return null;
+  return raw.flag === 'nsfw' ? { text, flag: 'nsfw' } : { text };
+}
+
+export function ideaText(raw) {
+  return ideaEntry(raw)?.text || '';
+}
+
 export function normalizeIdeaBucket(raw) {
   if (!Array.isArray(raw)) return [];
-  return raw
-    .map((item) => (typeof item === 'string' ? item.trim() : String(item?.text || '').trim()))
-    .filter(Boolean)
-    .slice(0, 200);
+  const out = [];
+  const seen = new Set();
+  raw.forEach((item) => {
+    const entry = ideaEntry(item);
+    if (!entry) return;
+    const id = entry.text.toLowerCase();
+    if (seen.has(id)) return;
+    seen.add(id);
+    out.push(entry);
+  });
+  return out.slice(0, 200);
 }
 
 export function mergeStageIdeas(current, incoming) {
@@ -647,13 +669,12 @@ export function mergeStageIdeas(current, incoming) {
     const key = String(cat || '').trim();
     if (!key) return;
     const prev = normalizeIdeaBucket(out[key]);
-    const add = normalizeIdeaBucket(rows);
-    const seen = new Set(prev.map((text) => text.toLowerCase()));
-    add.forEach((text) => {
-      const id = text.toLowerCase();
+    const seen = new Set(prev.map((row) => ideaText(row).toLowerCase()));
+    normalizeIdeaBucket(rows).forEach((entry) => {
+      const id = entry.text.toLowerCase();
       if (seen.has(id)) return;
       seen.add(id);
-      prev.push(text);
+      prev.push(entry);
     });
     out[key] = prev.slice(-200);
   });
@@ -1102,9 +1123,11 @@ export async function fetchStage(code) {
     code: data.code || normalized,
     payload: data.payload && typeof data.payload === 'object' && !Array.isArray(data.payload) ? data.payload : {},
     ideas: normalizeStageIdeasMap(data.ideas),
+    ideasPending: normalizeStageIdeasMap(data.ideasPending),
     ideaCats: normalizeIdeaCats(data.ideaCats),
     ideasOpen: data.ideasOpen === true,
     ideasUse: data.ideasUse === true,
+    ideasHold: data.ideasHold === true,
     updatedAt: data.updatedAt || '',
   };
 }

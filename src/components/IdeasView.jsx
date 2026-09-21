@@ -110,12 +110,13 @@ function IdeasForm({ code }) {
     try {
       const data = await postStage(code, undefined, { ideas });
       setValues({});
-      setStatus('Sent. Add another whenever you like.');
+      setStatus(data.ideasHold ? 'Sent — waiting for the host' : 'Sent. Add another whenever you like.');
       setSession((prev) => ({
         ...(prev || {}),
         ideas: data.ideas || {},
         ideaCats: data.ideaCats || prev?.ideaCats || [],
         ideasOpen: data.ideasOpen === true || prev?.ideasOpen,
+        ideasHold: data.ideasHold === true,
       }));
     } catch (err) {
       setError(err.message || 'Couldn’t send ideas.');
@@ -141,9 +142,10 @@ function IdeasForm({ code }) {
       <div className="w-full max-w-md mx-auto flex-1 flex flex-col">
         <p className="text-xs uppercase tracking-[0.3em] text-gray-500 font-bold mb-2">Improv Jam</p>
         <h1 className="text-3xl font-black font-display tracking-tight mb-1">Audience ideas</h1>
-        <p className="text-sm text-gray-400 mb-6">
+        <p className="text-sm text-gray-400 mb-2">
           Session <span className="font-black font-display tracking-[0.18em] text-gray-200">{code}</span>
         </p>
+        <p className="text-xs text-gray-500 mb-6">Keep it show-safe — the host may hold or drop anything that isn’t.</p>
         {error ? <p className="text-sm text-amber-300 mb-3">{error}</p> : null}
         {status ? <p className="text-sm text-lime-300 mb-3">{status}</p> : null}
         {!session ? (

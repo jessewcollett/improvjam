@@ -6,6 +6,7 @@ export const CATEGORY_STYLES = {
   Endowment: 'bg-pink-500/20 text-pink-300 border-pink-500/30',
   'Idea Generators': 'bg-lime-500/20 text-lime-300 border-lime-500/30',
   Exercise: 'bg-orange-500/20 text-orange-300 border-orange-500/30',
+  Opening: 'bg-fuchsia-500/20 text-fuchsia-300 border-fuchsia-500/30',
   'Ask-for': 'bg-teal-500/20 text-teal-300 border-teal-500/30',
 };
 

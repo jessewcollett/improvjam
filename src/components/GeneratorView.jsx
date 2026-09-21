@@ -15,7 +15,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore } from '../store/useAppStore.js';
 import { ASK_FOR_CATEGORIES, askForCategoriesFromRows, rowCategories, rowExtra, skillItemsFromRows } from '../lib/generator.js';
-import { sessionBankId, suggestionsFromGenerator, STAGE_IDEAS_POLL_MS } from '../lib/stage.js';
+import { sessionBankId, suggestionsFromGenerator, STAGE_IDEAS_POLL_MS, ideaText } from '../lib/stage.js';
 import ActionDock from './ActionDock.jsx';
 import CatalogIcon from './CatalogIcon.jsx';
 import SearchField from './SearchField.jsx';
@@ -23,6 +23,7 @@ import { StageHeaderControl } from './StageControls.jsx';
 import StagePin from './StagePin.jsx';
 import SyncButton from './SyncButton.jsx';
 import RandomGameDraw from './RandomGameDraw.jsx';
+import IdeaQueue from './IdeaQueue.jsx';
 
 const pick = (arr) => (arr?.length ? arr[Math.floor(Math.random() * arr.length)] : undefined);
 const CATALOGUE_CAP = 50;
@@ -220,7 +221,7 @@ export default function GeneratorView() {
     const consider = (id) => {
       const key = String(id || '').trim();
       if (!key || seen.has(key)) return;
-      const rows = (stageIdeas[key] || []).filter(Boolean);
+      const rows = (stageIdeas[key] || []).map(ideaText).filter(Boolean);
       if (!rows.length) return;
       seen.add(key);
       const cat = byId.get(key) || { id: key, label: key };
@@ -334,10 +335,10 @@ export default function GeneratorView() {
   const generate = () => {
     setBanksOpen(false);
     const sessionKit = selectedSessionCats.map((cat) => {
-      const sessionRows = (stageIdeas[cat.id] || []).map((text, index) => ({
-        id: `idea:${cat.id}:${index}:${text}`,
-        text,
-      }));
+      const sessionRows = (stageIdeas[cat.id] || []).map((item, index) => {
+        const text = ideaText(item);
+        return { id: `idea:${cat.id}:${index}:${text}`, text };
+      }).filter((row) => row.text);
       if (!sessionRows.length) {
         return {
           id: cat.sessionId,
@@ -511,6 +512,9 @@ export default function GeneratorView() {
               ) : (
                 <p className="text-xs text-gray-500 px-0.5">No audience ideas yet. They’ll land here as they come in.</p>
               )}
+              <div className="mt-2">
+                <IdeaQueue compact />
+              </div>
             </section>
           ) : null}
           <section className="mb-2">

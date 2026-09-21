@@ -37,6 +37,8 @@ import {
   normalizeStageCode,
   normalizeStageFloats,
   normalizeStageFrames,
+  ideaEntry,
+  ideaText,
   normalizeStageIdeasMap,
   normalizeStageLayout,
   normalizeStagePins,
@@ -52,6 +54,7 @@ import {
   swapStageFrames,
   STAGE_PUBLISH_DEBOUNCE_MS,
 } from '../lib/stage.js';
+import { ideaIsNsfw } from '../lib/ideaFlag.js';
 import { normalizeTheme } from '../lib/theme.js';
 
 const bundled = normalizePayload(fallback);
@@ -130,6 +133,7 @@ function normalizeDrawCounts(raw) {
 let stagePublishTimer = null;
 let stagePublishInflight = false;
 let stagePublishQueued = false;
+let stagePublishIdeas = false;
 
 function displayInviteSlot(code) {
   const normalized = normalizeStageCode(code);
@@ -162,6 +166,11 @@ function queueStagePublish() {
     stagePublishTimer = null;
     publishStageNow();
   }, STAGE_PUBLISH_DEBOUNCE_MS);
+}
+
+function publishStageIdeasNow() {
+  stagePublishIdeas = true;
+  publishStageNow();
 }
 
 async function publishStageNow() {
@@ -197,11 +206,19 @@ async function publishStageNow() {
     if (Object.keys(aligns).length) payload.aligns = aligns;
     const captions = normalizeStageCaptions(state.stageCaptions);
     if (Object.keys(captions).length) payload.captions = captions;
-    await postStage(code, payload, {
+    const extra = {
       ideasOpen: Boolean(state.stageIdeasOpen),
       ideasUse: Boolean(state.stageIdeasUse),
+      ideasHold: Boolean(state.stageIdeasHold),
       ideaCats: normalizeIdeaCats(state.stageIdeaCats),
-    });
+    };
+    const sendIdeas = stagePublishIdeas;
+    if (sendIdeas) {
+      extra.ideas = state.stageIdeas;
+      extra.ideasPending = state.stageIdeasPending;
+    }
+    await postStage(code, payload, extra);
+    if (sendIdeas && !stagePublishQueued) stagePublishIdeas = false;
     useAppStore.setState({ stagePublishError: null });
   } catch (error) {
     useAppStore.setState({ stagePublishError: error.message || 'Stage publish failed.' });
@@ -249,8 +266,12 @@ export const useAppStore = create(
       stageSpotlight: '',
       stageIdeasOpen: false,
       stageIdeasUse: false,
+      stageIdeasHold: false,
       stageIdeaCats: [...defaultGeneratorBanks],
       stageIdeas: {},
+      stageIdeasPending: {},
+      focusCustomSetId: '',
+      sharedSetNotice: '',
       stageMessageFavorites: [],
       stagePublishError: null,
 
@@ -611,6 +632,11 @@ export const useAppStore = create(
         });
       },
 
+      setStageIdeasHold: (on) => {
+        set({ stageIdeasHold: Boolean(on) });
+        if (get().settings.stageOn) publishStageNow();
+      },
+
       setStageIdeaCats: (ids) => {
         set({ stageIdeaCats: normalizeIdeaCats(ids) });
         if (get().settings.stageOn && (get().stageIdeasOpen || get().stageIdeasUse)) publishStageNow();
@@ -671,14 +697,120 @@ export const useAppStore = create(
       pullStageIdeas: async () => {
         const state = get();
         if (!state.settings.stageOn || !(state.stageIdeasOpen || state.stageIdeasUse)) return;
+        if (stagePublishInflight || stagePublishQueued || stagePublishIdeas) return;
         const code = normalizeStageCode(state.settings.stageCode);
         if (!code) return;
         try {
           const data = await fetchStage(code);
-          set({ stageIdeas: data.ideas || {} });
+          set({
+            stageIdeas: data.ideas || {},
+            stageIdeasPending: data.ideasPending || {},
+          });
         } catch {
           /* keep last pool */
         }
+      },
+
+      approveStageIdea: (cat, text) => {
+        const key = String(cat || '').trim();
+        const needle = String(text || '').trim().toLowerCase();
+        if (!key || !needle) return;
+        set((state) => {
+          const pendingRows = normalizeStageIdeasMap(state.stageIdeasPending)[key] || [];
+          const match = pendingRows.find((row) => ideaText(row).toLowerCase() === needle);
+          if (!match) return {};
+          const live = normalizeStageIdeasMap(state.stageIdeas);
+          const pending = { ...normalizeStageIdeasMap(state.stageIdeasPending) };
+          const nextLive = [...(live[key] || [])];
+          if (!nextLive.some((row) => ideaText(row).toLowerCase() === needle)) {
+            nextLive.push(match);
+          }
+          live[key] = nextLive;
+          const nextPending = pendingRows.filter((row) => ideaText(row).toLowerCase() !== needle);
+          if (nextPending.length) pending[key] = nextPending;
+          else delete pending[key];
+          return { stageIdeas: live, stageIdeasPending: pending };
+        });
+        if (get().settings.stageOn) publishStageIdeasNow();
+      },
+
+      deleteStageIdea: (cat, text, fromPending) => {
+        const key = String(cat || '').trim();
+        const needle = String(text || '').trim().toLowerCase();
+        if (!key || !needle) return;
+        set((state) => {
+          const mapKey = fromPending ? 'stageIdeasPending' : 'stageIdeas';
+          const map = { ...normalizeStageIdeasMap(state[mapKey]) };
+          const next = (map[key] || []).filter((row) => ideaText(row).toLowerCase() !== needle);
+          if (next.length) map[key] = next;
+          else delete map[key];
+          return { [mapKey]: map };
+        });
+        if (get().settings.stageOn) publishStageIdeasNow();
+      },
+
+      flagStageIdea: (cat, text, fromPending) => {
+        const key = String(cat || '').trim();
+        const needle = String(text || '').trim().toLowerCase();
+        if (!key || !needle) return;
+        set((state) => {
+          const mapKey = fromPending ? 'stageIdeasPending' : 'stageIdeas';
+          const map = { ...normalizeStageIdeasMap(state[mapKey]) };
+          map[key] = (map[key] || []).map((row) => {
+            const entry = ideaEntry(row);
+            if (!entry || entry.text.toLowerCase() !== needle) return row;
+            if (entry.flag === 'nsfw') {
+              const next = { text: entry.text };
+              return next;
+            }
+            return { text: entry.text, flag: 'nsfw' };
+          });
+          return { [mapKey]: map };
+        });
+        if (get().settings.stageOn) publishStageIdeasNow();
+      },
+
+      approveAllStageIdeas: (mode = 'clean') => {
+        const skipNsfw = mode !== 'all';
+        set((state) => {
+          const live = { ...normalizeStageIdeasMap(state.stageIdeas) };
+          const pending = {};
+          Object.entries(normalizeStageIdeasMap(state.stageIdeasPending)).forEach(([cat, rows]) => {
+            const keep = [];
+            const move = [];
+            rows.forEach((row) => {
+              if (skipNsfw && ideaIsNsfw(row)) keep.push(row);
+              else move.push(row);
+            });
+            if (keep.length) pending[cat] = keep;
+            if (!move.length) return;
+            const nextLive = [...(live[cat] || [])];
+            const seen = new Set(nextLive.map((item) => ideaText(item).toLowerCase()));
+            move.forEach((row) => {
+              const id = ideaText(row).toLowerCase();
+              if (!id || seen.has(id)) return;
+              seen.add(id);
+              nextLive.push(row);
+            });
+            live[cat] = nextLive;
+          });
+          return { stageIdeas: live, stageIdeasPending: pending };
+        });
+        if (get().settings.stageOn) publishStageIdeasNow();
+      },
+
+      deleteAllStageIdeas: ({ fromPending = true, flaggedOnly = false } = {}) => {
+        set((state) => {
+          const mapKey = fromPending ? 'stageIdeasPending' : 'stageIdeas';
+          if (!flaggedOnly) return { [mapKey]: {} };
+          const next = {};
+          Object.entries(normalizeStageIdeasMap(state[mapKey])).forEach(([cat, rows]) => {
+            const kept = rows.filter((row) => !ideaIsNsfw(row));
+            if (kept.length) next[cat] = kept;
+          });
+          return { [mapKey]: next };
+        });
+        if (get().settings.stageOn) publishStageIdeasNow();
       },
 
       moveStagePin: (id, direction) => {
@@ -888,14 +1020,16 @@ export const useAppStore = create(
       },
 
       createCustomSet: (name) => {
-        const trimmed = name.trim();
-        if (!trimmed) return;
+        const trimmed = String(name || '').trim();
+        if (!trimmed) return '';
+        const id = `set_${Date.now()}`;
         set((state) => ({
           lists: {
             ...state.lists,
-            customSets: [...state.lists.customSets, { id: `set_${Date.now()}`, name: trimmed, games: [] }],
+            customSets: [...state.lists.customSets, { id, name: trimmed, games: [] }],
           },
         }));
+        return id;
       },
 
       renameCustomSet: (setId, name) => {
@@ -978,6 +1112,83 @@ export const useAppStore = create(
         }));
       },
 
+      reorderCustomSets: (ids) => {
+        const next = Array.isArray(ids) ? ids.map((id) => String(id || '').trim()).filter(Boolean) : [];
+        if (!next.length) return;
+        set((state) => {
+          const byId = new Map(state.lists.customSets.map((item) => [item.id, item]));
+          const ordered = next.map((id) => byId.get(id)).filter(Boolean);
+          const leftover = state.lists.customSets.filter((item) => !next.includes(item.id));
+          return { lists: { ...state.lists, customSets: [...ordered, ...leftover] } };
+        });
+      },
+
+      reorderCustomSetGames: (setId, ids) => {
+        const next = Array.isArray(ids) ? ids.map((id) => String(id || '').trim()).filter(Boolean) : [];
+        set((state) => ({
+          lists: {
+            ...state.lists,
+            customSets: state.lists.customSets.map((item) => {
+              if (item.id !== setId) return item;
+              const allowed = new Set(item.games);
+              const ordered = next.filter((id) => allowed.has(id));
+              const leftover = item.games.filter((id) => !ordered.includes(id));
+              return { ...item, games: [...ordered, ...leftover] };
+            }),
+          },
+        }));
+      },
+
+      importSharedSet: ({ name, ids } = {}) => {
+        const requested = (Array.isArray(ids) ? ids : []).map((id) => String(id || '').trim()).filter(Boolean);
+        if (!requested.length) {
+          set({ sharedSetNotice: 'That share link had no games.' });
+          return { id: '', missing: 0, added: 0 };
+        }
+        const catalogIds = new Set((get().data.games || []).map((game) => String(game.id || '').trim()).filter(Boolean));
+        const knownIds = [];
+        const seen = new Set();
+        requested.forEach((id) => {
+          if (seen.has(id)) return;
+          seen.add(id);
+          if (!catalogIds.size || catalogIds.has(id)) knownIds.push(id);
+        });
+        const missing = catalogIds.size ? requested.filter((id) => !catalogIds.has(id)).length : 0;
+        if (!knownIds.length) {
+          set({
+            sharedSetNotice: missing
+              ? 'None of those games are in this catalog.'
+              : 'Couldn’t import that set.',
+          });
+          return { id: '', missing, added: 0 };
+        }
+        const id = `set_${Date.now()}`;
+        const baseName = String(name || '').trim() || 'Shared set';
+        set((state) => {
+          const taken = new Set(state.lists.customSets.map((item) => item.name.toLowerCase()));
+          let nextName = baseName;
+          let n = 2;
+          while (taken.has(nextName.toLowerCase())) {
+            nextName = `${baseName} (${n})`;
+            n += 1;
+          }
+          return {
+            lists: {
+              ...state.lists,
+              customSets: [...state.lists.customSets, { id, name: nextName, games: knownIds }],
+            },
+            focusCustomSetId: id,
+            sharedSetNotice: missing
+              ? `${missing} game${missing === 1 ? '' : 's'} not in this catalog.`
+              : '',
+          };
+        });
+        return { id, missing, added: knownIds.length };
+      },
+
+      clearFocusCustomSet: () => set({ focusCustomSetId: '' }),
+      clearSharedSetNotice: () => set({ sharedSetNotice: '' }),
+
       syncFromSheet: async () => {
         set({ isSyncing: true, syncError: null });
         try {
@@ -1030,8 +1241,11 @@ export const useAppStore = create(
         stageSpotlight: state.stageSpotlight,
         stageIdeasOpen: state.stageIdeasOpen,
         stageIdeasUse: state.stageIdeasUse,
+        stageIdeasHold: state.stageIdeasHold,
         stageIdeaCats: state.stageIdeaCats,
         stageMessageFavorites: state.stageMessageFavorites,
+        stageIdeas: state.stageIdeas,
+        stageIdeasPending: state.stageIdeasPending,
       }),
       merge: (persisted, current) => ({
         ...current,
@@ -1083,11 +1297,13 @@ export const useAppStore = create(
         stageSpotlight: normalizeStageSpotlight(persisted?.stageSpotlight, normalizeStagePins(persisted?.stagePins)),
         stageIdeasOpen: persisted?.stageIdeasOpen === true,
         stageIdeasUse: persisted?.stageIdeasUse === true,
+        stageIdeasHold: persisted?.stageIdeasHold === true,
         stageIdeaCats: normalizeIdeaCats(
           Array.isArray(persisted?.stageIdeaCats) ? persisted.stageIdeaCats : current.stageIdeaCats,
         ),
         stageMessageFavorites: normalizeStageMessages(persisted?.stageMessageFavorites, []),
         stageIdeas: normalizeStageIdeasMap(persisted?.stageIdeas),
+        stageIdeasPending: normalizeStageIdeasMap(persisted?.stageIdeasPending),
         stagePublishError: null,
       }),
     },
