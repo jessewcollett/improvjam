@@ -571,7 +571,7 @@ export default function MySetsView() {
             ) : null}
 
             {customEditing && addingGames && activeCustomSet ? (
-              <div className="fixed inset-0 z-[80] flex flex-col justify-end">
+              <div className="fixed inset-0 z-[80] flex items-center justify-center p-3">
                 <button
                   type="button"
                   className="absolute inset-0 bg-black/70"
@@ -579,7 +579,7 @@ export default function MySetsView() {
                   onClick={() => setAddingGames(false)}
                 />
                 <div
-                  className="relative bg-[#121212] border-t border-gray-800 rounded-t-3xl px-4 pt-3 pb-nav max-h-[85vh] flex flex-col"
+                  className="relative w-full max-w-lg h-[min(85dvh,100%)] max-h-[85dvh] min-h-0 overflow-hidden flex flex-col rounded-2xl border border-gray-700 bg-[#121212] px-4 pt-3 pb-3"
                   role="dialog"
                   aria-modal="true"
                   aria-labelledby="add-games-title"
