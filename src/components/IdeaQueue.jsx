@@ -4,6 +4,7 @@ import { ASK_FOR_CATEGORIES } from '../lib/generator.js';
 import { ideaIsNsfw } from '../lib/ideaFlag.js';
 import { ideaText, normalizeStageIdeasMap } from '../lib/stage.js';
 import { useAppStore } from '../store/useAppStore.js';
+import StageFold from './StageFold.jsx';
 
 function catLabel(id) {
   return ASK_FOR_CATEGORIES.find((cat) => cat.id === id)?.label || id;
@@ -232,10 +233,13 @@ export default function IdeaQueue({ compact = false }) {
         </div>
       ) : null}
       {ideasHold || pending.length ? (
-        <section>
-          <p className="text-2xs uppercase tracking-wider text-amber-400 font-bold mb-1">
-            Pending{pending.length ? ` (${pending.length})` : ''}
-          </p>
+        <StageFold
+          id="pending"
+          title={`Pending${pending.length ? ` (${pending.length})` : ''}`}
+          accent="text-amber-400"
+          summary={pending.length ? `${pending.length} waiting` : 'Nothing waiting'}
+          className="mb-0"
+        >
           {pending.length ? (
             <>
               <BulkBar pending rows={pending} flaggedCount={flaggedPending} />
@@ -248,12 +252,15 @@ export default function IdeaQueue({ compact = false }) {
           ) : (
             <p className="text-xs text-gray-500">Nothing waiting.</p>
           )}
-        </section>
+        </StageFold>
       ) : null}
-      <section>
-        <p className="text-2xs uppercase tracking-wider text-lime-400 font-bold mb-1">
-          Live{live.length ? ` (${live.length})` : ''}
-        </p>
+      <StageFold
+        id="live"
+        title={`Live${live.length ? ` (${live.length})` : ''}`}
+        accent="text-lime-400"
+        summary={live.length ? `${live.length} on Stage` : 'Nothing on Stage yet'}
+        className="mb-0"
+      >
         {live.length ? (
           <>
             <BulkBar pending={false} rows={live} flaggedCount={flaggedLive} />
@@ -266,7 +273,7 @@ export default function IdeaQueue({ compact = false }) {
         ) : (
           <p className="text-xs text-gray-500">Nothing on Stage yet.</p>
         )}
-      </section>
+      </StageFold>
     </div>
   );
 }

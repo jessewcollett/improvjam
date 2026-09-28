@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, Square, Tv, Wand2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Square, Tv } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore.js';
-import { catalogIdsFromState, resolveGameGeneratorLink } from '../lib/gameGenerator.js';
 import { playItemsFromState } from '../lib/stagePlay.js';
 import { stageMessageText } from '../lib/stageMessage.js';
+import StageGeneratorTool from './StageGeneratorTool.jsx';
 
 function chipClass(on, type) {
   if (on) {
@@ -19,12 +19,7 @@ export default function StageSetRunner() {
   const customSets = useAppStore((s) => s.lists.customSets);
   const catalogGames = useAppStore((s) => s.data.games);
   const catalogTerms = useAppStore((s) => s.data.terms);
-  const generatorRows = useAppStore((s) => s.data.generator);
-  const banks = useAppStore((s) => s.data.banks);
-  const prompts = useAppStore((s) => s.data.prompts);
-  const links = useAppStore((s) => s.gameGeneratorLinks);
   const cueStagePlayIndex = useAppStore((s) => s.cueStagePlayIndex);
-  const generateFromGame = useAppStore((s) => s.generateFromGame);
   const clearStagePlay = useAppStore((s) => s.clearStagePlay);
   const showTermOnBoard = useAppStore((s) => s.showTermOnBoard);
   const [openTermId, setOpenTermId] = useState('');
@@ -49,9 +44,7 @@ export default function StageSetRunner() {
   if (!resolved.play || !resolved.current) return null;
 
   const { set, items, current, play } = resolved;
-  const catalog = catalogIdsFromState({ data: { generator: generatorRows, banks, prompts } });
   const currentGame = current.type === 'game' ? current.game : null;
-  const hasLink = Boolean(currentGame && resolveGameGeneratorLink(links?.[currentGame.id], catalog));
   const at = play.index + 1;
   const noteTerm = current.type === 'term'
     ? current.term
@@ -99,15 +92,7 @@ export default function StageSetRunner() {
           <ChevronLeft className="w-4 h-4" />
         </button>
         {currentGame ? (
-          <button
-            type="button"
-            onClick={() => generateFromGame(currentGame.id, { stay: true })}
-            disabled={!hasLink}
-            className="flex-1 min-h-11 rounded-lg bg-lime-700 text-white font-bold text-sm inline-flex items-center justify-center gap-1.5 disabled:bg-gray-800 disabled:text-gray-500"
-          >
-            <Wand2 className="w-4 h-4" />
-            Generate
-          </button>
+          <StageGeneratorTool gameId={currentGame.id} compact />
         ) : current.type === 'term' && current.term ? (
           <button
             type="button"
@@ -136,9 +121,6 @@ export default function StageSetRunner() {
           <ChevronRight className="w-4 h-4" />
         </button>
       </div>
-      {currentGame && !hasLink ? (
-        <p className="text-2xs text-gray-500 mt-1.5">Link a generator on this game first.</p>
-      ) : null}
       {currentGame && current.linkedTerms.length ? (
         <div className="flex flex-wrap gap-1 mt-2">
           {current.linkedTerms.map((term) => {

@@ -24,6 +24,7 @@ import { STAGE_MANAGER_ID } from '../lib/nav.js';
 import { LiveStageTime } from './StageBoardContent.jsx';
 import { GamePartToggles } from './StagePin.jsx';
 import IdeaQueue from './IdeaQueue.jsx';
+import StageFold from './StageFold.jsx';
 import StageMessageEditor from './StageMessageEditor.jsx';
 import {
   MESSAGE_MAX,
@@ -522,9 +523,13 @@ function StageMessagePanel() {
     && !defaultSet.has(trimmed.toLowerCase())
     && !extraSet.has(trimmed.toLowerCase());
 
+  const preview = trimmed.split('\n').map((line) => line.trim()).find(Boolean) || '';
+  const summary = preview
+    ? (preview.length > 42 ? `${preview.slice(0, 40)}…` : preview)
+    : 'Tap to write';
+
   return (
-    <div className="mb-3">
-      <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold mb-2">Board message</p>
+    <StageFold id="message" title="Board message" boxed summary={summary}>
       <StageMessageEditor value={message} onChange={setStageMessage} />
       <p className="text-2xs text-gray-500 mb-2 tabular-nums">{trimmed.length} / {MESSAGE_MAX}</p>
       <div className="flex flex-wrap gap-1.5 mb-2">
@@ -598,7 +603,7 @@ function StageMessagePanel() {
           Save favorite
         </button>
       </div>
-    </div>
+    </StageFold>
   );
 }
 

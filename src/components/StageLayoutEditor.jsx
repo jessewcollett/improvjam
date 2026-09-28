@@ -30,6 +30,7 @@ import {
 import { useAppStore } from '../store/useAppStore.js';
 import { StageSlotGrid } from './StageBoardContent.jsx';
 import { GamePartToggles } from './StagePin.jsx';
+import StageFold from './StageFold.jsx';
 
 function useLandscapePreview() {
   const [landscape, setLandscape] = useState(() => (
@@ -321,18 +322,20 @@ export default function StageLayoutEditor() {
 
   if (!listed.length) {
     return (
-      <div className="mb-3">
-        <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold mb-2">Stage board</p>
+      <StageFold id="board" title="Stage board" boxed summary="Nothing pinned">
         <p className="text-sm text-gray-500">Pin a panel from Show, Generator, or Tools and it shows up here.</p>
-      </div>
+      </StageFold>
     );
   }
 
   return (
-    <div className="mb-3">
-      <div className="mb-2">
-        <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold mb-1.5">Stage board</p>
-        <div className="flex flex-wrap items-center gap-1">
+    <StageFold
+      id="board"
+      title="Stage board"
+      boxed
+      summary={`${listed.length} panel${listed.length === 1 ? '' : 's'}`}
+    >
+      <div className="flex flex-wrap items-center gap-1 mb-2">
           <button
             type="button"
             onClick={() => setStageTheme(stageTheme === 'light' ? 'dark' : 'light')}
@@ -361,7 +364,6 @@ export default function StageLayoutEditor() {
           >
             Auto layout
           </button>
-        </div>
       </div>
       <div
         ref={boxRef}
@@ -538,6 +540,6 @@ export default function StageLayoutEditor() {
             ? 'Resize is locked. Tap a window to edit it below. Top-left spotlights. X unpins. Bottom-right pops it out or docks it.'
             : 'Tap a window to edit it below. Top-left spotlights. Bottom-right pops it out. Drag edges to resize. Drag onto another to swap.'}
       </p>
-    </div>
+    </StageFold>
   );
 }

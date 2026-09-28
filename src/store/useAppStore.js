@@ -64,8 +64,12 @@ import { ideaIsNsfw } from '../lib/ideaFlag.js';
 import { generateSuggestionsFromStore } from '../lib/generateDraw.js';
 import {
   applyGameGeneratorLink,
+  catalogIdsFromState,
+  mergePreservedSessionBanks,
   normalizeGameGeneratorLink,
   normalizeGameGeneratorLinks,
+  selectionFromLink,
+  splitGeneratorSelection,
 } from '../lib/gameGenerator.js';
 import { normalizeStageMessage, stageMessageText } from '../lib/stageMessage.js';
 import { normalizeStagePlay, playItemsFromState } from '../lib/stagePlay.js';
@@ -401,6 +405,23 @@ export const useAppStore = create(
       stageMessageFavorites: [],
       stagePublishError: null,
       stagePlay: null,
+      stageFolds: {
+        pending: true,
+        live: true,
+        message: true,
+        board: true,
+        show: true,
+      },
+
+      toggleStageFold: (id) => {
+        const key = String(id || '').trim();
+        if (!key) return;
+        set((state) => {
+          const folds = state.stageFolds && typeof state.stageFolds === 'object' ? state.stageFolds : {};
+          const open = folds[key] !== false;
+          return { stageFolds: { ...folds, [key]: !open } };
+        });
+      },
 
       updateSettings: (partial) => {
         set((state) => ({ settings: { ...state.settings, ...partial } }));
@@ -1209,7 +1230,19 @@ export const useAppStore = create(
             delete next[key];
             return { gameGeneratorLinks: next };
           }
-          return { gameGeneratorLinks: { ...current, [key]: normalized } };
+          const merged = mergePreservedSessionBanks(normalized, current[key], catalogIdsFromState(state));
+          return { gameGeneratorLinks: { ...current, [key]: merged || normalized } };
+        });
+      },
+
+      applyGeneratorDraft: (link) => {
+        const applied = selectionFromLink(get(), link);
+        const split = splitGeneratorSelection(applied);
+        set({
+          generatorBanks: split.generatorBanks,
+          generatorSessionBanks: split.generatorSessionBanks,
+          generatorSkills: split.generatorSkills,
+          generatorDrawCounts: split.generatorDrawCounts,
         });
       },
 
@@ -1219,10 +1252,12 @@ export const useAppStore = create(
         const applied = applyGameGeneratorLink(get(), gameId);
         if (!applied) return false;
         lastGenerateFromGameAt = now;
+        const split = splitGeneratorSelection(applied);
         set((state) => ({
-          generatorBanks: applied.banks,
-          generatorSkills: applied.skills,
-          generatorDrawCounts: applied.drawCounts,
+          generatorBanks: split.generatorBanks,
+          generatorSessionBanks: split.generatorSessionBanks,
+          generatorSkills: split.generatorSkills,
+          generatorDrawCounts: split.generatorDrawCounts,
           generatorDrawNonce: (state.generatorDrawNonce || 0) + 1,
         }));
         get().generateStageSuggestions();
@@ -1579,6 +1614,7 @@ export const useAppStore = create(
         stageIdeas: state.stageIdeas,
         stageIdeasPending: state.stageIdeasPending,
         stagePlay: state.stagePlay,
+        stageFolds: state.stageFolds,
       }),
       merge: (persisted, current) => ({
         ...current,
@@ -1640,6 +1676,16 @@ export const useAppStore = create(
         stageIdeas: normalizeStageIdeasMap(persisted?.stageIdeas),
         stageIdeasPending: normalizeStageIdeasMap(persisted?.stageIdeasPending),
         stagePlay: normalizeStagePlay(persisted?.stagePlay),
+        stageFolds: {
+          pending: true,
+          live: true,
+          message: true,
+          board: true,
+          show: true,
+          ...(persisted?.stageFolds && typeof persisted.stageFolds === 'object' && !Array.isArray(persisted.stageFolds)
+            ? persisted.stageFolds
+            : {}),
+        },
         stagePublishError: null,
       }),
     },

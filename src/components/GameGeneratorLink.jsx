@@ -13,7 +13,6 @@ import {
   toggleDraftId,
 } from '../lib/gameGenerator.js';
 import { clampDrawCount, DRAW_MAX, DRAW_MIN } from '../lib/generateDraw.js';
-import { parseSessionBankId } from '../lib/stage.js';
 
 function byLabel(a, b) {
   const labelA = String(a?.label || a?.id || '');
@@ -26,10 +25,13 @@ function byLabel(a, b) {
 
 function LinkChip({ item, checked, count, onToggle, onCount }) {
   const n = clampDrawCount(count);
+  const idleClass = item.session
+    ? 'bg-lime-950/25 text-gray-200 border-lime-900/70'
+    : 'bg-[#1A1A1A] text-gray-200 border-gray-800';
   return (
     <div
       className={`inline-flex items-center rounded-full border shrink-0 ${
-        checked ? 'bg-lime-600/15 text-white border-lime-600/50' : 'bg-[#1A1A1A] text-gray-200 border-gray-800'
+        checked ? 'bg-lime-600/15 text-white border-lime-600/50' : idleClass
       }`}
     >
       <button
@@ -48,7 +50,10 @@ function LinkChip({ item, checked, count, onToggle, onCount }) {
           className={`w-3.5 h-3.5 shrink-0 ${checked ? 'text-lime-400' : 'text-gray-500'}`}
           fallback={Tag}
         />
-        <span className="text-xs font-bold leading-none whitespace-nowrap">{item.label}</span>
+        <span className="text-xs font-bold leading-none whitespace-nowrap">
+          {item.label}
+          {item.session && item.count != null ? ` · ${item.count}` : ''}
+        </span>
       </button>
       {checked ? (
         <div className="inline-flex items-center pr-1">
@@ -105,14 +110,24 @@ function ChipWrap({ items, draft, field, setDraft }) {
   );
 }
 
-function GameGeneratorSheet({ gameId, catalog, draft, setDraft, onClose }) {
-  const setGameGeneratorLink = useAppStore((s) => s.setGameGeneratorLink);
+function GameGeneratorSheet({ catalog, draft, setDraft, onClose, onSave, heading = 'Build a generator' }) {
   const favoriteIds = useAppStore((s) => s.generatorBankFavorites) || [];
   const canUseCurrent = useAppStore((s) => (
-    (s.generatorBanks || []).some((id) => id && !parseSessionBankId(id))
+    (s.generatorBanks || []).length > 0
+    || (s.generatorSessionBanks || []).length > 0
     || (s.generatorSkills || []).length > 0
   ));
   const selectedCount = (draft.banks?.length || 0) + (draft.skills?.length || 0);
+  const sessionBanks = useMemo(
+    () => [...(catalog.sessionBanks || [])].sort(byLabel),
+    [catalog.sessionBanks],
+  );
+  const sessionIds = useMemo(
+    () => new Set(sessionBanks.map((item) => item.id)),
+    [sessionBanks],
+  );
+  const sessionSelected = (draft.banks || []).filter((id) => sessionIds.has(id)).length;
+  const askSelected = (draft.banks || []).filter((id) => !sessionIds.has(id)).length;
 
   const banks = useMemo(() => [...(catalog.banks || [])].sort(byLabel), [catalog.banks]);
   const skills = useMemo(() => [...(catalog.skills || [])].sort(byLabel), [catalog.skills]);
@@ -126,7 +141,7 @@ function GameGeneratorSheet({ gameId, catalog, draft, setDraft, onClose }) {
   );
 
   const save = (next) => {
-    setGameGeneratorLink(gameId, next);
+    onSave(next);
     onClose();
   };
 
@@ -136,7 +151,7 @@ function GameGeneratorSheet({ gameId, catalog, draft, setDraft, onClose }) {
       <div className="relative bg-[#121212] border-t border-gray-800 rounded-t-3xl px-4 pt-3 pb-nav max-h-[80vh] flex flex-col">
         <div className="flex items-start justify-between gap-2 mb-2">
           <div className="min-w-0">
-            <p className="text-sm font-black font-display text-white leading-tight">Build a generator</p>
+            <p className="text-sm font-black font-display text-white leading-tight">{heading}</p>
             <p className="text-2xs text-gray-500 mt-0.5">Tap to pick. Use − / + for how many.</p>
           </div>
           <button
@@ -160,11 +175,26 @@ function GameGeneratorSheet({ gameId, catalog, draft, setDraft, onClose }) {
           Use current Generator
         </button>
         <div className="overflow-y-auto overflow-x-hidden scrollbar-hide flex-1 min-h-0 min-w-0 w-full space-y-3 pb-3">
+          {catalog.sessionActive ? (
+            <section>
+              <p className="text-2xs uppercase tracking-wider text-lime-400 font-bold mb-1">
+                This session
+                {sessionSelected ? ` · ${sessionSelected}` : ''}
+              </p>
+              {sessionBanks.length ? (
+                <ChipWrap items={sessionBanks} draft={draft} field="banks" setDraft={setDraft} />
+              ) : (
+                <p className="text-xs text-gray-500 leading-snug">
+                  No audience ideas yet. They’ll show up here as they come in.
+                </p>
+              )}
+            </section>
+          ) : null}
           {banks.length ? (
             <section>
               <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold mb-1">
                 Ask for
-                {draft.banks?.length ? ` · ${draft.banks.length}` : ''}
+                {askSelected ? ` · ${askSelected}` : ''}
               </p>
               {favoriteBanks.length > 0 ? (
                 <>
@@ -216,16 +246,28 @@ function GameGeneratorSheet({ gameId, catalog, draft, setDraft, onClose }) {
   );
 }
 
-export default function GameGeneratorLink({ gameId }) {
-  const rawLink = useAppStore((s) => s.gameGeneratorLinks?.[gameId]);
-  const generateFromGame = useAppStore((s) => s.generateFromGame);
+export function useGeneratorCatalog() {
   const generator = useAppStore((s) => s.data.generator);
   const banks = useAppStore((s) => s.data.banks);
   const prompts = useAppStore((s) => s.data.prompts);
-  const liveCatalog = useMemo(
-    () => catalogIdsFromState({ data: { generator, banks, prompts } }),
-    [generator, banks, prompts],
+  const stageOn = useAppStore((s) => s.settings.stageOn);
+  const stageIdeasOpen = useAppStore((s) => s.stageIdeasOpen);
+  const stageIdeasUse = useAppStore((s) => s.stageIdeasUse);
+  const stageIdeas = useAppStore((s) => s.stageIdeas);
+  const stageIdeaCats = useAppStore((s) => s.stageIdeaCats);
+  return useMemo(
+    () => catalogIdsFromState(useAppStore.getState()),
+    [generator, banks, prompts, stageOn, stageIdeasOpen, stageIdeasUse, stageIdeas, stageIdeaCats],
   );
+}
+
+export { GameGeneratorSheet };
+
+export default function GameGeneratorLink({ gameId }) {
+  const rawLink = useAppStore((s) => s.gameGeneratorLinks?.[gameId]);
+  const generateFromGame = useAppStore((s) => s.generateFromGame);
+  const setGameGeneratorLink = useAppStore((s) => s.setGameGeneratorLink);
+  const liveCatalog = useGeneratorCatalog();
   const resolved = resolveGameGeneratorLink(rawLink, liveCatalog);
   const chips = linkSummaryItems(rawLink, liveCatalog);
   const [open, setOpen] = useState(false);
@@ -234,7 +276,7 @@ export default function GameGeneratorLink({ gameId }) {
   const openSheet = (event) => {
     event?.preventDefault?.();
     event?.stopPropagation?.();
-    setDraft(normalizeGameGeneratorLink(rawLink) || emptyLinkDraft());
+    setDraft(normalizeGameGeneratorLink(resolved) || emptyLinkDraft());
     setOpen(true);
   };
 
@@ -292,11 +334,12 @@ export default function GameGeneratorLink({ gameId }) {
       )}
       {open ? (
         <GameGeneratorSheet
-          gameId={gameId}
           catalog={liveCatalog}
           draft={draft}
           setDraft={setDraft}
           onClose={() => setOpen(false)}
+          onSave={(next) => setGameGeneratorLink(gameId, next)}
+          heading="Link a generator"
         />
       ) : null}
     </div>

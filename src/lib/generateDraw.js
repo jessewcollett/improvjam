@@ -109,11 +109,25 @@ function buildSkill(skill, generator, prompts) {
   return row ? { id, type: 'bank', title, content: row } : null;
 }
 
+function sessionCatIdsFromState(state) {
+  const seen = new Set();
+  const out = [];
+  const consider = (id) => {
+    const catId = parseSessionBankId(id) || '';
+    if (!catId || seen.has(catId)) return;
+    seen.add(catId);
+    out.push(catId);
+  };
+  (state?.generatorSessionBanks || []).forEach(consider);
+  (state?.generatorBanks || []).forEach(consider);
+  return out;
+}
+
 export function generateKitFromStore(state) {
   const generator = state?.data?.generator || [];
   const banks = state?.data?.banks;
   const selectedIds = (state?.generatorBanks || []).filter((id) => !parseSessionBankId(id));
-  const sessionIds = (state?.generatorBanks || []).map((id) => parseSessionBankId(id)).filter(Boolean);
+  const sessionIds = sessionCatIdsFromState(state);
 
   const sessionKit = sessionIds.map((catId) => {
     const meta = catMeta(catId, banks);
@@ -196,7 +210,9 @@ export function generateSuggestionsFromStore(state) {
 }
 
 export function hasGeneratorSelection(state) {
-  return (state?.generatorBanks || []).length > 0 || (state?.generatorSkills || []).length > 0;
+  return (state?.generatorBanks || []).some((id) => id && !parseSessionBankId(id))
+    || (state?.generatorSessionBanks || []).length > 0
+    || (state?.generatorSkills || []).length > 0;
 }
 
 export function rollHatFromPrompts(prompts = {}) {

@@ -1,7 +1,6 @@
 import { useMemo } from 'react';
-import { Bell, Coins, Dices, Lightbulb, Pause, Play, RotateCcw } from 'lucide-react';
-import { flipCoin, hasGeneratorSelection, rollHatFromPrompts } from '../lib/generateDraw.js';
-import { catalogIdsFromState, resolveGameGeneratorLink } from '../lib/gameGenerator.js';
+import { Bell, Coins, Lightbulb, Pause, Play, RotateCcw } from 'lucide-react';
+import { flipCoin, rollHatFromPrompts } from '../lib/generateDraw.js';
 import { playItemsFromState } from '../lib/stagePlay.js';
 import { normalizeStageManagerTools } from '../lib/nav.js';
 import { mergeSfxPads, resolveDefaultPad } from '../lib/sfxPad.js';
@@ -10,12 +9,14 @@ import { useHoldDing } from '../lib/useHoldDing.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { LiveStageTime } from './StageBoardContent.jsx';
 import StagePin from './StagePin.jsx';
+import StageFold from './StageFold.jsx';
+import StageGeneratorTool from './StageGeneratorTool.jsx';
 
 const TIMER_DEFAULT = 60;
 
-function RunnerCell({ title, accent, pinned, onPin, pinLabel, children }) {
+function RunnerCell({ title, accent, pinned, onPin, pinLabel, className = '', children }) {
   return (
-    <div className="rounded-xl border border-gray-800 bg-[#1A1A1A] p-2 min-h-[5.5rem] flex flex-col gap-1">
+    <div className={`rounded-xl border border-gray-800 bg-[#1A1A1A] p-2 min-h-[5.5rem] flex flex-col gap-1 ${className}`}>
       <div className="flex items-center justify-between gap-1">
         <p className={`text-2xs uppercase tracking-wider font-bold ${accent}`}>{title}</p>
         {onPin ? <StagePin pressed={pinned} onClick={onPin} label={pinLabel} /> : null}
@@ -28,18 +29,11 @@ function RunnerCell({ title, accent, pinned, onPin, pinLabel, children }) {
 export default function StageShowRunner() {
   const stagePins = useAppStore((s) => s.stagePins);
   const stageSlots = useAppStore((s) => s.stageSlots);
-  const generatorBanks = useAppStore((s) => s.generatorBanks);
-  const generatorSkills = useAppStore((s) => s.generatorSkills);
-  const generateFromGame = useAppStore((s) => s.generateFromGame);
   const stagePlay = useAppStore((s) => s.stagePlay);
   const customSets = useAppStore((s) => s.lists.customSets);
   const catalogGames = useAppStore((s) => s.data.games);
   const catalogTerms = useAppStore((s) => s.data.terms);
-  const generatorRows = useAppStore((s) => s.data.generator);
-  const banks = useAppStore((s) => s.data.banks);
   const prompts = useAppStore((s) => s.data.prompts);
-  const links = useAppStore((s) => s.gameGeneratorLinks);
-  const generateStageSuggestions = useAppStore((s) => s.generateStageSuggestions);
   const toggleStagePin = useAppStore((s) => s.toggleStagePin);
   const setStageSlot = useAppStore((s) => s.setStageSlot);
   const publishStageTimer = useAppStore((s) => s.publishStageTimer);
@@ -60,27 +54,8 @@ export default function StageShowRunner() {
     }),
     [stagePlay, customSets, catalogGames, catalogTerms],
   );
-  const playCatalog = useMemo(
-    () => catalogIdsFromState({ data: { generator: generatorRows, banks, prompts } }),
-    [generatorRows, banks, prompts],
-  );
   const currentGame = playNow.current?.type === 'game' ? playNow.current.game : null;
-  const playHasLink = Boolean(
-    currentGame && resolveGameGeneratorLink(links?.[currentGame.id], playCatalog),
-  );
-  const inPlay = Boolean(playNow.play && playNow.current);
-  const playing = Boolean(inPlay && currentGame);
-  const canGenerate = inPlay
-    ? playHasLink
-    : hasGeneratorSelection({ generatorBanks, generatorSkills });
-
-  const onDraw = () => {
-    if (playing && currentGame) {
-      generateFromGame(currentGame.id, { stay: true });
-      return;
-    }
-    generateStageSuggestions();
-  };
+  const playing = Boolean(playNow.play && currentGame);
   const timer = stageSlots.timer;
   const running = Boolean(timer?.running) && remainingFromTimer(timer) > 0;
   const suggestions = stageSlots.suggestions;
@@ -121,26 +96,12 @@ export default function StageShowRunner() {
         key="generate"
         title="Generate"
         accent="text-lime-400"
+        className="col-span-full"
         pinned={stagePins.includes('suggestions')}
         onPin={() => pinToggle('suggestions', suggestions)}
         pinLabel={stagePins.includes('suggestions') ? 'Unpin generate from Stage' : 'Pin generate to Stage'}
       >
-        <button
-          type="button"
-          onClick={onDraw}
-          disabled={!canGenerate}
-          className="w-full min-h-11 rounded-lg bg-lime-700 text-white font-bold text-sm inline-flex items-center justify-center gap-1.5 disabled:bg-gray-800 disabled:text-gray-500"
-        >
-          <Dices className="w-4 h-4" />
-          Draw
-        </button>
-        {!canGenerate ? (
-          <p className="text-2xs text-gray-500 mt-1 leading-snug">
-            {playing ? 'Link a generator on this game first.' : inPlay ? 'Generate is for games in this rundown.' : 'Pick banks on Generator first.'}
-          </p>
-        ) : suggestions?.length ? (
-          <p className="text-2xs text-gray-400 mt-1 truncate">{slotSummary('suggestions', suggestions)}</p>
-        ) : null}
+        <StageGeneratorTool gameId={playing ? currentGame.id : ''} />
       </RunnerCell>
     ),
     timer: (
@@ -236,11 +197,10 @@ export default function StageShowRunner() {
   };
 
   return (
-    <section className="mb-3">
-      <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold mb-2">Show</p>
+    <StageFold id="show" title="Show" boxed summary={visible.length ? `${visible.length} tools` : 'No tools'}>
       <div className={`grid gap-2 ${visible.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
         {visible.map((id) => cells[id]).filter(Boolean)}
       </div>
-    </section>
+    </StageFold>
   );
 }
