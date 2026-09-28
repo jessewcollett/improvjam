@@ -1,7 +1,8 @@
 import { Tv } from 'lucide-react';
-import { StageHeaderControl, StageRemoteBody } from './StageControls.jsx';
+import { StageHeaderControl, StageRemoteBody, StageBoardChromeBar } from './StageControls.jsx';
 import StageLayoutEditor from './StageLayoutEditor.jsx';
 import StageShowRunner from './StageShowRunner.jsx';
+import StageSetRunner from './StageSetRunner.jsx';
 import { useAppStore } from '../store/useAppStore.js';
 
 export default function StageManagerView() {
@@ -20,8 +21,11 @@ export default function StageManagerView() {
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide px-4 md:px-6 pt-3 pb-nav">
         <StageRemoteBody
+          showFirst
           extra={(
             <>
+              <StageSetRunner />
+              <StageBoardChromeBar />
               <StageLayoutEditor />
               <StageShowRunner />
             </>

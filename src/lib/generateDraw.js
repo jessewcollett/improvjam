@@ -176,10 +176,23 @@ export function generateSkillResultsFromStore(state) {
 }
 
 /** Draw suggestions from persisted Generator banks/counts + session ideas. Independent of GeneratorView kit state. */
-export function generateSuggestionsFromStore(state) {
+let lastDrawCache = { nonce: 0, kit: null, skills: null };
+
+export function drawGeneratorSnapshot(state, nonce = 0) {
   const kit = generateKitFromStore(state);
-  const skillResults = generateSkillResultsFromStore(state);
-  return suggestionsFromGenerator(kit, skillResults);
+  const skills = generateSkillResultsFromStore(state);
+  lastDrawCache = { nonce: Number(nonce) || 0, kit, skills };
+  return { kit, skills, items: suggestionsFromGenerator(kit, skills) };
+}
+
+export function peekGeneratorSnapshot(nonce) {
+  const n = Number(nonce) || 0;
+  if (!n || lastDrawCache.nonce !== n) return null;
+  return lastDrawCache;
+}
+
+export function generateSuggestionsFromStore(state) {
+  return drawGeneratorSnapshot(state, state?.generatorDrawNonce || 0).items;
 }
 
 export function hasGeneratorSelection(state) {

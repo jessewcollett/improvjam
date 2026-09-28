@@ -1,3 +1,5 @@
+import { normalizeStageMessage, stageMessageText } from './stageMessage.js';
+
 export const STAGE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 export const STAGE_SLOT_IDS = ['suggestions', 'games', 'timer', 'hat', 'coin', 'whosup', 'set', 'display', 'message'];
 export const STAGE_CODE_RE = new RegExp(`^[${STAGE_ALPHABET}]{4,5}$`);
@@ -58,7 +60,7 @@ export function normalizeStageSlots(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
   const out = {};
   STAGE_SLOT_IDS.forEach((id) => {
-    if (raw[id] != null) out[id] = raw[id];
+    if (raw[id] != null) out[id] = id === 'message' ? normalizeStageMessage(raw[id]) : raw[id];
   });
   return out;
 }
@@ -77,7 +79,7 @@ function slotHasContent(id, value) {
     return Boolean(String(value?.url || value?.code || '').trim());
   }
   if (id === 'message') {
-    return Boolean(String(typeof value === 'string' ? value : value?.text || '').trim());
+    return Boolean(stageMessageText(value));
   }
   if (Array.isArray(value)) return value.length > 0;
   if (typeof value === 'string') return Boolean(value.trim());
@@ -666,10 +668,7 @@ export function parseSessionBankId(id) {
   return raw.slice(SESSION_BANK_PREFIX.length).trim();
 }
 
-export function stageMessageText(value) {
-  if (typeof value === 'string') return value.trim();
-  return String(value?.text || '').trim();
-}
+export { stageMessageText } from './stageMessage.js';
 
 export function normalizeStageMessages(raw, fallback = DEFAULT_STAGE_MESSAGES) {
   const source = Array.isArray(raw) ? raw : fallback;

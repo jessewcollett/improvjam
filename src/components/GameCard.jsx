@@ -19,6 +19,7 @@ import { ItemSource } from './SourceCitation.jsx';
 import { trustedSourceUrl } from '../lib/sheets.js';
 import { findStageGameIndex, gameIsOnStage, gamesFromCatalog } from '../lib/stage.js';
 import StagePin, { GamePartToggles } from './StagePin.jsx';
+import GameGeneratorLink from './GameGeneratorLink.jsx';
 
 function iconClass(active, on) {
   return `flex items-center justify-center w-9 h-9 rounded-lg shrink-0 ${
@@ -207,6 +208,7 @@ export default function GameCard({ game, onCategoryClick }) {
                   />
                 ) : null}
               </div>
+              {game.id ? <GameGeneratorLink gameId={game.id} /> : null}
               <CatalogImage src={game.imageSrc || game.image} alt={game.name} />
               {lifeSkills.length > 0 && (
                 <div className="mb-2 flex flex-wrap gap-1 items-center">

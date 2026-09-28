@@ -22,6 +22,7 @@ import {
   stageTypeScale,
   suggestionLine,
 } from '../lib/stage.js';
+import { messageUsesBodyType, sanitizeStageMessageHtml, stageMessageHtml } from '../lib/stageMessage.js';
 import StageQrCode from './StageQrCode.jsx';
 
 const StageTileContext = createContext({ landscape: false, align: 'center', showCaptions: true });
@@ -444,11 +445,24 @@ export function StageSlotTile({ id, value, count, boardStyle }) {
 
   if (id === 'message') {
     const text = stageMessageText(value);
-    if (!text) return null;
+    const html = sanitizeStageMessageHtml(stageMessageHtml(value), text);
+    if (!text && !html) return null;
+    const long = messageUsesBodyType(value);
     return (
       <TileShell kicker="Message" kickerClass="text-lime-300" scale={scale}>
         <InnerCard cards={cards}>
-          <p className={`font-black font-display ${scale.title}`}>{text}</p>
+          {html ? (
+            <div
+              className={`stage-message max-h-full overflow-y-auto ${
+                long ? `font-semibold ${scale.body}` : `font-black font-display ${scale.title}`
+              }`}
+              dangerouslySetInnerHTML={{ __html: html }}
+            />
+          ) : (
+            <p className={`${long ? `font-bold whitespace-pre-wrap ${scale.body}` : `font-black font-display ${scale.title}`}`}>
+              {text}
+            </p>
+          )}
         </InnerCard>
       </TileShell>
     );

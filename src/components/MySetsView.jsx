@@ -13,6 +13,7 @@ import {
   Share2,
   Check,
   X,
+  Play,
 } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
 import { useAppStore, gamesInIds } from '../store/useAppStore.js';
@@ -67,6 +68,7 @@ export default function MySetsView() {
   const stageSlots = useAppStore((s) => s.stageSlots);
   const setStageSlot = useAppStore((s) => s.setStageSlot);
   const toggleStagePin = useAppStore((s) => s.toggleStagePin);
+  const startStagePlay = useAppStore((s) => s.startStagePlay);
   const setPinned = stagePins.includes('set');
   const pinnedSetId = stageSlots.set?.id;
 
@@ -472,6 +474,16 @@ export default function MySetsView() {
                   }`}
                 >
                   {editing ? 'Done' : 'Edit'}
+                </button>
+              ) : null}
+              {activeTab === 'custom' && activeCustomSet?.games.length ? (
+                <button
+                  type="button"
+                  onClick={() => startStagePlay(activeCustomSet.id)}
+                  className="min-h-10 px-3 rounded-lg border border-lime-700 bg-lime-700 text-white text-xs font-bold inline-flex items-center gap-1"
+                >
+                  <Play className="w-3.5 h-3.5" />
+                  Play
                 </button>
               ) : null}
               {activeTab === 'custom' && activeCustomSet?.games.length ? (

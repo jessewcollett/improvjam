@@ -126,6 +126,54 @@ input[type='search']::-webkit-search-decoration {
   display: block;
 }
 
+.stage-message {
+  width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.stage-message p {
+  margin: 0.2em 0;
+}
+
+.stage-message p:first-child {
+  margin-top: 0;
+}
+
+.stage-message p:last-child {
+  margin-bottom: 0;
+}
+
+.stage-message ul,
+.stage-message ol {
+  margin: 0.25em 0;
+  padding-inline-start: 1.2em;
+  text-align: left;
+  list-style-position: outside;
+}
+
+.stage-message ul {
+  list-style-type: disc;
+}
+
+.stage-message ol {
+  list-style-type: decimal;
+}
+
+.stage-message li {
+  margin: 0.12em 0;
+}
+
+.stage-message strong,
+.stage-message b {
+  font-weight: 800;
+}
+
+.stage-message em,
+.stage-message i {
+  font-style: italic;
+}
+
 .stage-type-kicker {
   text-transform: uppercase;
   font-weight: 700;

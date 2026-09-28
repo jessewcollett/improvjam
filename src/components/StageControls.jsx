@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check, ChevronDown, ChevronUp, Copy, EyeOff, QrCode, RefreshCw, Star, Type, Tv, X } from 'lucide-react';
 import { ASK_FOR_CATEGORIES } from '../lib/generator.js';
 import {
@@ -10,6 +10,7 @@ import {
   normalizeStageBoardStyle,
   normalizeStageCode,
   normalizeStageLayout,
+  normalizeStageIdeasMap,
   sanitizeStageCodeInput,
   slotSummary,
   suggestionLine,
@@ -23,6 +24,11 @@ import { STAGE_MANAGER_ID } from '../lib/nav.js';
 import { LiveStageTime } from './StageBoardContent.jsx';
 import { GamePartToggles } from './StagePin.jsx';
 import IdeaQueue from './IdeaQueue.jsx';
+import {
+  MESSAGE_MAX,
+  messageFromClipboard,
+  stageMessageText,
+} from '../lib/stageMessage.js';
 
 function useCopiedFlag() {
   const [copied, setCopied] = useState(false);
@@ -136,7 +142,7 @@ function StageItemRows({ slots, onClearSlot, onClearItem, onMove, onToggleGamePa
 
 export function SegmentPills({ label, value, onChange, options, className = '' }) {
   return (
-    <div className={`flex flex-wrap items-center gap-2 ${className}`}>
+    <div className={`flex items-center gap-1.5 shrink-0 ${className}`}>
       {label ? (
         <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold min-w-0 truncate">{label}</p>
       ) : null}
@@ -149,7 +155,7 @@ export function SegmentPills({ label, value, onChange, options, className = '' }
               type="button"
               aria-pressed={on}
               onClick={() => onChange(opt.id)}
-              className={`px-3 min-h-8 text-xs font-bold rounded-full inline-flex items-center gap-1 ${
+              className={`px-2.5 min-h-9 text-xs font-bold rounded-full inline-flex items-center gap-1 ${
                 on ? (opt.activeClass || 'bg-lime-700 text-white') : 'text-gray-400'
               }`}
               aria-label={opt.ariaLabel || opt.label}
@@ -164,108 +170,14 @@ export function SegmentPills({ label, value, onChange, options, className = '' }
   );
 }
 
-function StageOnToggle() {
+function StageSessionBar() {
   const on = useAppStore((s) => s.settings.stageOn);
-  const setStageOn = useAppStore((s) => s.setStageOn);
-  return (
-    <div className="mb-3">
-      <SegmentPills
-        label="Stage"
-        value={on}
-        onChange={setStageOn}
-        options={[
-          { id: false, label: 'Off', activeClass: 'bg-gray-700 text-white' },
-          { id: true, label: 'On' },
-        ]}
-      />
-      <p className="text-xs text-gray-500 mt-2">
-        {on
-          ? 'This phone is publishing to the TV board.'
-          : 'Stage stays off until you turn it on. Pins stay on the phone only.'}
-      </p>
-    </div>
-  );
-}
-
-function StageBoardStylePicker({ value, onChange }) {
-  const current = normalizeStageBoardStyle(value);
-  return (
-    <div className="mb-3">
-      <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold mb-2">Board style</p>
-      <div className="flex flex-wrap gap-1.5">
-        {[['cards', 'Cards'], ['compact', 'Compact']].map(([id, label]) => {
-          const active = current === id;
-          return (
-            <button
-              key={id}
-              type="button"
-              aria-pressed={active}
-              onClick={() => onChange(id)}
-              className={`min-h-10 px-2.5 rounded-lg text-xs font-bold border ${
-                active ? 'bg-lime-700 text-white border-lime-500' : 'bg-[#1A1A1A] text-gray-200 border-gray-800'
-              }`}
-            >
-              {label}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function StageLayoutPicker({ count, value, onChange }) {
-  const options = layoutsForCount(count);
-  if (!count || !options.length) return null;
-  const current = normalizeStageLayout(value);
-  const matching = options.some((layout) => layout.id === current);
-  const chip = (id, label, title) => {
-    const active = id ? current === id : !matching;
-    return (
-      <button
-        key={id || 'auto'}
-        type="button"
-        title={title || label}
-        aria-pressed={active}
-        onClick={() => onChange(id)}
-        className={`min-h-10 px-2.5 rounded-lg text-xs font-bold border ${
-          active ? 'bg-lime-700 text-white border-lime-500' : 'bg-[#1A1A1A] text-gray-200 border-gray-800'
-        }`}
-      >
-        {label}
-      </button>
-    );
-  };
-  return (
-    <div className="mb-3">
-      <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold mb-2">Layout</p>
-      <div className="flex flex-wrap gap-1.5">
-        {chip('', 'Auto', 'Even pack')}
-        {options.map((layout) => chip(layout.id, layout.short, layout.name))}
-      </div>
-    </div>
-  );
-}
-
-function StageCodeVisibilityToggle() {
+  const code = useAppStore((s) => s.settings.stageCode);
   const hideCode = useAppStore((s) => s.stageHideCode);
-  const setStageHideCode = useAppStore((s) => s.setStageHideCode);
-  return (
-    <SegmentPills
-      className="mt-2 mb-2"
-      value={hideCode}
-      onChange={setStageHideCode}
-      options={[
-        { id: false, label: 'Show', ariaLabel: 'Show code', activeClass: 'bg-gray-700 text-white' },
-        { id: true, label: 'Hide', ariaLabel: 'Hide code', icon: <EyeOff className="w-3.5 h-3.5" /> },
-      ]}
-    />
-  );
-}
-
-function StageCodeField({ code, compact }) {
+  const setStageOn = useAppStore((s) => s.setStageOn);
   const setStageCode = useAppStore((s) => s.setStageCode);
   const mintNewStageCode = useAppStore((s) => s.mintNewStageCode);
+  const setStageHideCode = useAppStore((s) => s.setStageHideCode);
   const [draft, setDraft] = useState(code || '');
 
   useEffect(() => {
@@ -283,44 +195,134 @@ function StageCodeField({ code, compact }) {
   };
 
   return (
-    <div className={compact ? '' : 'mb-3'}>
-      <div className={`flex items-center gap-2 ${compact ? '' : 'mb-2'}`}>
-        <input
-          value={draft}
-          onChange={(e) => setDraft(sanitizeStageCodeInput(e.target.value))}
-          onBlur={commit}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              commit();
-            }
-          }}
-          autoCapitalize="characters"
-          autoCorrect="off"
-          spellCheck={false}
-          maxLength={5}
-          aria-label="Session code"
-          className={`min-w-0 rounded-xl bg-[#1A1A1A] border border-gray-700 px-3 font-black font-display tracking-[0.2em] text-white focus:outline-none focus:border-lime-600 ${
-            compact
-              ? 'flex-1 min-h-11 text-lg'
-              : 'w-40 min-h-14 text-3xl'
-          }`}
-        />
-        <button
-          type="button"
-          onClick={() => mintNewStageCode()}
-          className="min-h-11 px-3 rounded-xl bg-gray-800 border border-gray-700 text-sm font-bold text-gray-100 inline-flex items-center gap-2 shrink-0"
-        >
-          <RefreshCw className="w-3.5 h-3.5" />
-          New
-        </button>
+    <div className="mb-3 flex items-center gap-1.5 min-w-0">
+      <SegmentPills
+        value={on}
+        onChange={setStageOn}
+        options={[
+          { id: false, label: 'Off', activeClass: 'bg-gray-700 text-white' },
+          { id: true, label: 'On' },
+        ]}
+      />
+      {on && code ? (
+        <div className="ml-auto flex items-center gap-1.5 min-w-0 shrink-0">
+          <input
+            value={draft}
+            onChange={(e) => setDraft(sanitizeStageCodeInput(e.target.value))}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                commit();
+              }
+            }}
+            autoCapitalize="characters"
+            autoCorrect="off"
+            spellCheck={false}
+            maxLength={5}
+            aria-label="Session code"
+            className="w-[4.75rem] min-h-9 rounded-lg bg-[#1A1A1A] border border-gray-700 px-2 text-sm font-black font-display tracking-[0.18em] text-white text-center focus:outline-none focus:border-lime-600 shrink-0"
+          />
+          <button
+            type="button"
+            onClick={() => mintNewStageCode()}
+            className="min-h-9 px-2 rounded-lg bg-gray-800 border border-gray-700 text-xs font-bold text-gray-100 inline-flex items-center gap-1 shrink-0"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            New
+          </button>
+          <SegmentPills
+            value={hideCode}
+            onChange={setStageHideCode}
+            options={[
+              { id: false, label: 'Show', ariaLabel: 'Show code', activeClass: 'bg-gray-700 text-white' },
+              { id: true, label: 'Hide', ariaLabel: 'Hide code', icon: <EyeOff className="w-3.5 h-3.5" /> },
+            ]}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function PressChip({ on, onClick, label, activeClass, badge, ariaLabel }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      onClick={onClick}
+      aria-label={ariaLabel || label}
+      className={`min-h-11 px-3 rounded-full text-xs font-bold border inline-flex items-center gap-1 ${
+        on
+          ? (activeClass || 'bg-lime-700 text-white border-lime-500')
+          : 'bg-[#1A1A1A] text-gray-300 border-gray-800'
+      }`}
+    >
+      {label}
+      {badge ? <span className="tabular-nums opacity-90">({badge})</span> : null}
+    </button>
+  );
+}
+
+function audienceStatus(open, use, hold) {
+  const parts = [];
+  if (open) parts.push('Collect');
+  if (use) parts.push('Use');
+  if (hold) parts.push('Hold');
+  return parts.length ? parts.join(' · ') : 'Off';
+}
+
+function pendingIdeaCount(map) {
+  return Object.values(map || {}).reduce((n, rows) => n + (Array.isArray(rows) ? rows.length : 0), 0);
+}
+
+function StageBoardChrome({ boardStyle, onBoardStyle, count, layout, onLayout }) {
+  const currentStyle = normalizeStageBoardStyle(boardStyle);
+  const options = layoutsForCount(count);
+  const currentLayout = normalizeStageLayout(layout);
+  const matching = options.some((item) => item.id === currentLayout);
+  const chip = (id, label, title, active) => (
+    <button
+      key={id || 'auto'}
+      type="button"
+      title={title || label}
+      aria-pressed={active}
+      onClick={() => onLayout(id)}
+      className={`min-h-11 px-2.5 rounded-full text-xs font-bold border ${
+        active ? 'bg-lime-700 text-white border-lime-500' : 'bg-[#1A1A1A] text-gray-200 border-gray-800'
+      }`}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <div className="mb-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold">Board</p>
+        {[['cards', 'Cards'], ['compact', 'Compact']].map(([id, label]) => {
+          const active = currentStyle === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              aria-pressed={active}
+              onClick={() => onBoardStyle(id)}
+              className={`min-h-11 px-2.5 rounded-full text-xs font-bold border ${
+                active ? 'bg-lime-700 text-white border-lime-500' : 'bg-[#1A1A1A] text-gray-200 border-gray-800'
+              }`}
+            >
+              {label}
+            </button>
+          );
+        })}
+        {count && options.length ? (
+          <>
+            <span className="w-px h-4 bg-gray-800" aria-hidden />
+            {chip('', 'Auto', 'Even pack', !matching)}
+            {options.map((item) => chip(item.id, item.short, item.name, matching && currentLayout === item.id))}
+          </>
+        ) : null}
       </div>
-      <StageCodeVisibilityToggle />
-      {compact ? null : (
-        <p className="text-xs text-gray-500">
-          4–5 characters (no 0, O, 1, or I). A shared code is a shared board — last write wins.
-        </p>
-      )}
     </div>
   );
 }
@@ -331,6 +333,7 @@ function StageAudiencePanel() {
   const ideasUse = useAppStore((s) => s.stageIdeasUse);
   const ideasHold = useAppStore((s) => s.stageIdeasHold);
   const ideaCats = useAppStore((s) => s.stageIdeaCats);
+  const pendingCount = pendingIdeaCount(normalizeStageIdeasMap(useAppStore((s) => s.stageIdeasPending)));
   const displayPinned = useAppStore((s) => s.stagePins.includes('display'));
   const setStageIdeasOpen = useAppStore((s) => s.setStageIdeasOpen);
   const setStageIdeasUse = useAppStore((s) => s.setStageIdeasUse);
@@ -343,6 +346,8 @@ function StageAudiencePanel() {
   const [catsOpen, setCatsOpen] = useState(false);
   const url = code ? stageIdeasUrl(code) : '';
   const showCats = ideasOpen || ideasUse;
+  const showDetails = showCats;
+  const showQueue = showCats || pendingCount > 0;
   const selectedCats = ASK_FOR_CATEGORIES.filter((cat) => ideaCats.includes(cat.id));
   const catSummary = selectedCats.length
     ? selectedCats.map((cat) => cat.label).join(', ')
@@ -362,88 +367,71 @@ function StageAudiencePanel() {
 
   return (
     <div className="mb-3">
-      <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold mb-2">Audience ideas</p>
-      <SegmentPills
-        className="mb-2"
-        label="Receive"
-        value={ideasOpen}
-        onChange={setStageIdeasOpen}
-        options={[
-          { id: false, label: 'Off', activeClass: 'bg-gray-700 text-white' },
-          { id: true, label: 'On' },
-        ]}
-      />
-      <SegmentPills
-        className="mb-2"
-        label="Use session pool"
-        value={ideasUse}
-        onChange={setStageIdeasUse}
-        options={[
-          { id: false, label: 'Off', activeClass: 'bg-gray-700 text-white' },
-          { id: true, label: 'On' },
-        ]}
-      />
-      <SegmentPills
-        className="mb-2"
-        label="Approve before Stage"
-        value={ideasHold}
-        onChange={setStageIdeasHold}
-        options={[
-          { id: false, label: 'Off', activeClass: 'bg-gray-700 text-white' },
-          { id: true, label: 'On', activeClass: 'bg-amber-700 text-white' },
-        ]}
-      />
-      <p className="text-xs text-gray-500 mb-2">
-        {ideasOpen && ideasUse
-          ? ideasHold
-            ? 'Audience can submit. Approve a line before it hits Generate or the board.'
-            : 'Audience can submit. Generate has a This session section for received ideas.'
-          : ideasOpen
-            ? ideasHold
-              ? 'Audience can submit to a pending queue. Turn on Use session pool after you approve.'
-              : 'Audience can submit. Turn on Use session pool to generate from what they send.'
-            : ideasUse
-              ? 'Generate can draw from this session. /ideas is closed until Receive is on.'
-              : 'Off until you want the room to submit or draw from this session.'}
-      </p>
-      <div className="flex flex-wrap gap-2 mb-2">
-        <button
-          type="button"
-          onClick={() => toggleStageDisplay()}
-          aria-pressed={displayPinned}
-          className={`min-h-11 px-3 rounded-xl border text-sm font-bold inline-flex items-center gap-2 ${
-            displayPinned
-              ? 'bg-lime-700 text-white border-lime-500'
-              : 'bg-gray-800 text-gray-100 border-gray-700'
-          }`}
-        >
-          <QrCode className="w-3.5 h-3.5" />
-          {displayPinned ? 'On board' : 'Show on board'}
-        </button>
-        <button
-          type="button"
-          onClick={onCopy}
-          disabled={!url}
-          className="min-h-11 px-3 rounded-xl bg-gray-800 border border-gray-700 text-sm font-bold text-gray-100 inline-flex items-center gap-2 disabled:text-gray-600"
-        >
-          {copied ? <Check className="w-3.5 h-3.5 text-lime-400" /> : <Copy className="w-3.5 h-3.5" />}
-          {copied ? 'Copied' : 'Copy link'}
-        </button>
+      <div className="flex flex-wrap items-center gap-2 mb-1">
+        <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold">Audience</p>
+        <PressChip
+          on={ideasOpen}
+          onClick={() => setStageIdeasOpen(!ideasOpen)}
+          label="Collect"
+        />
+        <PressChip
+          on={ideasUse}
+          onClick={() => setStageIdeasUse(!ideasUse)}
+          label="Use"
+          ariaLabel="Use session pool"
+        />
+        <PressChip
+          on={ideasHold}
+          onClick={() => setStageIdeasHold(!ideasHold)}
+          label="Approve"
+          ariaLabel="Approve before Stage"
+          activeClass="bg-amber-700 text-white border-amber-500"
+          badge={pendingCount || null}
+        />
+        <span className="text-xs text-gray-500">{audienceStatus(ideasOpen, ideasUse, ideasHold)}</span>
       </div>
-      {showCats ? (
-        <button
-          type="button"
-          onClick={() => setCatsOpen(true)}
-          className="w-full min-h-11 px-3 rounded-xl border border-gray-800 bg-[#1A1A1A] flex items-center justify-between gap-2"
-        >
-          <span className="min-w-0 text-left">
-            <span className="block text-2xs uppercase tracking-wider text-gray-500 font-bold">Categories</span>
-            <span className="block text-sm font-bold text-gray-100 truncate">{catSummary}</span>
-          </span>
-          <span className="text-xs font-bold text-lime-400 shrink-0">
-            {selectedCats.length ? 'Edit' : 'Choose'}
-          </span>
-        </button>
+      {showDetails ? (
+        <>
+          <div className="flex flex-wrap gap-2 mb-2">
+            <button
+              type="button"
+              onClick={() => toggleStageDisplay()}
+              aria-pressed={displayPinned}
+              className={`min-h-11 px-3 rounded-xl border text-sm font-bold inline-flex items-center gap-2 ${
+                displayPinned
+                  ? 'bg-lime-700 text-white border-lime-500'
+                  : 'bg-gray-800 text-gray-100 border-gray-700'
+              }`}
+            >
+              <QrCode className="w-3.5 h-3.5" />
+              {displayPinned ? 'On board' : 'Show on board'}
+            </button>
+            <button
+              type="button"
+              onClick={onCopy}
+              disabled={!url}
+              className="min-h-11 px-3 rounded-xl bg-gray-800 border border-gray-700 text-sm font-bold text-gray-100 inline-flex items-center gap-2 disabled:text-gray-600"
+            >
+              {copied ? <Check className="w-3.5 h-3.5 text-lime-400" /> : <Copy className="w-3.5 h-3.5" />}
+              {copied ? 'Copied' : 'Copy link'}
+            </button>
+          </div>
+          {showCats ? (
+            <button
+              type="button"
+              onClick={() => setCatsOpen(true)}
+              className="w-full min-h-11 px-3 rounded-xl border border-gray-800 bg-[#1A1A1A] flex items-center justify-between gap-2"
+            >
+              <span className="min-w-0 text-left">
+                <span className="block text-2xs uppercase tracking-wider text-gray-500 font-bold">Categories</span>
+                <span className="block text-sm font-bold text-gray-100 truncate">{catSummary}</span>
+              </span>
+              <span className="text-xs font-bold text-lime-400 shrink-0">
+                {selectedCats.length ? 'Edit' : 'Choose'}
+              </span>
+            </button>
+          ) : null}
+        </>
       ) : null}
       {catsOpen ? (
         <div className="fixed inset-0 z-[80] flex flex-col justify-end">
@@ -485,7 +473,7 @@ function StageAudiencePanel() {
                     type="button"
                     aria-pressed={active}
                     onClick={() => toggleStageIdeaCat(cat.id)}
-                    className={`min-h-8 px-2.5 rounded-full text-xs font-bold border ${
+                    className={`min-h-11 px-2.5 rounded-full text-xs font-bold border ${
                       active ? 'bg-lime-700 text-white border-lime-500' : 'bg-[#1A1A1A] text-gray-200 border-gray-800'
                     }`}
                   >
@@ -504,7 +492,7 @@ function StageAudiencePanel() {
           </div>
         </div>
       ) : null}
-      {(ideasOpen || ideasUse) ? (
+      {showQueue ? (
         <div className="mt-3">
           <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold mb-2">Queue</p>
           <IdeaQueue />
@@ -515,30 +503,54 @@ function StageAudiencePanel() {
 }
 
 function StageMessagePanel() {
-  const text = useAppStore((s) => String(s.stageSlots.message || ''));
+  const message = useAppStore((s) => s.stageSlots.message);
+  const text = stageMessageText(message);
   const pinned = useAppStore((s) => s.stagePins.includes('message'));
   const extras = useAppStore((s) => s.stageMessageFavorites) || [];
   const setStageMessage = useAppStore((s) => s.setStageMessage);
   const toggleStageMessage = useAppStore((s) => s.toggleStageMessage);
   const addStageMessageFavorite = useAppStore((s) => s.addStageMessageFavorite);
   const removeStageMessageFavorite = useAppStore((s) => s.removeStageMessageFavorite);
+  const pasteLock = useRef(false);
   const extraSet = new Set(extras.map((item) => item.toLowerCase()));
   const defaultSet = new Set(DEFAULT_STAGE_MESSAGES.map((item) => item.toLowerCase()));
   const saved = extras.filter((item) => !defaultSet.has(item.toLowerCase()));
   const trimmed = text.trim();
-  const canFavorite = Boolean(trimmed) && !defaultSet.has(trimmed.toLowerCase()) && !extraSet.has(trimmed.toLowerCase());
+  const canFavorite = Boolean(trimmed)
+    && trimmed.length <= 80
+    && !trimmed.includes('\n')
+    && !defaultSet.has(trimmed.toLowerCase())
+    && !extraSet.has(trimmed.toLowerCase());
+
+  const onPaste = (event) => {
+    const pastedHtml = event.clipboardData?.getData('text/html') || '';
+    const plain = event.clipboardData?.getData('text/plain') || '';
+    if (!pastedHtml && !plain) return;
+    event.preventDefault();
+    pasteLock.current = true;
+    const next = messageFromClipboard(pastedHtml, plain);
+    if (next) setStageMessage(next);
+    window.setTimeout(() => {
+      pasteLock.current = false;
+    }, 200);
+  };
 
   return (
     <div className="mb-3">
       <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold mb-2">Board message</p>
       <textarea
         value={text}
-        onChange={(event) => setStageMessage(event.target.value)}
-        rows={2}
-        maxLength={160}
-        placeholder="Welcome, Thank you, Next game…"
-        className="w-full rounded-xl bg-[#1A1A1A] border border-gray-800 px-3 py-2.5 text-sm font-bold text-white placeholder:text-gray-600 mb-2"
+        onChange={(event) => {
+          if (pasteLock.current) return;
+          setStageMessage(event.target.value);
+        }}
+        onPaste={onPaste}
+        rows={6}
+        maxLength={MESSAGE_MAX}
+        placeholder="Welcome, class norms, questions… Paste bullets from Docs."
+        className="w-full rounded-xl bg-[#1A1A1A] border border-gray-800 px-3 py-2.5 text-sm font-bold text-white placeholder:text-gray-600 mb-1 min-h-[8.5rem]"
       />
+      <p className="text-2xs text-gray-500 mb-2 tabular-nums">{trimmed.length} / {MESSAGE_MAX}</p>
       <div className="flex flex-wrap gap-1.5 mb-2">
         {DEFAULT_STAGE_MESSAGES.map((item) => (
           <button
@@ -636,7 +648,20 @@ function useStagePreview() {
   };
 }
 
-export function StageRemoteBody({ footer = null, extra = null, showPinList = true }) {
+export function StageBoardChromeBar() {
+  const { listed, layout, boardStyle, setStageLayout, setStageBoardStyle } = useStagePreview();
+  return (
+    <StageBoardChrome
+      boardStyle={boardStyle}
+      onBoardStyle={setStageBoardStyle}
+      count={listed.length}
+      layout={layout}
+      onLayout={setStageLayout}
+    />
+  );
+}
+
+export function StageRemoteBody({ footer = null, extra = null, showPinList = true, showFirst = false }) {
   const {
     listed,
     layout,
@@ -650,38 +675,60 @@ export function StageRemoteBody({ footer = null, extra = null, showPinList = tru
     pinCount,
   } = useStagePreview();
   const clearStagePins = useAppStore((s) => s.clearStagePins);
-  const stageOn = useAppStore((s) => s.settings.stageOn);
-  const code = useAppStore((s) => s.settings.stageCode);
+  const chrome = (
+    <StageBoardChrome
+      boardStyle={boardStyle}
+      onBoardStyle={setStageBoardStyle}
+      count={listed.length}
+      layout={layout}
+      onLayout={setStageLayout}
+    />
+  );
+  const pins = showPinList ? (
+    <StageItemRows
+      slots={listed}
+      onClearSlot={unpinStageSlot}
+      onClearItem={removeStageSlotItem}
+      onMove={moveStagePin}
+      onToggleGamePart={toggleStageGamePart}
+    />
+  ) : null;
+  const clear = (
+    <div className="flex flex-wrap gap-2 pt-2">
+      {footer}
+      <button
+        type="button"
+        onClick={() => clearStagePins()}
+        disabled={!pinCount}
+        className="min-h-11 px-3 rounded-xl bg-gray-800 border border-gray-700 text-sm font-bold text-gray-100 disabled:text-gray-600"
+      >
+        Clear all
+      </button>
+    </div>
+  );
+
+  if (showFirst) {
+    return (
+      <>
+        <StageSessionBar />
+        {extra}
+        <StageAudiencePanel />
+        <StageMessagePanel />
+        {pins}
+        {clear}
+      </>
+    );
+  }
 
   return (
     <>
-      <StageOnToggle />
-      {stageOn && code ? <StageCodeField code={code} compact /> : null}
+      <StageSessionBar />
       <StageAudiencePanel />
       <StageMessagePanel />
-      <StageBoardStylePicker value={boardStyle} onChange={setStageBoardStyle} />
-      <StageLayoutPicker count={listed.length} value={layout} onChange={setStageLayout} />
+      {chrome}
       {extra}
-      {showPinList ? (
-        <StageItemRows
-          slots={listed}
-          onClearSlot={unpinStageSlot}
-          onClearItem={removeStageSlotItem}
-          onMove={moveStagePin}
-          onToggleGamePart={toggleStageGamePart}
-        />
-      ) : null}
-      <div className="flex flex-wrap gap-2 pt-2">
-        {footer}
-        <button
-          type="button"
-          onClick={() => clearStagePins()}
-          disabled={!pinCount}
-          className="min-h-11 px-3 rounded-xl bg-gray-800 border border-gray-700 text-sm font-bold text-gray-100 disabled:text-gray-600"
-        >
-          Clear all
-        </button>
-      </div>
+      {pins}
+      {clear}
     </>
   );
 }

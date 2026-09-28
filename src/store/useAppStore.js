@@ -27,6 +27,7 @@ import {
   dockStageTile,
   fetchStage,
   framesCoverSlots,
+  gamesFromCatalog,
   isStageSlotId,
   listedStageSlots,
   mintStageCode,
@@ -58,6 +59,13 @@ import {
 } from '../lib/stage.js';
 import { ideaIsNsfw } from '../lib/ideaFlag.js';
 import { generateSuggestionsFromStore } from '../lib/generateDraw.js';
+import {
+  applyGameGeneratorLink,
+  normalizeGameGeneratorLink,
+  normalizeGameGeneratorLinks,
+} from '../lib/gameGenerator.js';
+import { normalizeStageMessage, stageMessageText } from '../lib/stageMessage.js';
+import { normalizeStagePlay, playGamesFromState } from '../lib/stagePlay.js';
 import { normalizeTheme } from '../lib/theme.js';
 
 const bundled = normalizePayload(fallback);
@@ -141,6 +149,7 @@ let stagePublishTimer = null;
 let stagePublishInflight = false;
 let stagePublishQueued = false;
 let stagePublishIdeas = false;
+let lastGenerateFromGameAt = 0;
 
 function displayInviteSlot(code) {
   const normalized = normalizeStageCode(code);
@@ -249,6 +258,8 @@ export const useAppStore = create(
       generatorBankFavorites: defaultGeneratorBankFavorites,
       generatorDrawCounts: emptyDrawCounts,
       generatorSessionBanks: [],
+      generatorDrawNonce: 0,
+      gameGeneratorLinks: {},
       lastSynced: null,
       syncError: null,
       isSyncing: false,
@@ -281,6 +292,7 @@ export const useAppStore = create(
       sharedSetNotice: '',
       stageMessageFavorites: [],
       stagePublishError: null,
+      stagePlay: null,
 
       updateSettings: (partial) => {
         set((state) => ({ settings: { ...state.settings, ...partial } }));
@@ -684,14 +696,14 @@ export const useAppStore = create(
       },
 
       setStageMessage: (raw) => {
-        const text = String(raw || '').slice(0, 160);
-        set((state) => ({ stageSlots: { ...state.stageSlots, message: text } }));
+        const next = normalizeStageMessage(raw);
+        set((state) => ({ stageSlots: { ...state.stageSlots, message: next } }));
         if (get().stagePins.includes('message')) publishStageNow();
       },
 
       toggleStageMessage: () => {
         set((state) => {
-          const text = String(state.stageSlots.message || '').trim();
+          const text = stageMessageText(state.stageSlots.message);
           const on = state.stagePins.includes('message');
           if (on) {
             const stagePins = state.stagePins.filter((item) => item !== 'message');
@@ -1041,6 +1053,93 @@ export const useAppStore = create(
         }));
       },
 
+      setGameGeneratorLink: (gameId, link) => {
+        const key = String(gameId || '').trim();
+        if (!key) return;
+        const normalized = normalizeGameGeneratorLink(link);
+        set((state) => {
+          const current = state.gameGeneratorLinks || {};
+          if (!normalized) {
+            if (!current[key]) return {};
+            const next = { ...current };
+            delete next[key];
+            return { gameGeneratorLinks: next };
+          }
+          return { gameGeneratorLinks: { ...current, [key]: normalized } };
+        });
+      },
+
+      generateFromGame: (gameId, options = {}) => {
+        const now = Date.now();
+        if (now - lastGenerateFromGameAt < 450) return false;
+        const applied = applyGameGeneratorLink(get(), gameId);
+        if (!applied) return false;
+        lastGenerateFromGameAt = now;
+        set((state) => ({
+          generatorBanks: applied.banks,
+          generatorSkills: applied.skills,
+          generatorDrawCounts: applied.drawCounts,
+          generatorDrawNonce: (state.generatorDrawNonce || 0) + 1,
+        }));
+        get().generateStageSuggestions();
+        const stay = options.stay === true || get().settings.lastRoute === STAGE_MANAGER_ID;
+        if (!stay) get().updateSettings({ lastRoute: 'generator' });
+        return true;
+      },
+
+      startStagePlay: (setId) => {
+        const key = String(setId || '').trim();
+        const state = get();
+        const match = (state.lists.customSets || []).find((item) => item.id === key);
+        const catalogGames = match ? gamesInIds(state.data.games, match.games) : [];
+        if (!match || !catalogGames.length) return false;
+        if (!state.settings.stageOn) get().setStageOn(true);
+        const first = catalogGames[0];
+        set((s) => {
+          const stagePins = [...new Set([...s.stagePins, 'set', 'games'])];
+          return {
+            stagePlay: { setId: match.id, index: 0 },
+            stageSlots: {
+              ...s.stageSlots,
+              set: { id: match.id, name: match.name, games: catalogGames.map((game) => game.name) },
+              games: gamesFromCatalog([first], s.stageSlots.games),
+            },
+            stagePins,
+            settings: { ...s.settings, lastRoute: STAGE_MANAGER_ID },
+            ...seedLayout({ ...s, stagePins }, { stagePins }),
+          };
+        });
+        publishStageNow();
+        return true;
+      },
+
+      cueStagePlayIndex: (index) => {
+        const resolved = playGamesFromState(get());
+        if (!resolved.set || !resolved.games.length) {
+          set({ stagePlay: null });
+          return false;
+        }
+        const nextIndex = Math.max(0, Math.min(resolved.games.length - 1, Math.round(Number(index) || 0)));
+        const game = resolved.games[nextIndex];
+        if (!game) return false;
+        set((s) => {
+          const stagePins = s.stagePins.includes('games') ? s.stagePins : [...s.stagePins, 'games'];
+          return {
+            stagePlay: { setId: resolved.set.id, index: nextIndex },
+            stageSlots: { ...s.stageSlots, games: gamesFromCatalog([game], s.stageSlots.games) },
+            stagePins,
+            ...seedLayout({ ...s, stagePins }, { stagePins }),
+          };
+        });
+        publishStageNow();
+        return true;
+      },
+
+      clearStagePlay: () => {
+        if (!get().stagePlay) return;
+        set({ stagePlay: null });
+      },
+
       toggleInList: (listName, id) => {
         set((state) => {
           const current = state.lists[listName] || [];
@@ -1083,6 +1182,7 @@ export const useAppStore = create(
             ...state.lists,
             customSets: state.lists.customSets.filter((s) => s.id !== setId),
           },
+          stagePlay: state.stagePlay?.setId === setId ? null : state.stagePlay,
         }));
       },
 
@@ -1254,6 +1354,7 @@ export const useAppStore = create(
         generatorBankFavorites: state.generatorBankFavorites,
         generatorDrawCounts: state.generatorDrawCounts,
         generatorSessionBanks: state.generatorSessionBanks,
+        gameGeneratorLinks: state.gameGeneratorLinks,
         lastSynced: state.lastSynced,
         dismissedTipDate: state.dismissedTipDate,
         sfxHidden: state.sfxHidden,
@@ -1281,6 +1382,7 @@ export const useAppStore = create(
         stageMessageFavorites: state.stageMessageFavorites,
         stageIdeas: state.stageIdeas,
         stageIdeasPending: state.stageIdeasPending,
+        stagePlay: state.stagePlay,
       }),
       merge: (persisted, current) => ({
         ...current,
@@ -1306,6 +1408,8 @@ export const useAppStore = create(
         generatorSessionBanks: normalizeIdeaCats(
           Array.isArray(persisted?.generatorSessionBanks) ? persisted.generatorSessionBanks : current.generatorSessionBanks,
         ),
+        generatorDrawNonce: 0,
+        gameGeneratorLinks: normalizeGameGeneratorLinks(persisted?.gameGeneratorLinks),
         sfxHidden: Array.isArray(persisted?.sfxHidden) ? persisted.sfxHidden : current.sfxHidden,
         sfxOrder: Array.isArray(persisted?.sfxOrder) ? persisted.sfxOrder : current.sfxOrder,
         sfxSlots: normalizeSfxSlots(persisted?.sfxSlots, persisted?.sfxOrder, persisted?.sfxHidden),
@@ -1339,6 +1443,7 @@ export const useAppStore = create(
         stageMessageFavorites: normalizeStageMessages(persisted?.stageMessageFavorites, []),
         stageIdeas: normalizeStageIdeasMap(persisted?.stageIdeas),
         stageIdeasPending: normalizeStageIdeasMap(persisted?.stageIdeasPending),
+        stagePlay: normalizeStagePlay(persisted?.stagePlay),
         stagePublishError: null,
       }),
     },

@@ -15,6 +15,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore } from '../store/useAppStore.js';
 import { ASK_FOR_CATEGORIES, askForCategoriesFromRows, rowCategories, rowExtra, skillItemsFromRows } from '../lib/generator.js';
+import { generateKitFromStore, generateSkillResultsFromStore, peekGeneratorSnapshot } from '../lib/generateDraw.js';
 import { sessionBankId, suggestionsFromGenerator, STAGE_IDEAS_POLL_MS, ideaText } from '../lib/stage.js';
 import ActionDock from './ActionDock.jsx';
 import CatalogIcon from './CatalogIcon.jsx';
@@ -101,47 +102,54 @@ function styleDescription(content) {
   return content.description || '';
 }
 
-function CheckRow({ checked, icon, label, count, onToggle }) {
+function byLabel(a, b) {
+  const labelA = String(a?.label || a?.id || '');
+  const labelB = String(b?.label || b?.id || '');
+  const keyA = labelA.replace(/^[^0-9A-Za-z]+/, '');
+  const keyB = labelB.replace(/^[^0-9A-Za-z]+/, '');
+  return keyA.localeCompare(keyB, undefined, { sensitivity: 'base' })
+    || labelA.localeCompare(labelB, undefined, { sensitivity: 'base' });
+}
+
+function BankChip({ icon, label, count, checked, favorited, onToggle, onFavorite }) {
   return (
-    <button
-      type="button"
-      role="checkbox"
-      aria-checked={checked}
-      onClick={onToggle}
-      className={`min-h-11 px-2 py-1.5 rounded-lg border flex items-center gap-1.5 min-w-0 flex-1 ${
+    <div
+      className={`inline-flex items-center rounded-full border shrink-0 ${
         checked ? 'bg-lime-600/15 text-white border-lime-600/50' : 'bg-[#1A1A1A] text-gray-200 border-gray-800'
       }`}
     >
-      <CatalogIcon name={icon} className={`w-3.5 h-3.5 shrink-0 ${checked ? 'text-lime-400' : 'text-gray-500'}`} fallback={Tag} />
-      <span className="flex-1 text-xs font-bold leading-tight text-left">{label}</span>
-      {count != null ? (
-        <span className={`text-2xs tabular-nums shrink-0 ${checked ? 'text-lime-300/80' : 'text-gray-500'}`}>{count}</span>
-      ) : null}
-    </button>
-  );
-}
-
-function BankRow({ cat, checked, favorited, showStats, onToggle, onFavorite }) {
-  return (
-    <div className="flex items-center gap-0.5 min-w-0">
-      <CheckRow
-        checked={checked}
-        icon={cat.icon}
-        label={cat.label}
-        count={showStats ? cat.count : undefined}
-        onToggle={onToggle}
-      />
       <button
         type="button"
-        onClick={onFavorite}
-        className={`flex items-center justify-center min-w-11 min-h-11 rounded-lg shrink-0 ${
-          favorited ? 'text-yellow-400' : 'text-gray-600'
-        }`}
-        aria-label={favorited ? `Unfavorite ${cat.label}` : `Favorite ${cat.label}`}
-        aria-pressed={favorited}
+        role="checkbox"
+        aria-checked={checked}
+        onClick={onToggle}
+        className="inline-flex items-center gap-1 min-h-9 pl-2.5 pr-1.5"
       >
-        <Star className="w-4 h-4" fill={favorited ? 'currentColor' : 'none'} />
+        <CatalogIcon name={icon} className={`w-3.5 h-3.5 shrink-0 ${checked ? 'text-lime-400' : 'text-gray-500'}`} fallback={Tag} />
+        <span className="text-xs font-bold leading-none whitespace-nowrap">{label}</span>
+        {count != null ? (
+          <span className={`text-2xs tabular-nums leading-none ${checked ? 'text-lime-300/80' : 'text-gray-500'}`}>{count}</span>
+        ) : null}
       </button>
+      {onFavorite ? (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onFavorite();
+          }}
+          className={`flex items-center justify-center min-w-8 min-h-9 pr-1.5 -ml-0.5 ${
+            favorited ? 'text-yellow-400' : 'text-gray-600'
+          }`}
+          aria-label={favorited ? `Unfavorite ${label}` : `Favorite ${label}`}
+          aria-pressed={favorited}
+        >
+          <Star className="w-3.5 h-3.5" fill={favorited ? 'currentColor' : 'none'} />
+        </button>
+      ) : (
+        <span className="pr-2" aria-hidden="true" />
+      )}
     </div>
   );
 }
@@ -172,6 +180,7 @@ export default function GeneratorView() {
   const ideasUse = useAppStore((s) => s.stageIdeasUse);
   const stageIdeas = useAppStore((s) => s.stageIdeas) || {};
   const pullStageIdeas = useAppStore((s) => s.pullStageIdeas);
+  const drawNonce = useAppStore((s) => s.generatorDrawNonce) || 0;
   const countFor = (id) => clampDrawCount(drawCounts[id] ?? 1);
   const [locks, setLocks] = useState({ c: false, o: false, r: false, e: false });
   const [kit, setKit] = useState(null);
@@ -181,12 +190,12 @@ export default function GeneratorView() {
   const [catalogueOpen, setCatalogueOpen] = useState(false);
 
   const askForCategories = useMemo(
-    () => askForCategoriesFromRows(generator, banks),
+    () => [...askForCategoriesFromRows(generator, banks)].sort(byLabel),
     [generator, banks],
   );
 
   const skillItems = useMemo(
-    () => skillItemsFromRows(generator, prompts, banks),
+    () => [...skillItemsFromRows(generator, prompts, banks)].sort(byLabel),
     [generator, prompts, banks],
   );
 
@@ -233,7 +242,7 @@ export default function GeneratorView() {
     };
     ASK_FOR_CATEGORIES.forEach((cat) => consider(cat.id));
     Object.keys(stageIdeas || {}).forEach(consider);
-    return out;
+    return out.sort(byLabel);
   }, [askForCategories, ideasUse, stageIdeas, stageOn]);
 
   const selectedSessionCats = useMemo(
@@ -390,6 +399,22 @@ export default function GeneratorView() {
     );
   };
 
+  useEffect(() => {
+    if (!drawNonce) return;
+    const cached = peekGeneratorSnapshot(drawNonce);
+    if (cached) {
+      setKit(cached.kit?.length ? cached.kit : null);
+      setSkillResults(cached.skills || []);
+      setBanksOpen(false);
+      return;
+    }
+    const state = useAppStore.getState();
+    const nextKit = generateKitFromStore(state);
+    setKit(nextKit.length ? nextKit : null);
+    setSkillResults(generateSkillResultsFromStore(state));
+    setBanksOpen(false);
+  }, [drawNonce]);
+
   const applyCatalogueRow = (row) => {
     const cats = rowCategories(row);
     const match = selectedCats.find((cat) => cats.includes(cat.id));
@@ -497,14 +522,14 @@ export default function GeneratorView() {
             <section className="mb-2">
               <p className="text-2xs uppercase tracking-wider text-lime-400 font-bold px-0.5 mb-1">This session</p>
               {sessionCats.length ? (
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-1">
+                <div className="flex flex-wrap gap-1">
                   {sessionCats.map((cat) => (
-                    <CheckRow
+                    <BankChip
                       key={cat.sessionId}
-                      checked={selectedSessionIds.includes(cat.sessionId)}
                       icon={cat.icon}
                       label={cat.label}
                       count={showStats ? cat.count : undefined}
+                      checked={selectedSessionIds.includes(cat.sessionId)}
                       onToggle={() => toggleGeneratorSessionBank(cat.sessionId)}
                     />
                   ))}
@@ -544,14 +569,15 @@ export default function GeneratorView() {
                 {favoriteCats.length > 0 && (
                   <>
                     <p className="text-2xs uppercase tracking-wider text-yellow-500/80 font-bold px-0.5 mb-1">Favorites</p>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-1">
+                    <div className="flex flex-wrap gap-1">
                       {favoriteCats.map((cat) => (
-                        <BankRow
+                        <BankChip
                           key={cat.id}
-                          cat={cat}
+                          icon={cat.icon}
+                          label={cat.label}
+                          count={showStats ? cat.count : undefined}
                           checked={selectedIds.includes(cat.id)}
                           favorited
-                          showStats={showStats}
                           onToggle={() => toggleGeneratorBank(cat.id)}
                           onFavorite={() => toggleGeneratorBankFavorite(cat.id)}
                         />
@@ -561,17 +587,18 @@ export default function GeneratorView() {
                 )}
                 {remainingCats.length > 0 && (
                   <>
-                    <p className={`text-2xs uppercase tracking-wider text-gray-500 font-bold px-0.5 mb-1 ${favoriteCats.length ? 'mt-2.5' : ''}`}>
-                      {favoriteCats.length ? 'All banks' : 'Ask for'}
-                    </p>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-1">
+                    {favoriteCats.length ? (
+                      <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold px-0.5 mt-2.5 mb-1">All banks</p>
+                    ) : null}
+                    <div className="flex flex-wrap gap-1">
                       {remainingCats.map((cat) => (
-                        <BankRow
+                        <BankChip
                           key={cat.id}
-                          cat={cat}
+                          icon={cat.icon}
+                          label={cat.label}
+                          count={showStats ? cat.count : undefined}
                           checked={selectedIds.includes(cat.id)}
                           favorited={false}
-                          showStats={showStats}
                           onToggle={() => toggleGeneratorBank(cat.id)}
                           onFavorite={() => toggleGeneratorBankFavorite(cat.id)}
                         />
@@ -582,14 +609,14 @@ export default function GeneratorView() {
                 {skillItems.length > 0 && (
                   <>
                     <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold px-0.5 mt-2.5 mb-1">Skill Building</p>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-1">
+                    <div className="flex flex-wrap gap-1">
                       {skillItems.map((skill) => (
-                        <CheckRow
+                        <BankChip
                           key={skill.id}
-                          checked={selectedSkills.includes(skill.id)}
                           icon={skill.icon}
                           label={skill.label}
                           count={showStats ? skill.count : undefined}
+                          checked={selectedSkills.includes(skill.id)}
                           onToggle={() => toggleGeneratorSkill(skill.id)}
                         />
                       ))}
