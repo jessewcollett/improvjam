@@ -84,25 +84,24 @@ function uniqueShareIds(ids) {
   return (Array.isArray(ids) ? ids : []).map((id) => String(id || '').trim()).filter(Boolean);
 }
 
-export function sharedSetTokenFromInput(raw) {
-  const text = String(raw || '').trim();
-  if (!text) return '';
+function unwrapShareToken(raw) {
+  const token = String(raw || '').trim();
+  if (!token) return '';
   try {
-    const url = new URL(text, 'https://improv-jam.vercel.app');
-    const fromQuery = url.searchParams.get('set');
-    if (fromQuery) return String(fromQuery).trim();
+    return decodeURIComponent(token).trim();
   } catch {
-    /* not a URL */
+    return token;
   }
-  const match = text.match(/[?&]set=([^&\s#]+)/i);
-  if (match) {
-    try {
-      return decodeURIComponent(match[1]).trim();
-    } catch {
-      return match[1].trim();
-    }
-  }
-  return text;
+}
+
+export function sharedSetTokenFromInput(raw) {
+  const text = String(raw || '').trim().replace(/^["']+|["']+$/g, '');
+  if (!text) return '';
+  const fromQuery = text.match(/[?&]set=([^&\s#"'<>]+)/i);
+  if (fromQuery) return unwrapShareToken(fromQuery[1]);
+  const bare = text.match(/\beyJ[A-Za-z0-9_-]+/);
+  if (bare) return bare[0];
+  return unwrapShareToken(text.replace(/\s+/g, ''));
 }
 
 export function decodeSharedSet(raw) {
