@@ -1,4 +1,4 @@
-import { normalizeStageMessage, stageMessageText } from './stageMessage.js';
+import { MESSAGE_MAX, normalizeStageMessage, stageMessageText } from './stageMessage.js';
 
 export const STAGE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 export const STAGE_SLOT_IDS = ['suggestions', 'games', 'timer', 'hat', 'coin', 'whosup', 'set', 'display', 'message'];
@@ -722,12 +722,14 @@ export function normalizeStageMessages(raw, fallback = DEFAULT_STAGE_MESSAGES) {
   const seen = new Set();
   const out = [];
   source.forEach((item) => {
-    const text = String(item || '').trim().slice(0, 80);
+    const next = normalizeStageMessage(item);
+    const text = stageMessageText(next).slice(0, MESSAGE_MAX);
     if (!text) return;
     const key = text.toLowerCase();
     if (seen.has(key)) return;
     seen.add(key);
-    out.push(text);
+    if (typeof next === 'object' && next) out.push({ ...next, text });
+    else out.push(text);
   });
   return out.slice(0, 24);
 }

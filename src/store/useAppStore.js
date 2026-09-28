@@ -717,19 +717,20 @@ export const useAppStore = create(
       },
 
       addStageMessageFavorite: (raw) => {
-        const text = String(raw || '').trim().slice(0, 80);
+        const next = normalizeStageMessage(raw);
+        const text = stageMessageText(next);
         if (!text) return;
         set((state) => ({
-          stageMessageFavorites: normalizeStageMessages([...(state.stageMessageFavorites || []), text], []),
+          stageMessageFavorites: normalizeStageMessages([...(state.stageMessageFavorites || []), next], []),
         }));
       },
 
       removeStageMessageFavorite: (raw) => {
-        const text = String(raw || '').trim().toLowerCase();
+        const text = stageMessageText(raw).toLowerCase();
         if (!text) return;
         set((state) => ({
           stageMessageFavorites: (state.stageMessageFavorites || []).filter(
-            (item) => String(item).trim().toLowerCase() !== text,
+            (item) => stageMessageText(item).toLowerCase() !== text,
           ),
         }));
       },

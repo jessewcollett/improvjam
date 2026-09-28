@@ -579,7 +579,7 @@ export default function MySetsView() {
                   onClick={() => setAddingGames(false)}
                 />
                 <div
-                  className="relative w-full max-w-lg h-[min(85dvh,100%)] max-h-[85dvh] min-h-0 overflow-hidden flex flex-col rounded-2xl border border-gray-700 bg-[#121212] px-4 pt-3 pb-3"
+                  className="relative w-full h-[min(85dvh,100%)] max-h-[85dvh] min-h-0 overflow-hidden flex flex-col rounded-2xl border border-gray-700 bg-[#121212] px-4 pt-3 pb-3"
                   role="dialog"
                   aria-modal="true"
                   aria-labelledby="add-games-title"

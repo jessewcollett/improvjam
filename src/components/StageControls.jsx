@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Check, ChevronDown, ChevronUp, Copy, EyeOff, QrCode, RefreshCw, Star, Type, Tv, X } from 'lucide-react';
 import { ASK_FOR_CATEGORIES } from '../lib/generator.js';
 import {
@@ -24,9 +24,9 @@ import { STAGE_MANAGER_ID } from '../lib/nav.js';
 import { LiveStageTime } from './StageBoardContent.jsx';
 import { GamePartToggles } from './StagePin.jsx';
 import IdeaQueue from './IdeaQueue.jsx';
+import StageMessageEditor from './StageMessageEditor.jsx';
 import {
   MESSAGE_MAX,
-  messageFromClipboard,
   htmlToText,
   stageMessageHtml,
   stageMessageText,
@@ -514,44 +514,18 @@ function StageMessagePanel() {
   const toggleStageMessage = useAppStore((s) => s.toggleStageMessage);
   const addStageMessageFavorite = useAppStore((s) => s.addStageMessageFavorite);
   const removeStageMessageFavorite = useAppStore((s) => s.removeStageMessageFavorite);
-  const ignoreInputUntil = useRef(0);
-  const extraSet = new Set(extras.map((item) => item.toLowerCase()));
+  const extraSet = new Set(extras.map((item) => stageMessageText(item).toLowerCase()));
   const defaultSet = new Set(DEFAULT_STAGE_MESSAGES.map((item) => item.toLowerCase()));
-  const saved = extras.filter((item) => !defaultSet.has(item.toLowerCase()));
+  const saved = extras.filter((item) => !defaultSet.has(stageMessageText(item).toLowerCase()));
   const trimmed = text.trim();
   const canFavorite = Boolean(trimmed)
-    && trimmed.length <= 80
-    && !trimmed.includes('\n')
     && !defaultSet.has(trimmed.toLowerCase())
     && !extraSet.has(trimmed.toLowerCase());
-
-  const onPaste = (event) => {
-    const pastedHtml = event.clipboardData?.getData('text/html') || '';
-    const plain = event.clipboardData?.getData('text/plain') || '';
-    if (!pastedHtml && !plain) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const next = messageFromClipboard(pastedHtml, plain);
-    if (!next) return;
-    ignoreInputUntil.current = Date.now() + 600;
-    setStageMessage(next);
-  };
 
   return (
     <div className="mb-3">
       <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold mb-2">Board message</p>
-      <textarea
-        value={text}
-        onChange={(event) => {
-          if (Date.now() < ignoreInputUntil.current) return;
-          setStageMessage(event.target.value);
-        }}
-        onPaste={onPaste}
-        rows={6}
-        maxLength={MESSAGE_MAX}
-        placeholder="Welcome, class norms, questions… Paste bullets from Docs."
-        className="w-full rounded-xl bg-[#1A1A1A] border border-gray-800 px-3 py-2.5 text-sm font-bold text-white placeholder:text-gray-600 mb-1 min-h-[8.5rem]"
-      />
+      <StageMessageEditor value={message} onChange={setStageMessage} />
       <p className="text-2xs text-gray-500 mb-2 tabular-nums">{trimmed.length} / {MESSAGE_MAX}</p>
       <div className="flex flex-wrap gap-1.5 mb-2">
         {DEFAULT_STAGE_MESSAGES.map((item) => (
@@ -567,30 +541,37 @@ function StageMessagePanel() {
             {item}
           </button>
         ))}
-        {saved.map((item) => (
+        {saved.map((item) => {
+          const itemText = stageMessageText(item);
+          const line = itemText.split('\n').map((part) => part.trim()).find(Boolean) || itemText;
+          const label = line.length > 36 ? `${line.slice(0, 34)}…` : line;
+          const active = trimmed.toLowerCase() === itemText.toLowerCase();
+          return (
           <span
-            key={item}
-            className={`inline-flex items-center min-h-10 rounded-lg border overflow-hidden ${
-              text === item ? 'bg-lime-700 text-white border-lime-500' : 'bg-[#1A1A1A] text-gray-200 border-gray-800'
+            key={itemText}
+            className={`inline-flex items-center min-h-10 rounded-lg border overflow-hidden max-w-full ${
+              active ? 'bg-lime-700 text-white border-lime-500' : 'bg-[#1A1A1A] text-gray-200 border-gray-800'
             }`}
           >
             <button
               type="button"
+              title={itemText}
               onClick={() => setStageMessage(item)}
-              className="px-2.5 text-xs font-bold"
+              className="px-2.5 text-xs font-bold truncate max-w-[12rem]"
             >
-              {item}
+              {label}
             </button>
             <button
               type="button"
               onClick={() => removeStageMessageFavorite(item)}
               className="min-w-9 min-h-10 flex items-center justify-center text-gray-400 hover:text-red-300 border-l border-white/10"
-              aria-label={`Remove ${item} favorite`}
+              aria-label={`Remove ${label} favorite`}
             >
               <X className="w-3.5 h-3.5" />
             </button>
           </span>
-        ))}
+          );
+        })}
       </div>
       <div className="flex flex-wrap gap-2">
         <button
@@ -609,7 +590,7 @@ function StageMessagePanel() {
         </button>
         <button
           type="button"
-          onClick={() => addStageMessageFavorite(trimmed)}
+          onClick={() => addStageMessageFavorite(message)}
           disabled={!canFavorite}
           className="min-h-11 px-3 rounded-xl bg-gray-800 border border-gray-700 text-sm font-bold text-gray-100 inline-flex items-center gap-2 disabled:text-gray-600"
         >
