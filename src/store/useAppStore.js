@@ -210,7 +210,6 @@ function playSetSlot(set, items) {
 function cuePlayPatches(state, resolved) {
   const current = resolved.current;
   const pinSet = new Set(state.stagePins);
-  pinSet.add('set');
   const stageSlots = {
     ...state.stageSlots,
     set: playSetSlot(resolved.set, resolved.items),
