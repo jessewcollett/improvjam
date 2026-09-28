@@ -144,14 +144,59 @@ export function coalesceStageSession(prev, next) {
   return incoming;
 }
 
-/** Keep the last live board when a poll returns a cold/empty miss. Host clears always send `order: []`. */
-export function coalesceStagePayload(prev, next) {
+function isHostBoardClear(payload) {
+  return Array.isArray(payload?.order)
+    && payload.order.length === 0
+    && Boolean(payload.boardStyle);
+}
+
+function payloadSlotCount(payload) {
+  if (!payload || typeof payload !== 'object') return 0;
+  return STAGE_SLOT_IDS.reduce((n, id) => n + (slotHasContent(id, payload[id]) ? 1 : 0), 0);
+}
+
+function sameBoardOrder(a, b) {
+  const left = Array.isArray(a?.order) ? a.order : [];
+  const right = Array.isArray(b?.order) ? b.order : [];
+  return left.length === right.length && left.every((id, index) => id === right[index]);
+}
+
+/** Keep the last live board when a poll returns a cold/empty miss. Host clears always send `order: []` plus boardStyle. */
+export function coalesceStagePayload(prev, next, meta = {}) {
   const incoming = next && typeof next === 'object' && !Array.isArray(next) ? next : {};
   const previous = prev && typeof prev === 'object' && !Array.isArray(prev) ? prev : {};
-  if (payloadHasSlots(incoming)) return incoming;
-  if (!payloadHasSlots(previous)) return incoming;
-  if (Array.isArray(incoming.order)) return incoming;
-  return previous;
+  const prevLive = payloadHasSlots(previous);
+  const nextLive = payloadHasSlots(incoming);
+  const incomingAt = String(meta.updatedAt || '');
+  const previousAt = String(meta.prevUpdatedAt || '');
+
+  if (previousAt && incomingAt && incomingAt < previousAt && prevLive) return previous;
+  if (meta.miss && prevLive) return previous;
+
+  if (!nextLive) {
+    if (!prevLive) return incoming;
+    if (isHostBoardClear(incoming)) return incoming;
+    return previous;
+  }
+
+  if (prevLive && previousAt && !incomingAt && payloadSlotCount(incoming) < payloadSlotCount(previous)) {
+    return previous;
+  }
+
+  if (prevLive && sameBoardOrder(previous, incoming)) {
+    const nextIds = Array.isArray(incoming.order) ? incoming.order : STAGE_SLOT_IDS.filter((id) => slotHasContent(id, incoming[id]));
+    const nextFrames = normalizeStageFrames(incoming.frames);
+    const prevFrames = normalizeStageFrames(previous.frames);
+    if (!framesCoverSlots(nextFrames, nextIds) && framesCoverSlots(prevFrames, nextIds)) {
+      return {
+        ...incoming,
+        frames: previous.frames,
+        floats: Array.isArray(incoming.floats) ? incoming.floats : previous.floats,
+      };
+    }
+  }
+
+  return incoming;
 }
 
 export function stageTileFitValue(id, value) {
@@ -169,15 +214,17 @@ export function stagePayloadSyncKey(payload) {
     if (payload[id] == null) return;
     slots[id] = stageTileFitValue(id, payload[id]);
   });
+  const order = Array.isArray(payload.order) ? payload.order : [];
+  const frames = normalizeStageFrames(payload.frames);
   return JSON.stringify({
-    order: Array.isArray(payload.order) ? payload.order : [],
+    order,
     slots,
     layout: payload.layout || '',
-    boardStyle: payload.boardStyle || '',
-    frames: normalizeStageFrames(payload.frames),
-    floats: payload.floats || null,
-    aligns: payload.aligns || null,
-    captions: payload.captions || null,
+    boardStyle: normalizeStageBoardStyle(payload.boardStyle),
+    frames: framesCoverSlots(frames, order) ? frames : {},
+    floats: normalizeStageFloats(payload.floats, order),
+    aligns: payload.aligns && typeof payload.aligns === 'object' ? payload.aligns : {},
+    captions: payload.captions && typeof payload.captions === 'object' ? payload.captions : {},
     hideCode: payload.hideCode === true,
     theme: payload.theme || '',
     spotlight: payload.spotlight || '',
@@ -1005,7 +1052,7 @@ export function stageGridTemplate(count, landscape) {
 /** Local countdown paint rate on the board. Digits interpolate from endsAt, not from polls. */
 export const STAGE_TIMER_TICK_MS = 50;
 /** How often the TV GETs /api/stage. Pin/start latency only — not the digit refresh. */
-export const STAGE_BOARD_POLL_MS = 250;
+export const STAGE_BOARD_POLL_MS = 750;
 export const STAGE_IDEAS_POLL_MS = 1000;
 /** Debounce for bursty UI (zoom, layout). Pins, slots, and timer POST immediately. */
 export const STAGE_PUBLISH_DEBOUNCE_MS = 80;
@@ -1191,6 +1238,7 @@ export async function fetchStage(code) {
     ideasHold: data.ideasHold === true,
     ideaFlags: data.ideaFlags === true,
     updatedAt: data.updatedAt || '',
+    miss: data.miss === true,
   };
 }
 

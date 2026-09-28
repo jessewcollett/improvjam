@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Dices, Minus, Plus, Tag, Wand2, X } from 'lucide-react';
+import { Dices, Minus, Plus, Star, Tag, Wand2, X } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore.js';
 import CatalogIcon from './CatalogIcon.jsx';
 import {
@@ -15,44 +15,23 @@ import {
 import { clampDrawCount, DRAW_MAX, DRAW_MIN } from '../lib/generateDraw.js';
 import { parseSessionBankId } from '../lib/stage.js';
 
-function CountStepper({ label, count, onCount }) {
-  const n = clampDrawCount(count);
-  return (
-    <div className="inline-flex items-center shrink-0">
-      <button
-        type="button"
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          onCount(n - 1);
-        }}
-        disabled={n <= DRAW_MIN}
-        className="min-w-11 min-h-11 flex items-center justify-center text-gray-200 disabled:text-gray-600"
-        aria-label={`Fewer ${label}`}
-      >
-        <Minus className="w-3.5 h-3.5" />
-      </button>
-      <span className="w-5 text-center text-xs font-black tabular-nums text-white">{n}</span>
-      <button
-        type="button"
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          onCount(n + 1);
-        }}
-        disabled={n >= DRAW_MAX}
-        className="min-w-11 min-h-11 flex items-center justify-center text-gray-200 disabled:text-gray-600"
-        aria-label={`More ${label}`}
-      >
-        <Plus className="w-3.5 h-3.5" />
-      </button>
-    </div>
-  );
+function byLabel(a, b) {
+  const labelA = String(a?.label || a?.id || '');
+  const labelB = String(b?.label || b?.id || '');
+  const keyA = labelA.replace(/^[^0-9A-Za-z]+/, '');
+  const keyB = labelB.replace(/^[^0-9A-Za-z]+/, '');
+  return keyA.localeCompare(keyB, undefined, { sensitivity: 'base' })
+    || labelA.localeCompare(labelB, undefined, { sensitivity: 'base' });
 }
 
-function PickRow({ item, checked, count, onToggle, onCount }) {
+function LinkChip({ item, checked, count, onToggle, onCount }) {
+  const n = clampDrawCount(count);
   return (
-    <div className="flex items-center gap-0.5 min-w-0">
+    <div
+      className={`inline-flex items-center rounded-full border shrink-0 ${
+        checked ? 'bg-lime-600/15 text-white border-lime-600/50' : 'bg-[#1A1A1A] text-gray-200 border-gray-800'
+      }`}
+    >
       <button
         type="button"
         role="checkbox"
@@ -62,31 +41,89 @@ function PickRow({ item, checked, count, onToggle, onCount }) {
           event.stopPropagation();
           onToggle();
         }}
-        className={`min-h-11 px-2 py-1.5 rounded-lg border flex items-center gap-1.5 min-w-0 flex-1 ${
-          checked ? 'bg-lime-600/15 text-white border-lime-600/50' : 'bg-[#1A1A1A] text-gray-200 border-gray-800'
-        }`}
+        className={`inline-flex items-center gap-1 min-h-9 pl-2.5 ${checked ? 'pr-1' : 'pr-2.5'}`}
       >
-        <span
-          className={`w-4 h-4 rounded border shrink-0 ${
-            checked ? 'bg-lime-500 border-lime-400' : 'border-gray-600 bg-[#121212]'
-          }`}
-          aria-hidden="true"
+        <CatalogIcon
+          name={item.icon}
+          className={`w-3.5 h-3.5 shrink-0 ${checked ? 'text-lime-400' : 'text-gray-500'}`}
+          fallback={Tag}
         />
-        <CatalogIcon name={item.icon} className={`w-3.5 h-3.5 shrink-0 ${checked ? 'text-lime-400' : 'text-gray-500'}`} fallback={Tag} />
-        <span className="flex-1 text-xs font-bold leading-tight text-left truncate">{item.label}</span>
+        <span className="text-xs font-bold leading-none whitespace-nowrap">{item.label}</span>
       </button>
-      <CountStepper label={item.label} count={count} onCount={onCount} />
+      {checked ? (
+        <div className="inline-flex items-center pr-1">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onCount(n - 1);
+            }}
+            disabled={n <= DRAW_MIN}
+            className="min-w-7 min-h-9 flex items-center justify-center text-gray-200 disabled:text-gray-600"
+            aria-label={`Fewer ${item.label}`}
+          >
+            <Minus className="w-3 h-3" />
+          </button>
+          <span className="w-4 text-center text-xs font-black tabular-nums text-white">{n}</span>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onCount(n + 1);
+            }}
+            disabled={n >= DRAW_MAX}
+            className="min-w-7 min-h-9 flex items-center justify-center text-gray-200 disabled:text-gray-600"
+            aria-label={`More ${item.label}`}
+          >
+            <Plus className="w-3 h-3" />
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ChipWrap({ items, draft, field, setDraft }) {
+  return (
+    <div className="flex flex-wrap gap-1 w-full min-w-0">
+      {items.map((item) => {
+        const checked = (draft[field] || []).includes(item.id);
+        return (
+          <LinkChip
+            key={item.id}
+            item={item}
+            checked={checked}
+            count={draft.drawCounts?.[item.id] ?? 1}
+            onToggle={() => setDraft((prev) => toggleDraftId(prev, field, item.id))}
+            onCount={(n) => setDraft((prev) => setDraftCount(prev, item.id, n, field))}
+          />
+        );
+      })}
     </div>
   );
 }
 
 function GameGeneratorSheet({ gameId, catalog, draft, setDraft, onClose }) {
   const setGameGeneratorLink = useAppStore((s) => s.setGameGeneratorLink);
+  const favoriteIds = useAppStore((s) => s.generatorBankFavorites) || [];
   const canUseCurrent = useAppStore((s) => (
     (s.generatorBanks || []).some((id) => id && !parseSessionBankId(id))
     || (s.generatorSkills || []).length > 0
   ));
   const selectedCount = (draft.banks?.length || 0) + (draft.skills?.length || 0);
+
+  const banks = useMemo(() => [...(catalog.banks || [])].sort(byLabel), [catalog.banks]);
+  const skills = useMemo(() => [...(catalog.skills || [])].sort(byLabel), [catalog.skills]);
+  const favoriteBanks = useMemo(
+    () => banks.filter((item) => favoriteIds.includes(item.id)),
+    [banks, favoriteIds],
+  );
+  const remainingBanks = useMemo(
+    () => banks.filter((item) => !favoriteIds.includes(item.id)),
+    [banks, favoriteIds],
+  );
 
   const save = (next) => {
     setGameGeneratorLink(gameId, next);
@@ -97,20 +134,20 @@ function GameGeneratorSheet({ gameId, catalog, draft, setDraft, onClose }) {
     <div className="fixed inset-0 z-[80] flex flex-col justify-end">
       <button type="button" className="absolute inset-0 bg-black/70" aria-label="Close generator link" onClick={onClose} />
       <div className="relative bg-[#121212] border-t border-gray-800 rounded-t-3xl px-4 pt-3 pb-nav max-h-[80vh] flex flex-col">
-        <div className="flex items-center justify-between gap-2 mb-1">
-          <p className="text-sm font-black font-display text-white leading-tight">Build a generator</p>
+        <div className="flex items-start justify-between gap-2 mb-2">
+          <div className="min-w-0">
+            <p className="text-sm font-black font-display text-white leading-tight">Build a generator</p>
+            <p className="text-2xs text-gray-500 mt-0.5">Tap to pick. Use − / + for how many.</p>
+          </div>
           <button
             type="button"
             onClick={onClose}
-            className="min-w-11 min-h-11 flex items-center justify-center text-gray-400"
+            className="min-w-11 min-h-11 flex items-center justify-center text-gray-400 shrink-0"
             aria-label="Close"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
-        <p className="text-2xs text-gray-500 mb-2">
-          Select as many categories as you want, then set how many to draw for each.
-        </p>
         <button
           type="button"
           disabled={!canUseCurrent}
@@ -118,49 +155,43 @@ function GameGeneratorSheet({ gameId, catalog, draft, setDraft, onClose }) {
             const next = linkFromCurrentGenerator(useAppStore.getState());
             setDraft(next || emptyLinkDraft());
           }}
-          className="min-h-11 mb-2 rounded-xl bg-lime-600 disabled:bg-gray-800 disabled:text-gray-500 text-black text-sm font-black"
+          className="min-h-9 mb-3 px-3 self-start rounded-full border border-gray-700 bg-[#1A1A1A] disabled:text-gray-600 disabled:border-gray-800 text-xs font-bold text-gray-200"
         >
           Use current Generator
         </button>
-        <div className="overflow-y-auto scrollbar-hide flex-1 min-h-0 space-y-3 pb-3">
-          {catalog.banks.length ? (
+        <div className="overflow-y-auto overflow-x-hidden scrollbar-hide flex-1 min-h-0 min-w-0 w-full space-y-3 pb-3">
+          {banks.length ? (
             <section>
               <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold mb-1">
                 Ask for
                 {draft.banks?.length ? ` · ${draft.banks.length}` : ''}
               </p>
-              <div className="grid grid-cols-1 gap-1">
-                {catalog.banks.map((item) => (
-                  <PickRow
-                    key={item.id}
-                    item={item}
-                    checked={(draft.banks || []).includes(item.id)}
-                    count={draft.drawCounts?.[item.id] ?? 1}
-                    onToggle={() => setDraft((prev) => toggleDraftId(prev, 'banks', item.id))}
-                    onCount={(n) => setDraft((prev) => setDraftCount(prev, item.id, n, 'banks'))}
-                  />
-                ))}
-              </div>
+              {favoriteBanks.length > 0 ? (
+                <>
+                  <p className="text-2xs uppercase tracking-wider text-yellow-500/80 font-bold px-0.5 mb-1 inline-flex items-center gap-1">
+                    <Star className="w-3 h-3" fill="currentColor" />
+                    Favorites
+                  </p>
+                  <ChipWrap items={favoriteBanks} draft={draft} field="banks" setDraft={setDraft} />
+                </>
+              ) : null}
+              {remainingBanks.length > 0 ? (
+                <>
+                  {favoriteBanks.length ? (
+                    <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold px-0.5 mt-2.5 mb-1">All banks</p>
+                  ) : null}
+                  <ChipWrap items={remainingBanks} draft={draft} field="banks" setDraft={setDraft} />
+                </>
+              ) : null}
             </section>
           ) : null}
-          {catalog.skills.length ? (
+          {skills.length ? (
             <section>
               <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold mb-1">
                 Skill building
                 {draft.skills?.length ? ` · ${draft.skills.length}` : ''}
               </p>
-              <div className="grid grid-cols-1 gap-1">
-                {catalog.skills.map((item) => (
-                  <PickRow
-                    key={item.id}
-                    item={item}
-                    checked={(draft.skills || []).includes(item.id)}
-                    count={draft.drawCounts?.[item.id] ?? 1}
-                    onToggle={() => setDraft((prev) => toggleDraftId(prev, 'skills', item.id))}
-                    onCount={(n) => setDraft((prev) => setDraftCount(prev, item.id, n, 'skills'))}
-                  />
-                ))}
-              </div>
+              <ChipWrap items={skills} draft={draft} field="skills" setDraft={setDraft} />
             </section>
           ) : null}
         </div>

@@ -9,7 +9,6 @@ import {
   Tag,
   Minus,
   Plus,
-  X,
   Dices,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -37,39 +36,78 @@ function clampDrawCount(value) {
   return Math.min(DRAW_MAX, Math.max(DRAW_MIN, Math.round(n)));
 }
 
-function DrawChip({ icon, label, count, onCount, onRemove }) {
-  const n = clampDrawCount(count);
+function BankChip({ icon, label, count, checked, favorited, onToggle, onFavorite, drawCount, onDrawCount }) {
+  const n = clampDrawCount(drawCount);
+  const showStepper = Boolean(checked && onDrawCount);
   return (
-    <div className="inline-flex items-center shrink-0 rounded-xl border border-lime-800/50 bg-[#1A1A1A] pl-2 overflow-hidden">
-      <CatalogIcon name={icon} className="w-3.5 h-3.5 text-lime-400 shrink-0" fallback={Tag} />
-      <span className="text-xs font-bold text-white px-1.5 max-w-[5rem] truncate">{label}</span>
+    <div
+      className={`inline-flex items-center rounded-full border shrink-0 ${
+        checked ? 'bg-lime-600/15 text-white border-lime-600/50' : 'bg-[#1A1A1A] text-gray-200 border-gray-800'
+      }`}
+    >
       <button
         type="button"
-        onClick={() => onCount(n - 1)}
-        disabled={n <= DRAW_MIN}
-        className="min-w-11 min-h-11 flex items-center justify-center text-gray-200 disabled:text-gray-600"
-        aria-label={`Fewer ${label}`}
+        role="checkbox"
+        aria-checked={checked}
+        onClick={onToggle}
+        className={`inline-flex items-center gap-1 min-h-9 pl-2.5 ${showStepper ? 'pr-1' : 'pr-1.5'}`}
       >
-        <Minus className="w-3.5 h-3.5" />
+        <CatalogIcon name={icon} className={`w-3.5 h-3.5 shrink-0 ${checked ? 'text-lime-400' : 'text-gray-500'}`} fallback={Tag} />
+        <span className="text-xs font-bold leading-none whitespace-nowrap">{label}</span>
+        {!showStepper && count != null ? (
+          <span className={`text-2xs tabular-nums leading-none ${checked ? 'text-lime-300/80' : 'text-gray-500'}`}>{count}</span>
+        ) : null}
       </button>
-      <span className="w-4 text-center text-sm font-black tabular-nums text-white">{n}</span>
-      <button
-        type="button"
-        onClick={() => onCount(n + 1)}
-        disabled={n >= DRAW_MAX}
-        className="min-w-11 min-h-11 flex items-center justify-center text-gray-200 disabled:text-gray-600"
-        aria-label={`More ${label}`}
-      >
-        <Plus className="w-3.5 h-3.5" />
-      </button>
-      <button
-        type="button"
-        onClick={onRemove}
-        className="min-w-11 min-h-11 flex items-center justify-center text-gray-400 hover:text-red-400 border-l border-lime-800/40"
-        aria-label={`Remove ${label}`}
-      >
-        <X className="w-3.5 h-3.5" />
-      </button>
+      {showStepper ? (
+        <div className="inline-flex items-center">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onDrawCount(n - 1);
+            }}
+            disabled={n <= DRAW_MIN}
+            className="min-w-7 min-h-9 flex items-center justify-center text-gray-200 disabled:text-gray-600"
+            aria-label={`Fewer ${label}`}
+          >
+            <Minus className="w-3 h-3" />
+          </button>
+          <span className="w-4 text-center text-xs font-black tabular-nums text-white">{n}</span>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onDrawCount(n + 1);
+            }}
+            disabled={n >= DRAW_MAX}
+            className="min-w-7 min-h-9 flex items-center justify-center text-gray-200 disabled:text-gray-600"
+            aria-label={`More ${label}`}
+          >
+            <Plus className="w-3 h-3" />
+          </button>
+        </div>
+      ) : null}
+      {onFavorite ? (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onFavorite();
+          }}
+          className={`flex items-center justify-center min-w-8 min-h-9 pr-1.5 -ml-0.5 ${
+            favorited ? 'text-yellow-400' : 'text-gray-600'
+          }`}
+          aria-label={favorited ? `Unfavorite ${label}` : `Favorite ${label}`}
+          aria-pressed={favorited}
+        >
+          <Star className="w-3.5 h-3.5" fill={favorited ? 'currentColor' : 'none'} />
+        </button>
+      ) : (
+        <span className={showStepper ? 'pr-1' : 'pr-2'} aria-hidden="true" />
+      )}
     </div>
   );
 }
@@ -109,49 +147,6 @@ function byLabel(a, b) {
   const keyB = labelB.replace(/^[^0-9A-Za-z]+/, '');
   return keyA.localeCompare(keyB, undefined, { sensitivity: 'base' })
     || labelA.localeCompare(labelB, undefined, { sensitivity: 'base' });
-}
-
-function BankChip({ icon, label, count, checked, favorited, onToggle, onFavorite }) {
-  return (
-    <div
-      className={`inline-flex items-center rounded-full border shrink-0 ${
-        checked ? 'bg-lime-600/15 text-white border-lime-600/50' : 'bg-[#1A1A1A] text-gray-200 border-gray-800'
-      }`}
-    >
-      <button
-        type="button"
-        role="checkbox"
-        aria-checked={checked}
-        onClick={onToggle}
-        className="inline-flex items-center gap-1 min-h-9 pl-2.5 pr-1.5"
-      >
-        <CatalogIcon name={icon} className={`w-3.5 h-3.5 shrink-0 ${checked ? 'text-lime-400' : 'text-gray-500'}`} fallback={Tag} />
-        <span className="text-xs font-bold leading-none whitespace-nowrap">{label}</span>
-        {count != null ? (
-          <span className={`text-2xs tabular-nums leading-none ${checked ? 'text-lime-300/80' : 'text-gray-500'}`}>{count}</span>
-        ) : null}
-      </button>
-      {onFavorite ? (
-        <button
-          type="button"
-          onClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            onFavorite();
-          }}
-          className={`flex items-center justify-center min-w-8 min-h-9 pr-1.5 -ml-0.5 ${
-            favorited ? 'text-yellow-400' : 'text-gray-600'
-          }`}
-          aria-label={favorited ? `Unfavorite ${label}` : `Favorite ${label}`}
-          aria-pressed={favorited}
-        >
-          <Star className="w-3.5 h-3.5" fill={favorited ? 'currentColor' : 'none'} />
-        </button>
-      ) : (
-        <span className="pr-2" aria-hidden="true" />
-      )}
-    </div>
-  );
 }
 
 export default function GeneratorView() {
@@ -447,16 +442,17 @@ export default function GeneratorView() {
   ];
   const renderGenerateBlock = () => (
     <div className="rounded-2xl border border-lime-800/40 bg-[#1A1A1A] p-2 flex flex-col gap-2">
-      {selectedDrawItems.length ? (
-        <div className="flex flex-wrap gap-1.5">
+      {!banksOpen && selectedDrawItems.length ? (
+        <div className="flex flex-wrap gap-1">
           {selectedDrawItems.map((item) => (
-            <DrawChip
+            <BankChip
               key={item.id}
               icon={item.icon}
               label={item.label}
-              count={countFor(item.id)}
-              onCount={(n) => setGeneratorDrawCount(item.id, n)}
-              onRemove={() => {
+              checked
+              drawCount={countFor(item.id)}
+              onDrawCount={(n) => setGeneratorDrawCount(item.id, n)}
+              onToggle={() => {
                 if (item.session) toggleGeneratorSessionBank(item.id);
                 else if (selectedIds.includes(item.id)) toggleGeneratorBank(item.id);
                 else toggleGeneratorSkill(item.id);
@@ -464,9 +460,9 @@ export default function GeneratorView() {
             />
           ))}
         </div>
-      ) : (
+      ) : !selectedDrawItems.length ? (
         <p className="text-xs text-gray-500 px-1">Check a bank above, then Generate.</p>
-      )}
+      ) : null}
       <button
         type="button"
         onClick={generate}
@@ -530,6 +526,8 @@ export default function GeneratorView() {
                       label={cat.label}
                       count={showStats ? cat.count : undefined}
                       checked={selectedSessionIds.includes(cat.sessionId)}
+                      drawCount={countFor(cat.sessionId)}
+                      onDrawCount={(n) => setGeneratorDrawCount(cat.sessionId, n)}
                       onToggle={() => toggleGeneratorSessionBank(cat.sessionId)}
                     />
                   ))}
@@ -578,6 +576,8 @@ export default function GeneratorView() {
                           count={showStats ? cat.count : undefined}
                           checked={selectedIds.includes(cat.id)}
                           favorited
+                          drawCount={countFor(cat.id)}
+                          onDrawCount={(n) => setGeneratorDrawCount(cat.id, n)}
                           onToggle={() => toggleGeneratorBank(cat.id)}
                           onFavorite={() => toggleGeneratorBankFavorite(cat.id)}
                         />
@@ -599,6 +599,8 @@ export default function GeneratorView() {
                           count={showStats ? cat.count : undefined}
                           checked={selectedIds.includes(cat.id)}
                           favorited={false}
+                          drawCount={countFor(cat.id)}
+                          onDrawCount={(n) => setGeneratorDrawCount(cat.id, n)}
                           onToggle={() => toggleGeneratorBank(cat.id)}
                           onFavorite={() => toggleGeneratorBankFavorite(cat.id)}
                         />
@@ -617,6 +619,8 @@ export default function GeneratorView() {
                           label={skill.label}
                           count={showStats ? skill.count : undefined}
                           checked={selectedSkills.includes(skill.id)}
+                          drawCount={countFor(skill.id)}
+                          onDrawCount={(n) => setGeneratorDrawCount(skill.id, n)}
                           onToggle={() => toggleGeneratorSkill(skill.id)}
                         />
                       ))}

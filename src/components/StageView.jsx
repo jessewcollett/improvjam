@@ -108,6 +108,7 @@ function StageBoard({ code }) {
   const [localTheme, setLocalTheme] = useState('');
   const publishedTheme = sessionThemeFromPayload(payload);
   const publishedThemeRef = useRef(publishedTheme);
+  const updatedAtRef = useRef('');
   const theme = localTheme || publishedTheme || readStageTheme();
 
   useEffect(() => {
@@ -135,11 +136,17 @@ function StageBoard({ code }) {
         if (cancelled) return;
         const incoming = data.payload && typeof data.payload === 'object' ? data.payload : {};
         setPayload((prev) => {
-          const next = coalesceStagePayload(prev, incoming);
-          return stagePayloadSyncKey(prev) === stagePayloadSyncKey(next) ? prev : next;
+          const next = coalesceStagePayload(prev, incoming, {
+            updatedAt: data.updatedAt || '',
+            prevUpdatedAt: updatedAtRef.current,
+            miss: data.miss === true,
+          });
+          if (stagePayloadSyncKey(prev) === stagePayloadSyncKey(next)) return prev;
+          if (!data.miss && data.updatedAt) updatedAtRef.current = data.updatedAt;
+          return next;
         });
-        setHardError('');
-        setReady(true);
+        setHardError((prev) => (prev ? '' : prev));
+        setReady((prev) => (prev ? prev : true));
       } catch (err) {
         if (cancelled) return;
         if (isTransientStageError(err)) {

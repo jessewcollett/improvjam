@@ -229,7 +229,7 @@ export default async function handler(req, res) {
           return;
         }
         if (loginPage(text)) {
-          res.status(200).json(emptyRecord(code));
+          res.status(200).json({ ...emptyRecord(code), miss: true });
           return;
         }
         let raw = null;
@@ -238,7 +238,7 @@ export default async function handler(req, res) {
           raw = JSON.parse(text);
           parsed = normalizeRecord(code, raw);
         } catch {
-          res.status(200).json(emptyRecord(code));
+          res.status(200).json({ ...emptyRecord(code), miss: true });
           return;
         }
         const hostFlags = raw && Object.prototype.hasOwnProperty.call(raw, 'ideasOpen');
@@ -251,7 +251,7 @@ export default async function handler(req, res) {
         res.status(upstream.ok ? 200 : upstream.status).json(parsed);
         return;
       }
-      res.status(200).json(emptyRecord(code));
+      res.status(200).json({ ...emptyRecord(code), miss: true });
       return;
     }
 
