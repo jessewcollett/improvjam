@@ -129,12 +129,26 @@ export default function DragOrderList({ items, onOrder, renderAfter, onActivate 
               </button>
               {onActivate ? (
                 <button type="button" onClick={() => onActivate(item)} className="flex-1 min-w-0 text-left min-h-11 py-2">
-                  <span className="block text-sm font-bold text-gray-100 truncate">{item.label}</span>
+                  <span className="flex items-center gap-1.5 min-w-0">
+                    {item.badge ? (
+                      <span className={`text-2xs font-bold px-1.5 py-0.5 rounded-full border shrink-0 ${item.badgeClass || 'bg-gray-800 text-gray-300 border-gray-700'}`}>
+                        {item.badge}
+                      </span>
+                    ) : null}
+                    <span className="block text-sm font-bold text-gray-100 truncate">{item.label}</span>
+                  </span>
                   {item.detail ? <span className="block text-xs text-gray-500 truncate">{item.detail}</span> : null}
                 </button>
               ) : (
                 <div className="flex-1 min-w-0 py-2">
-                  <span className="block text-sm font-bold text-gray-100 truncate">{item.label}</span>
+                  <span className="flex items-center gap-1.5 min-w-0">
+                    {item.badge ? (
+                      <span className={`text-2xs font-bold px-1.5 py-0.5 rounded-full border shrink-0 ${item.badgeClass || 'bg-gray-800 text-gray-300 border-gray-700'}`}>
+                        {item.badge}
+                      </span>
+                    ) : null}
+                    <span className="block text-sm font-bold text-gray-100 truncate">{item.label}</span>
+                  </span>
                   {item.detail ? <span className="block text-xs text-gray-500 truncate">{item.detail}</span> : null}
                 </div>
               )}
@@ -182,7 +196,14 @@ export default function DragOrderList({ items, onOrder, renderAfter, onActivate 
             <GripVertical className="w-4 h-4" />
           </span>
           <div className="flex-1 min-w-0 py-2 pr-3">
-            <span className="block text-sm font-bold text-white truncate">{float.item.label}</span>
+            <span className="flex items-center gap-1.5 min-w-0">
+              {float.item.badge ? (
+                <span className={`text-2xs font-bold px-1.5 py-0.5 rounded-full border shrink-0 ${float.item.badgeClass || 'bg-gray-800 text-gray-300 border-gray-700'}`}>
+                  {float.item.badge}
+                </span>
+              ) : null}
+              <span className="block text-sm font-bold text-white truncate">{float.item.label}</span>
+            </span>
             {float.item.detail ? (
               <span className="block text-xs text-gray-400 truncate">{float.item.detail}</span>
             ) : null}

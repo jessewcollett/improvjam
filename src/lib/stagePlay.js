@@ -1,3 +1,5 @@
+import { resolvePlayableItems } from './setItems.js';
+
 export function normalizeStagePlay(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const setId = String(raw.setId || '').trim();
@@ -6,21 +8,35 @@ export function normalizeStagePlay(raw) {
   return { setId, index };
 }
 
-export function playGamesFromState(state) {
+export function playItemsFromState(state) {
   const play = normalizeStagePlay(state?.stagePlay);
-  if (!play) return { play: null, set: null, games: [], current: null };
+  if (!play) return { play: null, set: null, items: [], current: null };
   const set = (state?.lists?.customSets || []).find((item) => item.id === play.setId) || null;
-  if (!set) return { play: null, set: null, games: [], current: null };
-  const catalog = state?.data?.games || [];
-  const games = (set.games || [])
-    .map((id) => catalog.find((game) => game.id === id))
-    .filter(Boolean);
-  if (!games.length) return { play: null, set, games: [], current: null };
-  const index = Math.min(play.index, games.length - 1);
+  if (!set) return { play: null, set: null, items: [], current: null };
+  const items = resolvePlayableItems(set, {
+    games: state?.data?.games || [],
+    terms: state?.data?.terms || [],
+  });
+  if (!items.length) return { play: null, set, items: [], current: null };
+  const index = Math.min(play.index, items.length - 1);
   return {
     play: { setId: set.id, index },
     set,
+    items,
+    current: items[index] || null,
+  };
+}
+
+export function playGamesFromState(state) {
+  const resolved = playItemsFromState(state);
+  const games = resolved.items.filter((item) => item.type === 'game').map((item) => item.game);
+  const current = resolved.current?.type === 'game' ? resolved.current.game : null;
+  return {
+    play: resolved.play,
+    set: resolved.set,
     games,
-    current: games[index] || null,
+    current,
+    items: resolved.items,
+    currentItem: resolved.current,
   };
 }

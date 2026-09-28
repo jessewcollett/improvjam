@@ -65,7 +65,17 @@ import {
   normalizeGameGeneratorLinks,
 } from '../lib/gameGenerator.js';
 import { normalizeStageMessage, stageMessageText } from '../lib/stageMessage.js';
-import { normalizeStagePlay, playGamesFromState } from '../lib/stagePlay.js';
+import { normalizeStagePlay, playItemsFromState } from '../lib/stagePlay.js';
+import {
+  itemsFromGames,
+  normalizeLists,
+  normalizeSetItem,
+  normalizeSetItems,
+  reorderSetItems,
+  setItemKey,
+  termBoardMessage,
+  withSetItems,
+} from '../lib/setItems.js';
 import { normalizeTheme } from '../lib/theme.js';
 
 const bundled = normalizePayload(fallback);
@@ -81,6 +91,7 @@ const emptyLists = {
   favorites: [],
   toPlay: [],
   played: [],
+  learned: [],
   customSets: [],
 };
 
@@ -174,6 +185,51 @@ function seedLayout(state, overrides = {}) {
 
 function pinnedSpotlight(state, pins) {
   return normalizeStageSpotlight(state.stageSpotlight, normalizeStagePins(pins));
+}
+
+function patchCustomSet(state, setId, fn) {
+  return {
+    lists: {
+      ...state.lists,
+      customSets: state.lists.customSets.map((entry) => {
+        if (entry.id !== setId) return entry;
+        return withSetItems(entry, fn(normalizeSetItems(entry), entry));
+      }),
+    },
+  };
+}
+
+function playSetSlot(set, items) {
+  return {
+    id: set.id,
+    name: set.name,
+    games: items.map((item) => item.label),
+  };
+}
+
+function cuePlayPatches(state, resolved) {
+  const current = resolved.current;
+  const pinSet = new Set(state.stagePins);
+  pinSet.add('set');
+  const stageSlots = {
+    ...state.stageSlots,
+    set: playSetSlot(resolved.set, resolved.items),
+  };
+  if (current?.type === 'game' && current.game) {
+    pinSet.add('games');
+    stageSlots.games = gamesFromCatalog([current.game], state.stageSlots.games);
+  }
+  if (current?.type === 'message' && current.message) {
+    pinSet.add('message');
+    stageSlots.message = current.message;
+  }
+  const stagePins = [...pinSet];
+  return {
+    stagePlay: resolved.play,
+    stageSlots,
+    stagePins,
+    ...seedLayout({ ...state, stagePins, stageSlots }, { stagePins }),
+  };
 }
 
 function queueStagePublish() {
@@ -1092,44 +1148,53 @@ export const useAppStore = create(
         const key = String(setId || '').trim();
         const state = get();
         const match = (state.lists.customSets || []).find((item) => item.id === key);
-        const catalogGames = match ? gamesInIds(state.data.games, match.games) : [];
-        if (!match || !catalogGames.length) return false;
-        if (!state.settings.stageOn) get().setStageOn(true);
-        const first = catalogGames[0];
-        set((s) => {
-          const stagePins = [...new Set([...s.stagePins, 'set', 'games'])];
-          return {
-            stagePlay: { setId: match.id, index: 0 },
-            stageSlots: {
-              ...s.stageSlots,
-              set: { id: match.id, name: match.name, games: catalogGames.map((game) => game.name) },
-              games: gamesFromCatalog([first], s.stageSlots.games),
-            },
-            stagePins,
-            settings: { ...s.settings, lastRoute: STAGE_MANAGER_ID },
-            ...seedLayout({ ...s, stagePins }, { stagePins }),
-          };
+        const resolved = playItemsFromState({
+          ...state,
+          stagePlay: match ? { setId: match.id, index: 0 } : null,
         });
+        if (!match || !resolved.current) return false;
+        if (!state.settings.stageOn) get().setStageOn(true);
+        set((s) => ({
+          ...cuePlayPatches(s, resolved),
+          settings: { ...s.settings, lastRoute: STAGE_MANAGER_ID },
+        }));
         publishStageNow();
         return true;
       },
 
       cueStagePlayIndex: (index) => {
-        const resolved = playGamesFromState(get());
-        if (!resolved.set || !resolved.games.length) {
+        const state = get();
+        const current = playItemsFromState(state);
+        if (!current.set || !current.items.length) {
           set({ stagePlay: null });
           return false;
         }
-        const nextIndex = Math.max(0, Math.min(resolved.games.length - 1, Math.round(Number(index) || 0)));
-        const game = resolved.games[nextIndex];
-        if (!game) return false;
-        set((s) => {
-          const stagePins = s.stagePins.includes('games') ? s.stagePins : [...s.stagePins, 'games'];
+        const nextIndex = Math.max(0, Math.min(current.items.length - 1, Math.round(Number(index) || 0)));
+        const resolved = playItemsFromState({
+          ...state,
+          stagePlay: { setId: current.set.id, index: nextIndex },
+        });
+        if (!resolved.current) {
+          set({ stagePlay: null });
+          return false;
+        }
+        set((s) => cuePlayPatches(s, resolved));
+        publishStageNow();
+        return true;
+      },
+
+      showTermOnBoard: (term) => {
+        const message = termBoardMessage(term);
+        if (!stageMessageText(message)) return false;
+        set((state) => {
+          const stagePins = state.stagePins.includes('message')
+            ? state.stagePins
+            : [...state.stagePins, 'message'];
+          const stageSlots = { ...state.stageSlots, message };
           return {
-            stagePlay: { setId: resolved.set.id, index: nextIndex },
-            stageSlots: { ...s.stageSlots, games: gamesFromCatalog([game], s.stageSlots.games) },
+            stageSlots,
             stagePins,
-            ...seedLayout({ ...s, stagePins }, { stagePins }),
+            ...seedLayout({ ...state, stagePins, stageSlots }, { stagePins }),
           };
         });
         publishStageNow();
@@ -1160,7 +1225,7 @@ export const useAppStore = create(
         set((state) => ({
           lists: {
             ...state.lists,
-            customSets: [...state.lists.customSets, { id, name: trimmed, games: [] }],
+            customSets: [...state.lists.customSets, withSetItems({ id, name: trimmed }, [])],
           },
         }));
         return id;
@@ -1188,27 +1253,54 @@ export const useAppStore = create(
       },
 
       toggleInCustomSet: (setId, gameId) => {
-        set((state) => ({
-          lists: {
-            ...state.lists,
-            customSets: state.lists.customSets.map((s) => {
-              if (s.id !== setId) return s;
-              const games = s.games.includes(gameId)
-                ? s.games.filter((id) => id !== gameId)
-                : [...s.games, gameId];
-              return { ...s, games };
-            }),
-          },
+        const key = String(gameId || '').trim();
+        if (!key) return;
+        set((state) => patchCustomSet(state, setId, (items) => {
+          const has = items.some((item) => item.type === 'game' && item.id === key);
+          if (has) return items.filter((item) => !(item.type === 'game' && item.id === key));
+          return [...items, { type: 'game', id: key }];
         }));
       },
 
-      clearCustomSet: (setId) => {
-        set((state) => ({
-          lists: {
-            ...state.lists,
-            customSets: state.lists.customSets.map((s) => (s.id === setId ? { ...s, games: [] } : s)),
-          },
+      toggleSetTerm: (setId, termId) => {
+        const key = String(termId || '').trim();
+        if (!key) return;
+        set((state) => patchCustomSet(state, setId, (items) => {
+          const has = items.some((item) => item.type === 'term' && item.id === key);
+          if (has) return items.filter((item) => !(item.type === 'term' && item.id === key));
+          return [...items, { type: 'term', id: key }];
         }));
+      },
+
+      toggleSetGameTerm: (setId, gameId, termId) => {
+        const gameKey = String(gameId || '').trim();
+        const termKey = String(termId || '').trim();
+        if (!gameKey || !termKey) return;
+        set((state) => patchCustomSet(state, setId, (items) => items.map((item) => {
+          if (item.type !== 'game' || item.id !== gameKey) return item;
+          const terms = item.terms || [];
+          const next = terms.includes(termKey)
+            ? terms.filter((id) => id !== termKey)
+            : [...terms, termKey];
+          return next.length ? { type: 'game', id: gameKey, terms: next } : { type: 'game', id: gameKey };
+        })));
+      },
+
+      addSetMessage: (setId, raw) => {
+        const item = normalizeSetItem({ type: 'message', message: raw });
+        if (!item) return '';
+        set((state) => patchCustomSet(state, setId, (items) => [...items, item]));
+        return item.id;
+      },
+
+      removeSetItem: (setId, key) => {
+        const itemKey = String(key || '').trim();
+        if (!itemKey) return;
+        set((state) => patchCustomSet(state, setId, (items) => items.filter((item) => setItemKey(item) !== itemKey)));
+      },
+
+      clearCustomSet: (setId) => {
+        set((state) => patchCustomSet(state, setId, () => []));
       },
 
       moveCustomSet: (setId, direction) => {
@@ -1233,17 +1325,13 @@ export const useAppStore = create(
       moveCustomSetGame: (setId, gameId, direction) => {
         const delta = Number(direction);
         if (delta !== 1 && delta !== -1) return;
-        set((state) => ({
-          lists: {
-            ...state.lists,
-            customSets: state.lists.customSets.map((item) => {
-              if (item.id !== setId) return item;
-              const from = item.games.indexOf(gameId);
-              const to = from + delta;
-              if (from < 0 || to < 0 || to >= item.games.length) return item;
-              return { ...item, games: moveId(item.games, from, to) };
-            }),
-          },
+        const key = `game:${String(gameId || '').trim()}`;
+        set((state) => patchCustomSet(state, setId, (items) => {
+          const ids = items.map(setItemKey);
+          const from = ids.indexOf(key);
+          const to = from + delta;
+          if (from < 0 || to < 0 || to >= ids.length) return items;
+          return reorderSetItems(items, moveId(ids, from, to));
         }));
       },
 
@@ -1260,45 +1348,62 @@ export const useAppStore = create(
 
       reorderCustomSetGames: (setId, ids) => {
         const next = Array.isArray(ids) ? ids.map((id) => String(id || '').trim()).filter(Boolean) : [];
-        set((state) => ({
-          lists: {
-            ...state.lists,
-            customSets: state.lists.customSets.map((item) => {
-              if (item.id !== setId) return item;
-              const allowed = new Set(item.games);
-              const ordered = next.filter((id) => allowed.has(id));
-              const leftover = item.games.filter((id) => !ordered.includes(id));
-              return { ...item, games: [...ordered, ...leftover] };
-            }),
-          },
+        set((state) => patchCustomSet(state, setId, (items) => {
+          const keys = next.map((id) => (id.includes(':') ? id : `game:${id}`));
+          return reorderSetItems(items, keys);
         }));
       },
 
-      importSharedSet: ({ name, ids } = {}) => {
-        const requested = (Array.isArray(ids) ? ids : []).map((id) => String(id || '').trim()).filter(Boolean);
+      reorderCustomSetItems: (setId, keys) => {
+        const next = Array.isArray(keys) ? keys.map((id) => String(id || '').trim()).filter(Boolean) : [];
+        set((state) => patchCustomSet(state, setId, (items) => reorderSetItems(items, next)));
+      },
+
+      importSharedSet: ({ name, ids, items } = {}) => {
+        const requested = Array.isArray(items) && items.length
+          ? items.map(normalizeSetItem).filter(Boolean)
+          : itemsFromGames(ids);
         if (!requested.length) {
-          set({ sharedSetNotice: 'That share link had no games.' });
+          set({ sharedSetNotice: 'That share link had no items.' });
           return { id: '', missing: 0, added: 0 };
         }
-        const catalogIds = new Set((get().data.games || []).map((game) => String(game.id || '').trim()).filter(Boolean));
-        const knownIds = [];
-        const seen = new Set();
-        requested.forEach((id) => {
-          if (seen.has(id)) return;
-          seen.add(id);
-          if (!catalogIds.size || catalogIds.has(id)) knownIds.push(id);
-        });
-        const missing = catalogIds.size ? requested.filter((id) => !catalogIds.has(id)).length : 0;
-        if (!knownIds.length) {
+        const catalogGames = new Set((get().data.games || []).map((game) => String(game.id || '').trim()).filter(Boolean));
+        const catalogTerms = new Set((get().data.terms || []).map((term) => String(term.id || '').trim()).filter(Boolean));
+        let missingGames = 0;
+        let missingTerms = 0;
+        const known = requested.map((item) => {
+          if (item.type === 'game') {
+            if (catalogGames.size && !catalogGames.has(item.id)) {
+              missingGames += 1;
+              return null;
+            }
+            const terms = (item.terms || []).filter((id) => {
+              if (!catalogTerms.size || catalogTerms.has(id)) return true;
+              missingTerms += 1;
+              return false;
+            });
+            return terms.length ? { type: 'game', id: item.id, terms } : { type: 'game', id: item.id };
+          }
+          if (item.type === 'term') {
+            if (catalogTerms.size && !catalogTerms.has(item.id)) {
+              missingTerms += 1;
+              return null;
+            }
+            return item;
+          }
+          return item;
+        }).filter(Boolean);
+        if (!known.length) {
           set({
-            sharedSetNotice: missing
-              ? 'None of those games are in this catalog.'
+            sharedSetNotice: (missingGames || missingTerms)
+              ? 'None of those items are in this catalog.'
               : 'Couldn’t import that set.',
           });
-          return { id: '', missing, added: 0 };
+          return { id: '', missing: missingGames + missingTerms, added: 0 };
         }
         const id = `set_${Date.now()}`;
         const baseName = String(name || '').trim() || 'Shared set';
+        const missing = missingGames + missingTerms;
         set((state) => {
           const taken = new Set(state.lists.customSets.map((item) => item.name.toLowerCase()));
           let nextName = baseName;
@@ -1307,18 +1412,21 @@ export const useAppStore = create(
             nextName = `${baseName} (${n})`;
             n += 1;
           }
+          const parts = [];
+          if (missingGames) parts.push(`${missingGames} game${missingGames === 1 ? '' : 's'}`);
+          if (missingTerms) parts.push(`${missingTerms} term${missingTerms === 1 ? '' : 's'}`);
           return {
             lists: {
               ...state.lists,
-              customSets: [...state.lists.customSets, { id, name: nextName, games: knownIds }],
+              customSets: [...state.lists.customSets, withSetItems({ id, name: nextName }, known)],
             },
             focusCustomSetId: id,
-            sharedSetNotice: missing
-              ? `${missing} game${missing === 1 ? '' : 's'} not in this catalog.`
+            sharedSetNotice: parts.length
+              ? `${parts.join(' and ')} not in this catalog.`
               : `Imported “${nextName}”.`,
           };
         });
-        return { id, missing, added: knownIds.length };
+        return { id, missing, added: known.length };
       },
 
       clearFocusCustomSet: () => set({ focusCustomSetId: '' }),
@@ -1392,7 +1500,7 @@ export const useAppStore = create(
           persisted?.lastSynced && persisted?.data?.games?.length
             ? normalizePayload(persisted.data)
             : current.data,
-        lists: persisted?.lists || current.lists,
+        lists: normalizeLists(persisted?.lists || current.lists),
         settings: normalizeSettings(persisted?.settings),
         dismissedTipDate:
           typeof persisted?.dismissedTipDate === 'string' ? persisted.dismissedTipDate : current.dismissedTipDate,

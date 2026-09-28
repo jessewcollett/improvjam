@@ -46,18 +46,28 @@ function modeLabel(mode) {
   return 'all';
 }
 
-const SORT_OPTIONS = [
+const GAME_SORT_OPTIONS = [
   { id: 'name', label: 'Name' },
   { id: 'category', label: 'Category' },
   { id: 'catalog', label: 'Catalog' },
+];
+
+const TERM_SORT_OPTIONS = [
+  ...GAME_SORT_OPTIONS,
+  { id: 'learned', label: 'Learned' },
 ];
 
 function itemName(item, viewType) {
   return String(viewType === 'terms' ? item.term : item.name || '').toLowerCase();
 }
 
-function compareItems(a, b, sortBy, viewType) {
+function compareItems(a, b, sortBy, viewType, learnedIds) {
   if (sortBy === 'catalog') return 0;
+  if (sortBy === 'learned' && viewType === 'terms') {
+    const aOn = learnedIds.has(a.id) ? 0 : 1;
+    const bOn = learnedIds.has(b.id) ? 0 : 1;
+    if (aOn !== bOn) return aOn - bOn;
+  }
   if (sortBy === 'category') {
     const cat = (itemCategories(a)[0] || '').localeCompare(itemCategories(b)[0] || '');
     if (cat) return cat;
@@ -121,11 +131,13 @@ export default function LibraryView() {
   const [gameFilters, setGameFilters] = useState([]);
   const [termFilters, setTermFilters] = useState([]);
   const [setModes, setSetModes] = useState({});
+  const [learnedMode, setLearnedMode] = useState();
   const [customMenuOpen, setCustomMenuOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [sortOpen, setSortOpen] = useState(false);
   const viewType = settings.libraryView === 'terms' ? 'terms' : 'games';
-  const sortBy = SORT_OPTIONS.some((opt) => opt.id === settings.librarySort)
+  const sortOptions = viewType === 'terms' ? TERM_SORT_OPTIONS : GAME_SORT_OPTIONS;
+  const sortBy = sortOptions.some((opt) => opt.id === settings.librarySort)
     ? settings.librarySort
     : 'name';
 
@@ -155,14 +167,18 @@ export default function LibraryView() {
     return lists.customSets.find((set) => set.id === setId)?.name || setId;
   };
   const activeSetModes = Object.entries(setModes).filter(([, mode]) => mode === 'in' || mode === 'out');
-  const setFilterCount = viewType === 'games' ? activeSetModes.length : 0;
+  const setFilterCount = viewType === 'games' ? activeSetModes.length : (learnedMode ? 1 : 0);
   const filterCount = selectedFilters.length + setFilterCount;
   const filterActive = filterCount > 0;
   const filterSummary = [
     ...selectedFilters,
     ...(viewType === 'games'
       ? activeSetModes.map(([id, mode]) => (mode === 'out' ? `Not ${setLabel(id)}` : setLabel(id)))
-      : []),
+      : learnedMode === 'in'
+        ? ['Learned']
+        : learnedMode === 'out'
+          ? ['Not learned']
+          : []),
   ];
   const customModes = lists.customSets.map((set) => setModes[set.id]).filter(Boolean);
   const customFolderMode = customModes.includes('in') ? 'in' : customModes.includes('out') ? 'out' : undefined;
@@ -184,6 +200,8 @@ export default function LibraryView() {
     if (viewType === 'games') {
       setSetModes({});
       setCustomMenuOpen(false);
+    } else {
+      setLearnedMode(undefined);
     }
   };
 
@@ -208,15 +226,18 @@ export default function LibraryView() {
 
   const filteredTerms = useMemo(() => {
     const q = searchTerm.toLowerCase();
+    const learnedIds = new Set(lists.learned || []);
     return data.terms
       .filter((t) => {
         const cats = itemCategories(t);
         const matchesSearch = !q || `${t.term} ${t.definition} ${cats.join(' ')}`.toLowerCase().includes(q);
         const matchesFilter = !termFilters.length || termFilters.some((cat) => cats.includes(cat));
-        return matchesSearch && matchesFilter;
+        const isLearned = learnedIds.has(t.id);
+        const matchesLearned = learnedMode === 'in' ? isLearned : learnedMode === 'out' ? !isLearned : true;
+        return matchesSearch && matchesFilter && matchesLearned;
       })
-      .sort((a, b) => compareItems(a, b, sortBy, 'terms'));
-  }, [data.terms, searchTerm, termFilters, sortBy]);
+      .sort((a, b) => compareItems(a, b, sortBy, 'terms', learnedIds));
+  }, [data.terms, searchTerm, termFilters, sortBy, lists.learned, learnedMode]);
 
   return (
     <div className="h-full flex flex-col pt-safe px-4 md:px-6">
@@ -341,7 +362,7 @@ export default function LibraryView() {
           <div className="mt-3">
             <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Sort by</p>
             <div className="flex flex-wrap gap-2">
-              {SORT_OPTIONS.map((opt) => (
+              {sortOptions.map((opt) => (
                 <Chip
                   key={opt.id}
                   active={sortBy === opt.id}
@@ -368,6 +389,19 @@ export default function LibraryView() {
                 </Chip>
               ))}
             </div>
+            {viewType === 'terms' ? (
+              <>
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 mt-3">Learned</p>
+                <p className="text-2xs text-gray-500 mb-2">Highlight = learned · red slash = not yet · gray = all</p>
+                <SetModeButton
+                  mode={learnedMode}
+                  onClick={() => setLearnedMode((current) => cycleSetMode(current))}
+                  label="Learned"
+                  Icon={CheckCircle}
+                  onClass="text-green-300 border-green-400 bg-green-600/20"
+                />
+              </>
+            ) : null}
             {viewType === 'games' ? (
               <>
                 <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 mt-3">Sets</p>
@@ -465,7 +499,9 @@ export default function LibraryView() {
               ))}
             </div>
           ) : (
-            <div className="text-center text-gray-500 mt-10">No terms found matching “{searchTerm}”</div>
+            <div className="text-center text-gray-500 mt-10">
+              {searchTerm || filterActive ? 'No terms match these filters.' : 'No terms in the catalog.'}
+            </div>
           )}
         </AnimatePresence>
         <LibraryFooter sources={data.sources} />

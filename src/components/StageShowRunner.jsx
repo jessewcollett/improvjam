@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { Bell, Coins, Dices, Lightbulb, Pause, Play, RotateCcw } from 'lucide-react';
 import { flipCoin, hasGeneratorSelection, rollHatFromPrompts } from '../lib/generateDraw.js';
 import { catalogIdsFromState, resolveGameGeneratorLink } from '../lib/gameGenerator.js';
-import { playGamesFromState } from '../lib/stagePlay.js';
+import { playItemsFromState } from '../lib/stagePlay.js';
 import { normalizeStageManagerTools } from '../lib/nav.js';
 import { mergeSfxPads, resolveDefaultPad } from '../lib/sfxPad.js';
 import { remainingFromTimer, slotSummary, snapshotTimer } from '../lib/stage.js';
@@ -34,6 +34,7 @@ export default function StageShowRunner() {
   const stagePlay = useAppStore((s) => s.stagePlay);
   const customSets = useAppStore((s) => s.lists.customSets);
   const catalogGames = useAppStore((s) => s.data.games);
+  const catalogTerms = useAppStore((s) => s.data.terms);
   const generatorRows = useAppStore((s) => s.data.generator);
   const banks = useAppStore((s) => s.data.banks);
   const prompts = useAppStore((s) => s.data.prompts);
@@ -52,28 +53,30 @@ export default function StageShowRunner() {
   );
   const holdDing = useHoldDing(defaultPad, settings.bellVolume);
   const playNow = useMemo(
-    () => playGamesFromState({
+    () => playItemsFromState({
       stagePlay,
       lists: { customSets },
-      data: { games: catalogGames },
+      data: { games: catalogGames, terms: catalogTerms },
     }),
-    [stagePlay, customSets, catalogGames],
+    [stagePlay, customSets, catalogGames, catalogTerms],
   );
   const playCatalog = useMemo(
     () => catalogIdsFromState({ data: { generator: generatorRows, banks, prompts } }),
     [generatorRows, banks, prompts],
   );
+  const currentGame = playNow.current?.type === 'game' ? playNow.current.game : null;
   const playHasLink = Boolean(
-    playNow.current && resolveGameGeneratorLink(links?.[playNow.current.id], playCatalog),
+    currentGame && resolveGameGeneratorLink(links?.[currentGame.id], playCatalog),
   );
-  const playing = Boolean(playNow.play && playNow.current);
-  const canGenerate = playing
+  const inPlay = Boolean(playNow.play && playNow.current);
+  const playing = Boolean(inPlay && currentGame);
+  const canGenerate = inPlay
     ? playHasLink
     : hasGeneratorSelection({ generatorBanks, generatorSkills });
 
   const onDraw = () => {
-    if (playing && playNow.current) {
-      generateFromGame(playNow.current.id, { stay: true });
+    if (playing && currentGame) {
+      generateFromGame(currentGame.id, { stay: true });
       return;
     }
     generateStageSuggestions();
@@ -133,7 +136,7 @@ export default function StageShowRunner() {
         </button>
         {!canGenerate ? (
           <p className="text-2xs text-gray-500 mt-1 leading-snug">
-            {playing ? 'Link a generator on this game first.' : 'Pick banks on Generator first.'}
+            {playing ? 'Link a generator on this game first.' : inPlay ? 'Generate is for games in this rundown.' : 'Pick banks on Generator first.'}
           </p>
         ) : suggestions?.length ? (
           <p className="text-2xs text-gray-400 mt-1 truncate">{slotSummary('suggestions', suggestions)}</p>

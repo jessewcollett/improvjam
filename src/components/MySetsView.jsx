@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
+  BookOpen,
   Link2,
   ListPlus,
   CheckCircle,
@@ -11,18 +12,30 @@ import {
   ChevronLeft,
   ListTodo,
   Share2,
+  Type,
   X,
   Play,
 } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
 import { useAppStore, gamesInIds } from '../store/useAppStore.js';
-import { copyText } from '../lib/stage.js';
+import { copyText, DEFAULT_STAGE_MESSAGES } from '../lib/stage.js';
 import { decodeSharedSet, sharedSetUrl } from '../lib/setShare.js';
+import {
+  labelForSetItem,
+  messageItemLabel,
+  normalizeSetItems,
+  setCountLabel,
+  setItemKey,
+} from '../lib/setItems.js';
+import { MESSAGE_MAX, stageMessageText } from '../lib/stageMessage.js';
 import GameCard from './GameCard.jsx';
+import TermCard from './TermCard.jsx';
 import StagePin from './StagePin.jsx';
 import SyncButton from './SyncButton.jsx';
 import DragOrderList from './DragOrderList.jsx';
 import SetGamePicker from './SetGamePicker.jsx';
+import SetTermPicker from './SetTermPicker.jsx';
+import StageMessageEditor from './StageMessageEditor.jsx';
 
 const LIST_LABELS = {
   toPlay: 'To Play',
@@ -38,6 +51,66 @@ function setSlotFromIds(id, name, ids, games) {
   };
 }
 
+function setSlotFromSet(set, games, terms) {
+  return {
+    id: set.id,
+    name: set.name,
+    games: normalizeSetItems(set).map((item) => labelForSetItem(item, { games, terms })),
+  };
+}
+
+function CenteredSheet({ title, subtitle, onClose, children }) {
+  const titleId = `${String(title || 'sheet').toLowerCase().replace(/[^a-z0-9]+/g, '-')}-title`;
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-3">
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/70"
+        aria-label={`Close ${title}`}
+        onClick={onClose}
+      />
+      <div
+        className="relative w-full h-[min(85dvh,100%)] max-h-[85dvh] min-h-0 overflow-hidden flex flex-col rounded-2xl border border-gray-700 bg-[#121212] px-4 pt-3 pb-3"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+      >
+        <div className="flex items-start justify-between gap-2 mb-2">
+          <div className="min-w-0">
+            <p id={titleId} className="text-sm font-black font-display text-white leading-tight">
+              {title}
+            </p>
+            {subtitle ? <p className="text-2xs text-gray-500 mt-0.5">{subtitle}</p> : null}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="min-h-11 px-3 rounded-xl bg-indigo-600 text-white text-xs font-bold shrink-0"
+          >
+            Done
+          </button>
+        </div>
+        <div className="overflow-y-auto overflow-x-hidden scrollbar-hide flex-1 min-h-0 pb-3">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MessageSlideCard({ item }) {
+  const text = stageMessageText(item.message);
+  return (
+    <div className="bg-card border border-gray-800 rounded-xl px-3 py-2.5">
+      <div className="flex items-center gap-2 mb-1">
+        <Type className="w-4 h-4 text-amber-400 shrink-0" />
+        <p className="text-sm font-bold text-gray-100 truncate">{messageItemLabel(item.message)}</p>
+      </div>
+      <p className="text-xs text-gray-500 whitespace-pre-wrap line-clamp-4">{text}</p>
+    </div>
+  );
+}
+
 export default function MySetsView() {
   const data = useAppStore((s) => s.data);
   const lists = useAppStore((s) => s.lists);
@@ -49,7 +122,9 @@ export default function MySetsView() {
   const clearCustomSet = useAppStore((s) => s.clearCustomSet);
   const toggleInCustomSet = useAppStore((s) => s.toggleInCustomSet);
   const reorderCustomSets = useAppStore((s) => s.reorderCustomSets);
-  const reorderCustomSetGames = useAppStore((s) => s.reorderCustomSetGames);
+  const reorderCustomSetItems = useAppStore((s) => s.reorderCustomSetItems);
+  const removeSetItem = useAppStore((s) => s.removeSetItem);
+  const addSetMessage = useAppStore((s) => s.addSetMessage);
   const focusCustomSetId = useAppStore((s) => s.focusCustomSetId);
   const sharedSetNotice = useAppStore((s) => s.sharedSetNotice);
   const clearFocusCustomSet = useAppStore((s) => s.clearFocusCustomSet);
@@ -61,6 +136,7 @@ export default function MySetsView() {
   const setStageSlot = useAppStore((s) => s.setStageSlot);
   const toggleStagePin = useAppStore((s) => s.toggleStagePin);
   const startStagePlay = useAppStore((s) => s.startStagePlay);
+  const messageFavorites = useAppStore((s) => s.stageMessageFavorites) || [];
   const setPinned = stagePins.includes('set');
   const pinnedSetId = stageSlots.set?.id;
 
@@ -75,8 +151,16 @@ export default function MySetsView() {
   const [renamingId, setRenamingId] = useState(null);
   const [renameDraft, setRenameDraft] = useState('');
   const [editing, setEditing] = useState(false);
-  const [addingGames, setAddingGames] = useState(false);
+  const [sheet, setSheet] = useState('');
+  const [linkingGameId, setLinkingGameId] = useState('');
+  const [messageDraft, setMessageDraft] = useState('');
   const [shareNote, setShareNote] = useState('');
+
+  const closeSheets = () => {
+    setSheet('');
+    setLinkingGameId('');
+    setMessageDraft('');
+  };
 
   useEffect(() => {
     setConfirmClear(false);
@@ -87,7 +171,7 @@ export default function MySetsView() {
     setRenamingId(null);
     setRenameDraft('');
     setEditing(false);
-    setAddingGames(false);
+    closeSheets();
     setShareNote('');
   }, [activeTab]);
 
@@ -122,32 +206,42 @@ export default function MySetsView() {
       toggleStagePin('set');
       return;
     }
-    setStageSlot('set', setSlotFromIds(match.id, match.name, match.games, data.games));
-  }, [data.games, lists, pinnedSetId, setPinned, setStageSlot, toggleStagePin]);
+    setStageSlot('set', setSlotFromSet(match, data.games, data.terms));
+  }, [data.games, data.terms, lists, pinnedSetId, setPinned, setStageSlot, toggleStagePin]);
 
-  const pinSet = (id, name, ids) => {
+  const pinSet = (id, name, ids, customSet) => {
     const already = setPinned && pinnedSetId === id;
     if (already) {
       toggleStagePin('set');
       return;
     }
-    setStageSlot('set', setSlotFromIds(id, name, ids, data.games));
+    setStageSlot(
+      'set',
+      customSet ? setSlotFromSet(customSet, data.games, data.terms) : setSlotFromIds(id, name, ids, data.games),
+    );
     if (!setPinned) toggleStagePin('set');
   };
 
+  const activeCustomSet = lists.customSets.find((s) => s.id === activeCustomSetId);
+  const customItems = useMemo(() => normalizeSetItems(activeCustomSet), [activeCustomSet]);
   const currentListGames =
     activeTab !== 'custom'
       ? gamesInIds(data.games, lists[activeTab] || [])
-      : activeCustomSetId
-        ? gamesInIds(data.games, lists.customSets.find((s) => s.id === activeCustomSetId)?.games || [])
-        : [];
-
-  const activeCustomSet = lists.customSets.find((s) => s.id === activeCustomSetId);
+      : gamesInIds(data.games, activeCustomSet?.games || []);
   const customEditing = activeTab === 'custom' && editing;
+  const canPlay = customItems.length > 0;
+  const linkingGame = currentListGames.find((game) => game.id === linkingGameId);
+  const savedFavorites = messageFavorites.filter(
+    (item) => !DEFAULT_STAGE_MESSAGES.some((entry) => entry.toLowerCase() === stageMessageText(item).toLowerCase()),
+  );
 
   const shareActiveSet = async () => {
-    if (!activeCustomSet?.games.length) return;
-    const url = sharedSetUrl({ name: activeCustomSet.name, ids: activeCustomSet.games });
+    if (!customItems.length) return;
+    const url = sharedSetUrl({
+      name: activeCustomSet.name,
+      ids: activeCustomSet.games,
+      items: customItems,
+    });
     if (!url) return;
     try {
       if (navigator.share) {
@@ -161,6 +255,14 @@ export default function MySetsView() {
       setShareNote('Link copied');
       window.setTimeout(() => setShareNote(''), 1600);
     }
+  };
+
+  const commitMessageSlide = () => {
+    if (!activeCustomSet) return;
+    if (!stageMessageText(messageDraft)) return;
+    addSetMessage(activeCustomSet.id, messageDraft);
+    setMessageDraft('');
+    setSheet('');
   };
 
   return (
@@ -312,7 +414,7 @@ export default function MySetsView() {
                 items={lists.customSets.map((set) => ({
                   id: set.id,
                   label: set.name,
-                  detail: showStats ? `${set.games.length} games` : '',
+                  detail: showStats ? setCountLabel(set) : '',
                 }))}
                 onOrder={reorderCustomSets}
                 onActivate={(item) => {
@@ -392,7 +494,7 @@ export default function MySetsView() {
                     ) : (
                       <button type="button" onClick={() => setActiveCustomSetId(set.id)} className="flex-1 text-left min-h-11">
                         <h3 className="font-bold text-gray-200 text-lg">{set.name}</h3>
-                        {showStats ? <p className="text-xs text-gray-500">{set.games.length} games</p> : null}
+                        {showStats ? <p className="text-xs text-gray-500">{setCountLabel(set)}</p> : null}
                       </button>
                     )}
                   </div>
@@ -432,7 +534,7 @@ export default function MySetsView() {
                   onClick={() => {
                     setActiveCustomSetId(null);
                     setEditing(false);
-                    setAddingGames(false);
+                    closeSheets();
                   }}
                   className="flex items-center text-sm text-gray-400"
                 >
@@ -447,7 +549,7 @@ export default function MySetsView() {
                   type="button"
                   onClick={() => {
                     setEditing((v) => !v);
-                    setAddingGames(false);
+                    closeSheets();
                     setConfirmClear(false);
                   }}
                   className={`px-3 py-1.5 rounded-lg text-xs font-bold border min-h-10 ${
@@ -459,7 +561,7 @@ export default function MySetsView() {
                   {editing ? 'Done' : 'Edit'}
                 </button>
               ) : null}
-              {activeTab === 'custom' && activeCustomSet?.games.length ? (
+              {activeTab === 'custom' && canPlay ? (
                 <button
                   type="button"
                   onClick={() => startStagePlay(activeCustomSet.id)}
@@ -469,7 +571,7 @@ export default function MySetsView() {
                   Play
                 </button>
               ) : null}
-              {activeTab === 'custom' && activeCustomSet?.games.length ? (
+              {activeTab === 'custom' && canPlay ? (
                 <button
                   type="button"
                   onClick={shareActiveSet}
@@ -489,10 +591,10 @@ export default function MySetsView() {
                 <StagePin
                   pressed={setPinned && pinnedSetId === activeCustomSet.id}
                   label={setPinned && pinnedSetId === activeCustomSet.id ? `Unpin ${activeCustomSet.name} from Stage` : `Pin ${activeCustomSet.name} to Stage`}
-                  onClick={() => pinSet(activeCustomSet.id, activeCustomSet.name, activeCustomSet.games)}
+                  onClick={() => pinSet(activeCustomSet.id, activeCustomSet.name, activeCustomSet.games, activeCustomSet)}
                 />
               ) : null}
-              {currentListGames.length > 0 && (activeTab !== 'custom' || editing) && (
+              {(activeTab === 'custom' ? customItems.length : currentListGames.length) > 0 && (activeTab !== 'custom' || editing) && (
                 !confirmClear ? (
                   <button type="button" onClick={() => setConfirmClear(true)} className="flex items-center text-xs text-red-400 bg-red-900/20 px-3 py-1.5 rounded-lg border border-red-900/50">
                     <Trash2 className="w-3 h-3 mr-1.5" /> Clear list
@@ -560,102 +662,225 @@ export default function MySetsView() {
             )}
 
             {customEditing && activeCustomSet ? (
-              <button
-                type="button"
-                onClick={() => setAddingGames(true)}
-                className="w-full mb-4 min-h-11 px-3 rounded-xl border border-indigo-500/40 bg-indigo-600/20 text-indigo-200 text-sm font-bold inline-flex items-center justify-center gap-1.5"
-              >
-                <Plus className="w-4 h-4" />
-                Add games
-              </button>
-            ) : null}
-
-            {customEditing && addingGames && activeCustomSet ? (
-              <div className="fixed inset-0 z-[80] flex items-center justify-center p-3">
+              <div className="grid grid-cols-3 gap-2 mb-4">
                 <button
                   type="button"
-                  className="absolute inset-0 bg-black/70"
-                  aria-label="Close add games"
-                  onClick={() => setAddingGames(false)}
-                />
-                <div
-                  className="relative w-full h-[min(85dvh,100%)] max-h-[85dvh] min-h-0 overflow-hidden flex flex-col rounded-2xl border border-gray-700 bg-[#121212] px-4 pt-3 pb-3"
-                  role="dialog"
-                  aria-modal="true"
-                  aria-labelledby="add-games-title"
+                  onClick={() => setSheet('games')}
+                  className="min-h-11 px-2 rounded-xl border border-indigo-500/40 bg-indigo-600/20 text-indigo-200 text-xs font-bold inline-flex items-center justify-center gap-1"
                 >
-                  <div className="flex items-start justify-between gap-2 mb-2">
-                    <div className="min-w-0">
-                      <p id="add-games-title" className="text-sm font-black font-display text-white leading-tight">
-                        Add games
-                      </p>
-                      <p className="text-2xs text-gray-500 mt-0.5">
-                        {currentListGames.length} in {activeCustomSet.name}. Tap a chip to add or remove.
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setAddingGames(false)}
-                      className="min-h-11 px-3 rounded-xl bg-indigo-600 text-white text-xs font-bold shrink-0"
-                    >
-                      Done
-                    </button>
-                  </div>
-                  <div className="overflow-y-auto overflow-x-hidden scrollbar-hide flex-1 min-h-0 pb-3">
-                    <SetGamePicker key={activeCustomSet.id} setId={activeCustomSet.id} />
-                  </div>
-                </div>
+                  <Plus className="w-4 h-4" />
+                  Games
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSheet('terms')}
+                  className="min-h-11 px-2 rounded-xl border border-purple-500/40 bg-purple-600/20 text-purple-200 text-xs font-bold inline-flex items-center justify-center gap-1"
+                >
+                  <BookOpen className="w-4 h-4" />
+                  Terms
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMessageDraft('');
+                    setSheet('message');
+                  }}
+                  className="min-h-11 px-2 rounded-xl border border-amber-500/40 bg-amber-600/20 text-amber-200 text-xs font-bold inline-flex items-center justify-center gap-1"
+                >
+                  <Type className="w-4 h-4" />
+                  Message
+                </button>
               </div>
             ) : null}
 
-            {customEditing && activeCustomSet ? (
-              currentListGames.length ? (
-                <DragOrderList
-                  items={currentListGames.map((game) => ({
-                    id: game.id,
-                    label: game.name,
-                    detail: game.category || '',
-                  }))}
-                  onOrder={(ids) => reorderCustomSetGames(activeCustomSet.id, ids)}
-                  renderAfter={(item) => (
+            {customEditing && sheet === 'games' && activeCustomSet ? (
+              <CenteredSheet
+                title="Add games"
+                subtitle={`${currentListGames.length} in ${activeCustomSet.name}. Tap a chip to add or remove.`}
+                onClose={closeSheets}
+              >
+                <SetGamePicker key={activeCustomSet.id} setId={activeCustomSet.id} />
+              </CenteredSheet>
+            ) : null}
+
+            {customEditing && sheet === 'terms' && activeCustomSet ? (
+              <CenteredSheet
+                title="Add terms"
+                subtitle="Tap a glossary chip to add or remove a slide."
+                onClose={closeSheets}
+              >
+                <SetTermPicker key={`${activeCustomSet.id}-terms`} setId={activeCustomSet.id} />
+              </CenteredSheet>
+            ) : null}
+
+            {customEditing && linkingGame && activeCustomSet ? (
+              <CenteredSheet
+                title="Link terms"
+                subtitle={`Glossary notes for ${linkingGame.name}. Not extra slides.`}
+                onClose={closeSheets}
+              >
+                <SetTermPicker
+                  key={`${activeCustomSet.id}-${linkingGame.id}`}
+                  setId={activeCustomSet.id}
+                  gameId={linkingGame.id}
+                />
+              </CenteredSheet>
+            ) : null}
+
+            {customEditing && sheet === 'message' && activeCustomSet ? (
+              <CenteredSheet
+                title="Add board message"
+                subtitle="This becomes a slide in the rundown."
+                onClose={closeSheets}
+              >
+                <StageMessageEditor value={messageDraft} onChange={setMessageDraft} />
+                <p className="text-2xs text-gray-500 mt-1 mb-2 tabular-nums">
+                  {stageMessageText(messageDraft).length} / {MESSAGE_MAX}
+                </p>
+                <div className="flex flex-wrap gap-1.5 mb-3">
+                  {DEFAULT_STAGE_MESSAGES.map((item) => (
                     <button
+                      key={item}
                       type="button"
-                      onClick={() => toggleInCustomSet(activeCustomSet.id, item.id)}
-                      className="min-w-11 min-h-11 flex items-center justify-center text-gray-600 hover:text-red-400"
-                      aria-label={`Remove ${item.label}`}
+                      onClick={() => setMessageDraft(item)}
+                      className="min-h-10 px-2.5 rounded-lg text-xs font-bold border bg-[#1A1A1A] text-gray-200 border-gray-800"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      {item}
                     </button>
+                  ))}
+                  {savedFavorites.map((item) => {
+                    const itemText = stageMessageText(item);
+                    const line = itemText.split('\n').map((part) => part.trim()).find(Boolean) || itemText;
+                    const label = line.length > 36 ? `${line.slice(0, 34)}…` : line;
+                    return (
+                      <button
+                        key={itemText}
+                        type="button"
+                        title={itemText}
+                        onClick={() => setMessageDraft(item)}
+                        className="min-h-10 px-2.5 rounded-lg text-xs font-bold border bg-[#1A1A1A] text-gray-200 border-gray-800 max-w-full truncate"
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <button
+                  type="button"
+                  onClick={commitMessageSlide}
+                  disabled={!stageMessageText(messageDraft)}
+                  className="w-full min-h-11 rounded-xl bg-amber-700 text-white text-sm font-bold disabled:bg-gray-800 disabled:text-gray-500"
+                >
+                  Add to set
+                </button>
+              </CenteredSheet>
+            ) : null}
+
+            {customEditing && activeCustomSet ? (
+              customItems.length ? (
+                <DragOrderList
+                  items={customItems.map((item) => {
+                      const linked = item.type === 'game' && item.terms?.length
+                      ? `${item.terms.length} term${item.terms.length === 1 ? '' : 's'} linked`
+                      : '';
+                    const badge = item.type === 'term' ? 'Term' : item.type === 'message' ? 'Msg' : 'Game';
+                    const badgeClass = item.type === 'term'
+                      ? 'bg-purple-900/40 text-purple-300 border-purple-800/60'
+                      : item.type === 'message'
+                        ? 'bg-amber-900/40 text-amber-300 border-amber-800/60'
+                        : 'bg-lime-900/40 text-lime-300 border-lime-800/60';
+                    return {
+                      id: setItemKey(item),
+                      label: labelForSetItem(item, { games: data.games, terms: data.terms }),
+                      detail: [item.type === 'game' ? (data.games.find((game) => game.id === item.id)?.category || '') : '', linked].filter(Boolean).join(' · '),
+                      badge,
+                      badgeClass,
+                      itemType: item.type,
+                      gameId: item.type === 'game' ? item.id : '',
+                    };
+                  })}
+                  onOrder={(ids) => reorderCustomSetItems(activeCustomSet.id, ids)}
+                  renderAfter={(row) => (
+                    <>
+                      {row.itemType === 'game' ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSheet('');
+                            setLinkingGameId(row.gameId);
+                          }}
+                          className="min-w-11 min-h-11 flex items-center justify-center text-gray-500 hover:text-purple-300"
+                          aria-label={`Link terms to ${row.label}`}
+                        >
+                          <BookOpen className="w-4 h-4" />
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (row.itemType === 'game') toggleInCustomSet(activeCustomSet.id, row.gameId);
+                          else removeSetItem(activeCustomSet.id, row.id);
+                        }}
+                        className="min-w-11 min-h-11 flex items-center justify-center text-gray-600 hover:text-red-400"
+                        aria-label={`Remove ${row.label}`}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </>
                   )}
                 />
               ) : (
                 <div className="flex flex-col items-center justify-center text-gray-500 px-8 text-center mt-10">
                   <Folder className="w-16 h-16 mb-4 text-indigo-500/50" />
                   <p className="text-lg font-medium text-gray-300 mb-2">This list is empty</p>
-                  <p className="text-sm">Tap Add games to pick from the Library.</p>
+                  <p className="text-sm">Add games, glossary slides, or board messages.</p>
                 </div>
               )
             ) : (
               <>
-                <AnimatePresence>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 lg:gap-3">
-                    {currentListGames.map((game) => (
-                      <GameCard key={game.id} game={game} />
-                    ))}
-                  </div>
-                </AnimatePresence>
+                {activeTab === 'custom' && activeCustomSet ? (
+                  customItems.length ? (
+                    <div className="space-y-2">
+                      {customItems.map((item) => {
+                        const key = setItemKey(item);
+                        if (item.type === 'game') {
+                          const game = data.games.find((entry) => entry.id === item.id);
+                          return game ? <GameCard key={key} game={game} /> : null;
+                        }
+                        if (item.type === 'term') {
+                          const term = data.terms.find((entry) => entry.id === item.id);
+                          return term ? <TermCard key={key} termData={term} /> : null;
+                        }
+                        return <MessageSlideCard key={key} item={item} />;
+                      })}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center text-gray-500 px-8 text-center mt-10">
+                      <Folder className="w-16 h-16 mb-4 text-indigo-500/50" />
+                      <p className="text-lg font-medium text-gray-300 mb-2">This list is empty</p>
+                      <p className="text-sm">Edit, then add games, terms, or board messages.</p>
+                    </div>
+                  )
+                ) : (
+                  <>
+                    <AnimatePresence>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 lg:gap-3">
+                        {currentListGames.map((game) => (
+                          <GameCard key={game.id} game={game} />
+                        ))}
+                      </div>
+                    </AnimatePresence>
 
-                {currentListGames.length === 0 && (
-                  <div className="flex flex-col items-center justify-center text-gray-500 px-8 text-center mt-10">
-                    {activeTab === 'toPlay' && <ListTodo className="w-16 h-16 mb-4 text-blue-500/50" />}
-                    {activeTab === 'played' && <CheckCircle className="w-16 h-16 mb-4 text-green-500/50" />}
-                    {activeTab === 'favorites' && <Star className="w-16 h-16 mb-4 text-yellow-500/50" />}
-                    {activeTab === 'custom' && <Folder className="w-16 h-16 mb-4 text-indigo-500/50" />}
-                    <p className="text-lg font-medium text-gray-300 mb-2">This list is empty</p>
-                    <p className="text-sm">
-                      {activeTab === 'custom' ? 'Edit, then add games here.' : 'Head over to the Library to add games.'}
-                    </p>
-                  </div>
+                    {currentListGames.length === 0 && (
+                      <div className="flex flex-col items-center justify-center text-gray-500 px-8 text-center mt-10">
+                        {activeTab === 'toPlay' && <ListTodo className="w-16 h-16 mb-4 text-blue-500/50" />}
+                        {activeTab === 'played' && <CheckCircle className="w-16 h-16 mb-4 text-green-500/50" />}
+                        {activeTab === 'favorites' && <Star className="w-16 h-16 mb-4 text-yellow-500/50" />}
+                        <p className="text-lg font-medium text-gray-300 mb-2">This list is empty</p>
+                        <p className="text-sm">Head over to the Library to add games.</p>
+                      </div>
+                    )}
+                  </>
                 )}
               </>
             )}
