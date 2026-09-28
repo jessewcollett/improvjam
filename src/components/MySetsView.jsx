@@ -19,7 +19,7 @@ import {
 import { AnimatePresence } from 'framer-motion';
 import { useAppStore, gamesInIds } from '../store/useAppStore.js';
 import { copyText, DEFAULT_STAGE_MESSAGES } from '../lib/stage.js';
-import { decodeSharedSet, sharedSetUrl } from '../lib/setShare.js';
+import { createSharedSetLink, resolveSharedSet } from '../lib/setShare.js';
 import {
   labelForSetItem,
   messageItemLabel,
@@ -237,7 +237,7 @@ export default function MySetsView() {
 
   const shareActiveSet = async () => {
     if (!customItems.length) return;
-    const url = sharedSetUrl({
+    const url = await createSharedSetLink({
       name: activeCustomSet.name,
       ids: activeCustomSet.games,
       items: customItems,
@@ -245,7 +245,7 @@ export default function MySetsView() {
     if (!url) return;
     try {
       if (navigator.share) {
-        await navigator.share({ title: activeCustomSet.name, text: `Improv Jam set: ${activeCustomSet.name}`, url });
+        await navigator.share({ url });
         return;
       }
     } catch {
@@ -359,15 +359,15 @@ export default function MySetsView() {
                   type="text"
                   value={importDraft}
                   onChange={(e) => setImportDraft(e.target.value)}
-                  placeholder="Paste share link or token"
+                  placeholder="Paste share link or code"
                   className="flex-1 bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-sm min-w-0"
                   autoComplete="off"
                   autoCapitalize="off"
                 />
                 <button
                   type="button"
-                  onClick={() => {
-                    const decoded = decodeSharedSet(importDraft);
+                  onClick={async () => {
+                    const decoded = await resolveSharedSet(importDraft);
                     if (!decoded) {
                       setSharedSetNotice('Couldn’t read that share link.');
                       return;

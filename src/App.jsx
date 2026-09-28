@@ -9,7 +9,7 @@ import MySetsView from './components/MySetsView.jsx';
 import SettingsView from './components/SettingsView.jsx';
 import { applyTheme } from './lib/theme.js';
 import { STAGE_MANAGER_ID, clampNavId } from './lib/nav.js';
-import { decodeSharedSet } from './lib/setShare.js';
+import { resolveSharedSet } from './lib/setShare.js';
 import { useAppStore } from './store/useAppStore.js';
 
 const views = [
@@ -20,6 +20,8 @@ const views = [
   { id: 'mysets', View: MySetsView },
   { id: 'settings', View: SettingsView },
 ];
+
+let queuedShare = '';
 
 export default function App() {
   const syncFromSheet = useAppStore((s) => s.syncFromSheet);
@@ -38,20 +40,38 @@ export default function App() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const raw = params.get('set');
-    if (!raw) return;
-    params.delete('set');
-    const next = params.toString();
-    const path = `${window.location.pathname}${next ? `?${next}` : ''}${window.location.hash}`;
-    window.history.replaceState({}, '', path);
-    const decoded = decodeSharedSet(raw);
-    if (!decoded) return;
-    const apply = () => {
-      importSharedSet(decoded);
-      updateSettings({ lastRoute: 'mysets' });
+    if (raw) {
+      queuedShare = raw;
+      params.delete('set');
+      const next = params.toString();
+      const path = `${window.location.pathname}${next ? `?${next}` : ''}${window.location.hash}`;
+      window.history.replaceState({}, '', path);
+    }
+    const token = queuedShare;
+    if (!token) return;
+    let live = true;
+    const applyDecoded = (decoded) => {
+      if (!decoded) {
+        useAppStore.getState().setSharedSetNotice('Couldn’t read that share link.');
+        updateSettings({ lastRoute: 'mysets' });
+        return;
+      }
+      const apply = () => {
+        importSharedSet(decoded);
+        updateSettings({ lastRoute: 'mysets' });
+      };
+      if (useAppStore.persist?.hasHydrated?.()) apply();
+      else if (useAppStore.persist?.onFinishHydration) useAppStore.persist.onFinishHydration(apply);
+      else apply();
     };
-    if (useAppStore.persist?.hasHydrated?.()) apply();
-    else if (useAppStore.persist?.onFinishHydration) useAppStore.persist.onFinishHydration(apply);
-    else apply();
+    resolveSharedSet(token).then((decoded) => {
+      if (!live) return;
+      queuedShare = '';
+      applyDecoded(decoded);
+    });
+    return () => {
+      live = false;
+    };
   }, [importSharedSet, updateSettings]);
 
   useEffect(() => {

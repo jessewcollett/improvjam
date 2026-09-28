@@ -6,7 +6,11 @@ import {
 } from './setItems.js';
 import { stageMessageHtml, stageMessageText } from './stageMessage.js';
 
-const SHARE_TOKEN_MAX = 1800;
+export const SHARE_TOKEN_MAX = 1800;
+export const SHARE_CODE_LEN = 5;
+export const SHARE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+export const SHARE_CODE_RE = new RegExp(`^[${SHARE_ALPHABET}]{${SHARE_CODE_LEN}}$`, 'i');
+const SHARE_FETCH_TIMEOUT_MS = 8000;
 
 function encodeJson(data) {
   const json = JSON.stringify(data);
@@ -94,19 +98,56 @@ function unwrapShareToken(raw) {
   }
 }
 
+function compactShareChunk(raw) {
+  return unwrapShareToken(raw).replace(/-\s+/g, '').replace(/\s+/g, '');
+}
+
+export function isShareCode(raw) {
+  return SHARE_CODE_RE.test(String(raw || '').trim());
+}
+
+function peelShareValue(value) {
+  const v = unwrapShareToken(value).replace(/^=+/, '');
+  if (!v) return '';
+  if (/^eyJ/.test(v)) {
+    const bare = v.match(/eyJ[A-Za-z0-9_-]+/);
+    return bare ? bare[0] : v;
+  }
+  const code = v.slice(0, SHARE_CODE_LEN);
+  if (isShareCode(code)) return code.toUpperCase();
+  return v;
+}
+
 export function sharedSetTokenFromInput(raw) {
-  const text = String(raw || '').trim().replace(/^["']+|["']+$/g, '');
+  let text = String(raw || '').trim().replace(/^["']+|["']+$/g, '');
   if (!text) return '';
-  const fromQuery = text.match(/[?&]set=([^&\s#"'<>]+)/i);
-  if (fromQuery) return unwrapShareToken(fromQuery[1]);
-  const bare = text.match(/\beyJ[A-Za-z0-9_-]+/);
-  if (bare) return bare[0];
-  return unwrapShareToken(text.replace(/\s+/g, ''));
+  text = text.replace(/improv jam set:\s*.*$/gim, '').trim();
+  text = text.replace(/-\s*\n\s*/g, '');
+  const compact = compactShareChunk(text).replace(/improvjamset:.*$/i, '');
+  const fromQuery = compact.match(/[?&]set=([^&#"'<>]+)/i) || compact.match(/(?:^|\/)set=([^&#"'<>]+)/i);
+  if (fromQuery) return peelShareValue(fromQuery[1]);
+  const token = peelShareValue(compact);
+  if (token) return token;
+  const bare = compact.replace(/^=+/, '').match(/eyJ[A-Za-z0-9_-]+/);
+  return bare ? bare[0] : compact.replace(/^=+/, '');
+}
+
+function abortAfter(ms) {
+  const controller = new AbortController();
+  const timer = globalThis.setTimeout(() => controller.abort(), ms);
+  return {
+    signal: controller.signal,
+    clear: () => globalThis.clearTimeout(timer),
+  };
+}
+
+function shareOrigin(origin) {
+  return String(origin || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/+$/, '');
 }
 
 export function decodeSharedSet(raw) {
   const token = sharedSetTokenFromInput(raw);
-  if (!token) return null;
+  if (!token || isShareCode(token)) return null;
   try {
     const padded = token.replace(/-/g, '+').replace(/_/g, '/');
     const pad = padded.length % 4 === 0 ? '' : '='.repeat(4 - (padded.length % 4));
@@ -129,9 +170,69 @@ export function decodeSharedSet(raw) {
   }
 }
 
-export function sharedSetUrl(payload, origin = typeof window !== 'undefined' ? window.location.origin : '') {
+export function sharedSetUrl(payload, origin) {
   const token = encodeSharedSet(payload);
   if (!token) return '';
-  const base = String(origin || '').replace(/\/+$/, '');
-  return `${base}/?set=${encodeURIComponent(token)}`;
+  return `${shareOrigin(origin)}/?set=${encodeURIComponent(token)}`;
+}
+
+export function sharedSetCodeUrl(code, origin) {
+  const key = String(code || '').trim().toUpperCase();
+  if (!isShareCode(key)) return '';
+  return `${shareOrigin(origin)}/?set=${encodeURIComponent(key)}`;
+}
+
+async function postShareToken(token) {
+  const abort = abortAfter(SHARE_FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch('/api/share', {
+      method: 'POST',
+      cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+      signal: abort.signal,
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data?.code) return '';
+    return String(data.code);
+  } catch {
+    return '';
+  } finally {
+    abort.clear();
+  }
+}
+
+async function fetchShareToken(code) {
+  const abort = abortAfter(SHARE_FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(`/api/share?c=${encodeURIComponent(code)}`, {
+      cache: 'no-store',
+      signal: abort.signal,
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data?.token) return '';
+    return String(data.token);
+  } catch {
+    return '';
+  } finally {
+    abort.clear();
+  }
+}
+
+export async function createSharedSetLink(payload, origin) {
+  const token = encodeSharedSet(payload);
+  if (!token) return '';
+  const code = await postShareToken(token);
+  if (code) return sharedSetCodeUrl(code, origin);
+  return `${shareOrigin(origin)}/?set=${encodeURIComponent(token)}`;
+}
+
+export async function resolveSharedSet(raw) {
+  const token = sharedSetTokenFromInput(raw);
+  if (!token) return null;
+  if (isShareCode(token)) {
+    const remote = await fetchShareToken(token);
+    return remote ? decodeSharedSet(remote) : null;
+  }
+  return decodeSharedSet(token);
 }

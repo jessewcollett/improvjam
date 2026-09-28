@@ -8,6 +8,9 @@
     "api/media.js": {
       "maxDuration": 30
     },
+    "api/share.js": {
+      "maxDuration": 10
+    },
     "api/stage.js": {
       "maxDuration": 30
     }
