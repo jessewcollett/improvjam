@@ -15,7 +15,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore } from '../store/useAppStore.js';
 import { ASK_FOR_CATEGORIES, askForCategoriesFromRows, rowCategories, rowExtra, skillItemsFromRows } from '../lib/generator.js';
 import { generateKitFromStore, generateSkillResultsFromStore, peekGeneratorSnapshot } from '../lib/generateDraw.js';
-import { sessionBankId, suggestionsFromGenerator, STAGE_IDEAS_POLL_MS, ideaText } from '../lib/stage.js';
+import { sessionBankId, suggestionsFromGenerator, ideaText } from '../lib/stage.js';
 import ActionDock from './ActionDock.jsx';
 import CatalogIcon from './CatalogIcon.jsx';
 import SearchField from './SearchField.jsx';
@@ -171,10 +171,8 @@ export default function GeneratorView() {
   const toggleStagePin = useAppStore((s) => s.toggleStagePin);
   const suggestionsPinned = stagePins.includes('suggestions');
   const stageOn = useAppStore((s) => s.settings.stageOn);
-  const ideasOpen = useAppStore((s) => s.stageIdeasOpen);
   const ideasUse = useAppStore((s) => s.stageIdeasUse);
   const stageIdeas = useAppStore((s) => s.stageIdeas) || {};
-  const pullStageIdeas = useAppStore((s) => s.pullStageIdeas);
   const drawNonce = useAppStore((s) => s.generatorDrawNonce) || 0;
   const countFor = (id) => clampDrawCount(drawCounts[id] ?? 1);
   const [locks, setLocks] = useState({ c: false, o: false, r: false, e: false });
@@ -261,13 +259,6 @@ export default function GeneratorView() {
   }, [selectedRows, bankQuery]);
 
   const visibleCatalogue = filteredCatalogue.slice(0, CATALOGUE_CAP);
-
-  useEffect(() => {
-    if (!stageOn || !(ideasOpen || ideasUse)) return undefined;
-    pullStageIdeas();
-    const id = window.setInterval(pullStageIdeas, STAGE_IDEAS_POLL_MS);
-    return () => window.clearInterval(id);
-  }, [stageOn, ideasOpen, ideasUse, pullStageIdeas]);
 
   const drawMany = (rows, n, previous = []) => {
     if (!rows.length || n < 1) return [];

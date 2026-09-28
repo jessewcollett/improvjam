@@ -1,3 +1,5 @@
+import { reconcileHostIdeas } from '../src/lib/stage.js';
+
 const UPSTREAM = process.env.VITE_SHEETS_URL || '';
 const STAGE_TTL_SEC = 60 * 60 * 24;
 
@@ -294,11 +296,15 @@ export default async function handler(req, res) {
       }
       const hostWrite = Object.prototype.hasOwnProperty.call(body, 'payload');
       if (hostWrite) {
-        if (Object.prototype.hasOwnProperty.call(body, 'ideas') && body.ideas && typeof body.ideas === 'object' && !Array.isArray(body.ideas)) {
-          record.ideas = normalizeIdeas(body.ideas);
-        }
-        if (Object.prototype.hasOwnProperty.call(body, 'ideasPending') && body.ideasPending && typeof body.ideasPending === 'object' && !Array.isArray(body.ideasPending)) {
-          record.ideasPending = normalizeIdeas(body.ideasPending);
+        if (Object.prototype.hasOwnProperty.call(body, 'ideas') || Object.prototype.hasOwnProperty.call(body, 'ideasPending')) {
+          const next = reconcileHostIdeas(
+            prev,
+            Object.prototype.hasOwnProperty.call(body, 'ideas') ? body.ideas : prev.ideas,
+            Object.prototype.hasOwnProperty.call(body, 'ideasPending') ? body.ideasPending : prev.ideasPending,
+            body.ideasDrop,
+          );
+          record.ideas = next.ideas;
+          record.ideasPending = next.ideasPending;
         }
       } else if (body.ideas && typeof body.ideas === 'object' && !Array.isArray(body.ideas)) {
         if (record.ideasOpen || body.ideasOpen === true) {

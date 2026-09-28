@@ -804,6 +804,117 @@ export function mergeStageIdeas(current, incoming) {
   return out;
 }
 
+export function ideaMapSignature(raw) {
+  const map = normalizeStageIdeasMap(raw);
+  return Object.keys(map).sort().map((cat) => {
+    const rows = (map[cat] || []).map((row) => (
+      `${ideaText(row).toLowerCase()}:${row && row.flag === 'nsfw' ? '1' : '0'}`
+    )).sort().join(',');
+    return `${cat}:${rows}`;
+  }).join('|');
+}
+
+export function subtractIdeaMap(map, subtract) {
+  const sub = normalizeStageIdeasMap(subtract);
+  const out = {};
+  Object.entries(normalizeStageIdeasMap(map)).forEach(([cat, rows]) => {
+    const skip = new Set((sub[cat] || []).map((row) => ideaText(row).toLowerCase()));
+    const next = rows.filter((row) => !skip.has(ideaText(row).toLowerCase()));
+    if (next.length) out[cat] = next;
+  });
+  return out;
+}
+
+function ideaTombstoneKey(kind, cat, text) {
+  return `${kind}:${String(cat || '').trim()}:${String(text || '').trim().toLowerCase()}`;
+}
+
+export function parseIdeaTombstone(key) {
+  const raw = String(key || '');
+  const split = raw.indexOf(':');
+  const split2 = raw.indexOf(':', split + 1);
+  if (split < 0 || split2 < 0) return null;
+  return {
+    from: raw.slice(0, split),
+    cat: raw.slice(split + 1, split2),
+    text: raw.slice(split2 + 1),
+  };
+}
+
+export function filterIdeaTombstones(map, kind, tombstones) {
+  const tombs = tombstones instanceof Set ? tombstones : new Set();
+  const out = {};
+  Object.entries(normalizeStageIdeasMap(map)).forEach(([cat, rows]) => {
+    const next = rows.filter((row) => !tombs.has(ideaTombstoneKey(kind, cat, ideaText(row))));
+    if (next.length) out[cat] = next;
+  });
+  return out;
+}
+
+export function applyPulledStageIdeas(localLive, localPending, remoteLive, remotePending, tombstones) {
+  let live = mergeStageIdeas(normalizeStageIdeasMap(localLive), remoteLive);
+  let pending = mergeStageIdeas(normalizeStageIdeasMap(localPending), remotePending);
+  pending = subtractIdeaMap(pending, live);
+  live = filterIdeaTombstones(live, 'l', tombstones);
+  pending = filterIdeaTombstones(pending, 'p', tombstones);
+  return { live, pending };
+}
+
+export function gcIdeaTombstones(tombstones, remoteLive, remotePending) {
+  const next = new Set();
+  (tombstones instanceof Set ? tombstones : new Set()).forEach((key) => {
+    const parsed = parseIdeaTombstone(key);
+    if (!parsed) return;
+    const map = parsed.from === 'l' ? remoteLive : remotePending;
+    const rows = normalizeStageIdeasMap(map)[parsed.cat] || [];
+    if (rows.some((row) => ideaText(row).toLowerCase() === parsed.text)) next.add(key);
+  });
+  return next;
+}
+
+function ideaDropSet(raw) {
+  const out = new Set();
+  (Array.isArray(raw) ? raw : []).forEach((item) => {
+    const from = String(item?.from || '').trim() === 'l' ? 'l' : 'p';
+    const cat = String(item?.cat || '').trim();
+    const text = String(item?.text || '').trim().toLowerCase();
+    if (!cat || !text) return;
+    out.add(ideaTombstoneKey(from, cat, text));
+  });
+  return out;
+}
+
+function hostHasIdea(live, pending, cat, text) {
+  const id = String(text || '').toLowerCase();
+  return (live[cat] || []).some((row) => ideaText(row).toLowerCase() === id)
+    || (pending[cat] || []).some((row) => ideaText(row).toLowerCase() === id);
+}
+
+function restoreMissedIdeas(target, prevMap, from, live, pending, drops) {
+  Object.entries(normalizeStageIdeasMap(prevMap)).forEach(([cat, rows]) => {
+    rows.forEach((row) => {
+      const id = ideaText(row).toLowerCase();
+      if (drops.has(ideaTombstoneKey(from, cat, id))) return;
+      if (hostHasIdea(live, pending, cat, id)) return;
+      const list = target[cat] || [];
+      if (list.some((item) => ideaText(item).toLowerCase() === id)) return;
+      target[cat] = [...list, row].slice(-200);
+    });
+  });
+}
+
+export function reconcileHostIdeas(prev, incomingIdeas, incomingPending, dropsRaw) {
+  const drops = ideaDropSet(dropsRaw);
+  const live = normalizeStageIdeasMap(incomingIdeas);
+  const pending = normalizeStageIdeasMap(incomingPending);
+  restoreMissedIdeas(pending, prev?.ideasPending, 'p', live, pending, drops);
+  restoreMissedIdeas(live, prev?.ideas, 'l', live, pending, drops);
+  return {
+    ideas: live,
+    ideasPending: subtractIdeaMap(pending, live),
+  };
+}
+
 export const STAGE_LAYOUTS = [
   { id: 'pbp', name: 'Side-by-Side (PBP)', short: 'Side-by-Side', count: 2 },
   { id: 'stack', name: 'Top-and-Bottom', short: 'Top-and-Bottom', count: 2 },

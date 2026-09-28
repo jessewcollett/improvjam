@@ -42,6 +42,9 @@ import {
   normalizeStageFrames,
   ideaEntry,
   ideaText,
+  ideaMapSignature,
+  applyPulledStageIdeas,
+  parseIdeaTombstone,
   normalizeStageIdeasMap,
   normalizeStageLayout,
   normalizeStagePins,
@@ -161,11 +164,37 @@ let stagePublishInflight = false;
 let stagePublishQueued = false;
 let stagePublishIdeas = false;
 let stageIdeasPullInflight = false;
-let stageIdeasEpoch = 0;
+let stageIdeasPullQueued = false;
+let ideaTombstones = new Map();
 let lastGenerateFromGameAt = 0;
+const IDEA_TOMBSTONE_MS = 45000;
 
-function noteStageIdeasWrite() {
-  stageIdeasEpoch += 1;
+function tombstoneIdea(kind, cat, text) {
+  const key = `${kind}:${String(cat || '').trim()}:${String(text || '').trim().toLowerCase()}`;
+  if (parseIdeaTombstone(key)) ideaTombstones.set(key, Date.now() + IDEA_TOMBSTONE_MS);
+}
+
+function activeIdeaTombstones() {
+  const now = Date.now();
+  const out = new Set();
+  ideaTombstones.forEach((exp, key) => {
+    if (exp > now) out.add(key);
+  });
+  return out;
+}
+
+function pruneIdeaTombstones(remoteLive, remotePending) {
+  const now = Date.now();
+  const next = new Map();
+  ideaTombstones.forEach((exp, key) => {
+    const parsed = parseIdeaTombstone(key);
+    if (!parsed) return;
+    const map = parsed.from === 'l' ? remoteLive : remotePending;
+    const rows = normalizeStageIdeasMap(map)[parsed.cat] || [];
+    const onRemote = rows.some((row) => ideaText(row).toLowerCase() === parsed.text);
+    if (onRemote || exp > now) next.set(key, onRemote ? Math.max(exp, now + 8000) : exp);
+  });
+  ideaTombstones = next;
 }
 
 function displayInviteSlot(code) {
@@ -293,8 +322,26 @@ async function publishStageNow() {
     if (sendIdeas) {
       extra.ideas = state.stageIdeas;
       extra.ideasPending = state.stageIdeasPending;
+      extra.ideasDrop = [...ideaTombstones.keys()].map((key) => parseIdeaTombstone(key)).filter(Boolean);
     }
-    await postStage(code, payload, extra);
+    const published = await postStage(code, payload, extra);
+    if (sendIdeas) {
+      const current = useAppStore.getState();
+      const merged = applyPulledStageIdeas(
+        current.stageIdeas,
+        current.stageIdeasPending,
+        published?.ideas || extra.ideas,
+        published?.ideasPending || extra.ideasPending,
+        activeIdeaTombstones(),
+      );
+      pruneIdeaTombstones(published?.ideas, published?.ideasPending);
+      if (
+        ideaMapSignature(current.stageIdeas) !== ideaMapSignature(merged.live)
+        || ideaMapSignature(current.stageIdeasPending) !== ideaMapSignature(merged.pending)
+      ) {
+        useAppStore.setState({ stageIdeas: merged.live, stageIdeasPending: merged.pending });
+      }
+    }
     if (sendIdeas && !stagePublishQueued) stagePublishIdeas = false;
     useAppStore.setState({ stagePublishError: null });
   } catch (error) {
@@ -800,30 +847,40 @@ export const useAppStore = create(
       pullStageIdeas: async () => {
         const state = get();
         if (!state.settings.stageOn || !(state.stageIdeasOpen || state.stageIdeasUse)) return;
-        if (stagePublishInflight || stagePublishQueued || stagePublishIdeas || stageIdeasPullInflight) return;
+        if (stageIdeasPullInflight) {
+          stageIdeasPullQueued = true;
+          return;
+        }
         const code = normalizeStageCode(state.settings.stageCode);
         if (!code) return;
-        const epoch = stageIdeasEpoch;
         stageIdeasPullInflight = true;
         try {
           const data = await fetchStage(code);
-          if (epoch !== stageIdeasEpoch) return;
-          if (stagePublishInflight || stagePublishQueued || stagePublishIdeas) return;
-          if (data.miss) return;
-          const ideas = data.ideas || {};
-          const ideasPending = data.ideasPending || {};
-          const current = get();
-          if (
-            JSON.stringify(current.stageIdeas) === JSON.stringify(ideas)
-            && JSON.stringify(current.stageIdeasPending) === JSON.stringify(ideasPending)
-          ) {
-            return;
+          if (!data.miss) {
+            const current = get();
+            const merged = applyPulledStageIdeas(
+              current.stageIdeas,
+              current.stageIdeasPending,
+              data.ideas || {},
+              data.ideasPending || {},
+              activeIdeaTombstones(),
+            );
+            pruneIdeaTombstones(data.ideas, data.ideasPending);
+            if (
+              ideaMapSignature(current.stageIdeas) !== ideaMapSignature(merged.live)
+              || ideaMapSignature(current.stageIdeasPending) !== ideaMapSignature(merged.pending)
+            ) {
+              set({ stageIdeas: merged.live, stageIdeasPending: merged.pending });
+            }
           }
-          set({ stageIdeas: ideas, stageIdeasPending: ideasPending });
         } catch {
           /* keep last pool */
         } finally {
           stageIdeasPullInflight = false;
+          if (stageIdeasPullQueued) {
+            stageIdeasPullQueued = false;
+            get().pullStageIdeas();
+          }
         }
       },
 
@@ -847,7 +904,7 @@ export const useAppStore = create(
           else delete pending[key];
           return { stageIdeas: live, stageIdeasPending: pending };
         });
-        noteStageIdeasWrite();
+        tombstoneIdea('p', key, needle);
         if (get().settings.stageOn) publishStageIdeasNow();
       },
 
@@ -863,7 +920,7 @@ export const useAppStore = create(
           else delete map[key];
           return { [mapKey]: map };
         });
-        noteStageIdeasWrite();
+        tombstoneIdea(fromPending ? 'p' : 'l', key, needle);
         if (get().settings.stageOn) publishStageIdeasNow();
       },
 
@@ -885,12 +942,18 @@ export const useAppStore = create(
           });
           return { [mapKey]: map };
         });
-        noteStageIdeasWrite();
         if (get().settings.stageOn) publishStageIdeasNow();
       },
 
       approveAllStageIdeas: (mode = 'clean') => {
         const skipNsfw = mode !== 'all';
+        const pendingNow = normalizeStageIdeasMap(get().stageIdeasPending);
+        Object.entries(pendingNow).forEach(([cat, rows]) => {
+          rows.forEach((row) => {
+            if (skipNsfw && ideaIsNsfw(row)) return;
+            tombstoneIdea('p', cat, ideaText(row));
+          });
+        });
         set((state) => {
           const live = { ...normalizeStageIdeasMap(state.stageIdeas) };
           const pending = {};
@@ -915,11 +978,18 @@ export const useAppStore = create(
           });
           return { stageIdeas: live, stageIdeasPending: pending };
         });
-        noteStageIdeasWrite();
         if (get().settings.stageOn) publishStageIdeasNow();
       },
 
       deleteAllStageIdeas: ({ fromPending = true, flaggedOnly = false } = {}) => {
+        const kind = fromPending ? 'p' : 'l';
+        const current = normalizeStageIdeasMap(get()[fromPending ? 'stageIdeasPending' : 'stageIdeas']);
+        Object.entries(current).forEach(([cat, rows]) => {
+          rows.forEach((row) => {
+            if (flaggedOnly && !ideaIsNsfw(row)) return;
+            tombstoneIdea(kind, cat, ideaText(row));
+          });
+        });
         set((state) => {
           const mapKey = fromPending ? 'stageIdeasPending' : 'stageIdeas';
           if (!flaggedOnly) return { [mapKey]: {} };
@@ -930,7 +1000,6 @@ export const useAppStore = create(
           });
           return { [mapKey]: next };
         });
-        noteStageIdeasWrite();
         if (get().settings.stageOn) publishStageIdeasNow();
       },
 
