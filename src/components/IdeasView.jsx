@@ -7,6 +7,7 @@ import {
   normalizeStageCode,
   postStage,
   sanitizeStageCodeInput,
+  STAGE_IDEAS_POLL_MS,
   stageIdeasPath,
 } from '../lib/stage.js';
 import { applyTheme } from '../lib/theme.js';
@@ -81,7 +82,7 @@ function IdeasForm({ code }) {
       }
     };
     load();
-    const id = window.setInterval(load, 4000);
+    const id = window.setInterval(load, STAGE_IDEAS_POLL_MS);
     return () => {
       cancelled = true;
       window.clearInterval(id);
@@ -117,13 +118,11 @@ function IdeasForm({ code }) {
       const data = await postStage(code, undefined, { ideas });
       setValues({});
       setStatus(data.ideasHold ? 'Sent — waiting for the host' : 'Sent. Add another whenever you like.');
-      setSession((prev) => ({
-        ...(prev || {}),
-        ideas: data.ideas || {},
-        ideaCats: data.ideaCats || prev?.ideaCats || [],
-        ideasOpen: data.ideasOpen === true || prev?.ideasOpen,
-        ideasHold: data.ideasHold === true,
-        ideaFlags: data.ideaFlags === true || prev?.ideaFlags,
+      setSession((prev) => coalesceStageSession(prev, {
+        ...data,
+        ideaCats: (Array.isArray(data.ideaCats) && data.ideaCats.length)
+          ? data.ideaCats
+          : (prev?.ideaCats || []),
       }));
     } catch (err) {
       setError(err.message || 'Couldn’t send ideas.');

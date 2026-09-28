@@ -160,7 +160,13 @@ let stagePublishTimer = null;
 let stagePublishInflight = false;
 let stagePublishQueued = false;
 let stagePublishIdeas = false;
+let stageIdeasPullInflight = false;
+let stageIdeasEpoch = 0;
 let lastGenerateFromGameAt = 0;
+
+function noteStageIdeasWrite() {
+  stageIdeasEpoch += 1;
+}
 
 function displayInviteSlot(code) {
   const normalized = normalizeStageCode(code);
@@ -725,6 +731,7 @@ export const useAppStore = create(
             stageIdeaCats: next && !cats.length ? seeded : state.stageIdeaCats,
           };
         });
+        if (get().settings.stageOn) publishStageNow();
       },
 
       setStageIdeasHold: (on) => {
@@ -793,11 +800,16 @@ export const useAppStore = create(
       pullStageIdeas: async () => {
         const state = get();
         if (!state.settings.stageOn || !(state.stageIdeasOpen || state.stageIdeasUse)) return;
-        if (stagePublishInflight || stagePublishQueued || stagePublishIdeas) return;
+        if (stagePublishInflight || stagePublishQueued || stagePublishIdeas || stageIdeasPullInflight) return;
         const code = normalizeStageCode(state.settings.stageCode);
         if (!code) return;
+        const epoch = stageIdeasEpoch;
+        stageIdeasPullInflight = true;
         try {
           const data = await fetchStage(code);
+          if (epoch !== stageIdeasEpoch) return;
+          if (stagePublishInflight || stagePublishQueued || stagePublishIdeas) return;
+          if (data.miss) return;
           const ideas = data.ideas || {};
           const ideasPending = data.ideasPending || {};
           const current = get();
@@ -810,6 +822,8 @@ export const useAppStore = create(
           set({ stageIdeas: ideas, stageIdeasPending: ideasPending });
         } catch {
           /* keep last pool */
+        } finally {
+          stageIdeasPullInflight = false;
         }
       },
 
@@ -833,6 +847,7 @@ export const useAppStore = create(
           else delete pending[key];
           return { stageIdeas: live, stageIdeasPending: pending };
         });
+        noteStageIdeasWrite();
         if (get().settings.stageOn) publishStageIdeasNow();
       },
 
@@ -848,6 +863,7 @@ export const useAppStore = create(
           else delete map[key];
           return { [mapKey]: map };
         });
+        noteStageIdeasWrite();
         if (get().settings.stageOn) publishStageIdeasNow();
       },
 
@@ -869,6 +885,7 @@ export const useAppStore = create(
           });
           return { [mapKey]: map };
         });
+        noteStageIdeasWrite();
         if (get().settings.stageOn) publishStageIdeasNow();
       },
 
@@ -898,6 +915,7 @@ export const useAppStore = create(
           });
           return { stageIdeas: live, stageIdeasPending: pending };
         });
+        noteStageIdeasWrite();
         if (get().settings.stageOn) publishStageIdeasNow();
       },
 
@@ -912,6 +930,7 @@ export const useAppStore = create(
           });
           return { [mapKey]: next };
         });
+        noteStageIdeasWrite();
         if (get().settings.stageOn) publishStageIdeasNow();
       },
 

@@ -223,7 +223,7 @@ function StageSessionBar() {
             spellCheck={false}
             maxLength={5}
             aria-label="Session code"
-            className="w-[4.75rem] min-h-9 rounded-lg bg-[#1A1A1A] border border-gray-700 px-2 text-sm font-black font-display tracking-[0.18em] text-white text-center focus:outline-none focus:border-lime-600 shrink-0"
+            className="w-[7.25rem] min-h-9 rounded-lg bg-[#1A1A1A] border border-gray-700 px-1.5 text-base font-black font-display tracking-[0.12em] text-white text-center focus:outline-none focus:border-lime-600 shrink-0"
           />
           <button
             type="button"
@@ -744,7 +744,7 @@ export function StageHeaderControl() {
         aria-label="Open Stage"
       >
         <Tv className={`w-3.5 h-3.5 shrink-0 ${stageOn ? 'text-lime-400' : 'text-gray-500'}`} aria-hidden />
-        <span className="text-xs font-black font-display tracking-[0.16em] text-gray-200 tabular-nums min-w-[3.25rem]">
+        <span className="text-xs font-black font-display tracking-[0.12em] text-gray-200 tabular-nums min-w-[5.5rem] text-center">
           {stageOn && code ? code : 'Off'}
         </span>
         {stageOn && preview.pinCount ? (

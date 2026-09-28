@@ -127,6 +127,7 @@ export function payloadHasSlots(payload) {
 export function coalesceStageSession(prev, next) {
   const incoming = next && typeof next === 'object' ? next : {};
   const previous = prev && typeof prev === 'object' ? prev : null;
+  if (incoming.miss && previous) return previous;
   if (previous?.ideaFlags && !incoming.ideaFlags) {
     return {
       ...incoming,
@@ -139,6 +140,18 @@ export function coalesceStageSession(prev, next) {
       ideaFlags: true,
       updatedAt: incoming.updatedAt || previous.updatedAt,
     };
+  }
+  if (
+    previous
+    && Array.isArray(previous.ideaCats)
+    && previous.ideaCats.length
+    && !(Array.isArray(incoming.ideaCats) && incoming.ideaCats.length)
+  ) {
+    const incomingAt = String(incoming.updatedAt || '');
+    const previousAt = String(previous.updatedAt || '');
+    if (!incomingAt || incomingAt <= previousAt) {
+      return { ...incoming, ideaCats: previous.ideaCats };
+    }
   }
   if (!incoming.updatedAt && previous?.updatedAt) return previous;
   return incoming;

@@ -210,7 +210,7 @@ function StageBoard({ code }) {
         <p className="text-xs uppercase tracking-[0.3em] text-gray-500 font-bold">Improv Jam</p>
         <div className="flex items-center gap-1 min-w-0">
           {hideCode ? null : (
-            <p className="text-base md:text-xl font-black font-display tracking-[0.22em] text-gray-200 truncate">
+            <p className="text-base md:text-xl font-black font-display tracking-[0.12em] text-gray-200 whitespace-nowrap">
               {code}
             </p>
           )}

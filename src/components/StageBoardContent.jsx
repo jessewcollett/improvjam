@@ -121,7 +121,7 @@ function useStageTimerRemaining(timer) {
   return Math.max(0, Math.ceil((endMs - Date.now()) / 1000));
 }
 
-function StageTileFrame({ children, allowColumns = true, fitKey = '', align = 'center', showCaptions = true }) {
+function StageTileFrame({ children, allowColumns = true, fitKey = '', align = 'center', showCaptions = true, minScale = TILE_SCALE_FLOOR }) {
   const boxRef = useRef(null);
   const innerRef = useRef(null);
   const [scale, setScale] = useState(1);
@@ -198,7 +198,8 @@ function StageTileFrame({ children, allowColumns = true, fitKey = '', align = 'c
         const iw = Math.max(inner.scrollWidth, inner.offsetWidth, 1);
         const ih = Math.max(inner.scrollHeight, inner.offsetHeight, 1);
         const shrink = Math.min(1, w / iw, h / ih);
-        const clamped = Math.max(TILE_SCALE_FLOOR, Number.isFinite(shrink) ? shrink : 1);
+        const floor = Math.max(TILE_SCALE_FLOOR, Number(minScale) || TILE_SCALE_FLOOR);
+        const clamped = Math.max(floor, Number.isFinite(shrink) ? shrink : 1);
         setScale((prev) => (Math.abs(prev - clamped) < 0.015 ? prev : clamped));
       } finally {
         busy = false;
@@ -209,7 +210,7 @@ function StageTileFrame({ children, allowColumns = true, fitKey = '', align = 'c
     ro.observe(box);
     measure(true);
     return () => ro.disconnect();
-  }, [allowColumns, fitKey]);
+  }, [allowColumns, fitKey, minScale]);
 
   return (
     <StageTileContext.Provider value={{ landscape, align: resolvedAlign, showCaptions: showCaptions !== false }}>
@@ -482,10 +483,10 @@ export function StageSlotTile({ id, value, count, boardStyle }) {
           <StageQrCode
             value={url}
             label="Audience ideas QR code"
-            className="w-[min(100%,11rem)] aspect-square rounded-xl overflow-hidden shrink-0"
+            className="w-[min(100%,clamp(4.75rem,38cqmin,11rem))] aspect-square rounded-xl overflow-hidden shrink-0"
           />
           <div className={`min-w-0 ${stacked ? 'w-full' : ''} ${alignText(align)}`}>
-            <p className={`font-black font-display tracking-[0.18em] ${scale.title}`}>{code}</p>
+            <p className={`font-black font-display tracking-[0.12em] whitespace-nowrap ${scale.title}`}>{code}</p>
             {showCaptions ? (
               <>
                 <p className={`text-gray-400 mt-1 ${scale.caption}`}>
@@ -512,6 +513,7 @@ function StageCell({ slot, count, boardStyle, className = '', style, allowColumn
         allowColumns={allowColumns}
         align={align}
         showCaptions={showCaptions}
+        minScale={slot.id === 'display' ? 0.7 : TILE_SCALE_FLOOR}
         fitKey={`${slot.id}|${count}|${boardStyle}|${align}|${showCaptions}|${JSON.stringify(stageTileFitValue(slot.id, slot.value))}`}
       >
         <StageSlotTile id={slot.id} value={slot.value} count={count} boardStyle={boardStyle} />
