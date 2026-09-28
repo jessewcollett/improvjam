@@ -26,7 +26,7 @@ function JoinForm() {
   };
 
   return (
-    <div className="min-h-dvh w-full bg-black text-white flex flex-col items-center justify-center px-6 py-10">
+    <div className="min-h-dvh w-full bg-stage text-gray-100 flex flex-col items-center justify-center px-6 py-10">
       <Lightbulb className="w-12 h-12 text-lime-400 mb-4" />
       <h1 className="text-4xl font-black font-display tracking-tight mb-2">Ideas</h1>
       <p className="text-lg text-gray-400 text-center max-w-md mb-8">
@@ -88,6 +88,10 @@ function IdeasForm({ code }) {
     };
   }, [code]);
 
+  useEffect(() => {
+    applyTheme(session?.payload?.theme === 'light' ? 'light' : 'dark');
+  }, [session?.payload?.theme]);
+
   const cats = useMemo(() => {
     const wanted = new Set(session?.ideaCats || []);
     const known = ASK_FOR_CATEGORIES.filter((cat) => wanted.has(cat.id));
@@ -133,7 +137,7 @@ function IdeasForm({ code }) {
 
   if (ideasClosed) {
     return (
-      <div className="min-h-dvh w-full bg-black text-white flex flex-col items-center justify-center px-6 py-10">
+      <div className="min-h-dvh w-full bg-stage text-gray-100 flex flex-col items-center justify-center px-6 py-10">
         <Lightbulb className="w-12 h-12 text-gray-500 mb-4" />
         <h1 className="text-3xl font-black font-display mb-2">Ideas are off</h1>
         <p className="text-gray-400 text-center max-w-md">
@@ -144,7 +148,7 @@ function IdeasForm({ code }) {
   }
 
   return (
-    <div className="min-h-dvh w-full bg-black text-white flex flex-col px-6 py-10">
+    <div className="min-h-dvh w-full bg-stage text-gray-100 flex flex-col px-6 py-10">
       <div className="w-full max-w-md mx-auto flex-1 flex flex-col">
         <p className="text-xs uppercase tracking-[0.3em] text-gray-500 font-bold mb-2">Improv Jam</p>
         <h1 className="text-3xl font-black font-display tracking-tight mb-1">Audience ideas</h1>

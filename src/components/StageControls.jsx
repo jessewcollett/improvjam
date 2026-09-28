@@ -134,34 +134,50 @@ function StageItemRows({ slots, onClearSlot, onClearItem, onMove, onToggleGamePa
   );
 }
 
+export function SegmentPills({ label, value, onChange, options, className = '' }) {
+  return (
+    <div className={`flex flex-wrap items-center gap-2 ${className}`}>
+      {label ? (
+        <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold min-w-0 truncate">{label}</p>
+      ) : null}
+      <div className="inline-flex p-0.5 rounded-full border border-gray-800 bg-[#1A1A1A] shrink-0">
+        {options.map((opt) => {
+          const on = value === opt.id;
+          return (
+            <button
+              key={String(opt.id)}
+              type="button"
+              aria-pressed={on}
+              onClick={() => onChange(opt.id)}
+              className={`px-3 min-h-8 text-xs font-bold rounded-full inline-flex items-center gap-1 ${
+                on ? (opt.activeClass || 'bg-lime-700 text-white') : 'text-gray-400'
+              }`}
+              aria-label={opt.ariaLabel || opt.label}
+            >
+              {opt.icon || null}
+              {opt.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function StageOnToggle() {
   const on = useAppStore((s) => s.settings.stageOn);
   const setStageOn = useAppStore((s) => s.setStageOn);
   return (
     <div className="mb-3">
-      <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold mb-2">Stage</p>
-      <div className="flex bg-[#1A1A1A] p-1 rounded-xl border border-gray-800">
-        <button
-          type="button"
-          className={`flex-1 py-2 text-sm font-bold rounded-lg min-h-11 ${
-            !on ? 'bg-gray-700 text-white' : 'text-gray-400'
-          }`}
-          onClick={() => setStageOn(false)}
-          aria-pressed={!on}
-        >
-          Off
-        </button>
-        <button
-          type="button"
-          className={`flex-1 py-2 text-sm font-bold rounded-lg min-h-11 ${
-            on ? 'bg-lime-700 text-white' : 'text-gray-400'
-          }`}
-          onClick={() => setStageOn(true)}
-          aria-pressed={on}
-        >
-          On
-        </button>
-      </div>
+      <SegmentPills
+        label="Stage"
+        value={on}
+        onChange={setStageOn}
+        options={[
+          { id: false, label: 'Off', activeClass: 'bg-gray-700 text-white' },
+          { id: true, label: 'On' },
+        ]}
+      />
       <p className="text-xs text-gray-500 mt-2">
         {on
           ? 'This phone is publishing to the TV board.'
@@ -235,29 +251,15 @@ function StageCodeVisibilityToggle() {
   const hideCode = useAppStore((s) => s.stageHideCode);
   const setStageHideCode = useAppStore((s) => s.setStageHideCode);
   return (
-    <div className="flex bg-[#1A1A1A] p-1 rounded-xl border border-gray-800 mt-2 mb-2">
-      <button
-        type="button"
-        className={`flex-1 py-2 text-sm font-bold rounded-lg min-h-11 ${
-          !hideCode ? 'bg-gray-700 text-white' : 'text-gray-400'
-        }`}
-        onClick={() => setStageHideCode(false)}
-        aria-pressed={!hideCode}
-      >
-        Show code
-      </button>
-      <button
-        type="button"
-        className={`flex-1 py-2 text-sm font-bold rounded-lg min-h-11 inline-flex items-center justify-center gap-1.5 ${
-          hideCode ? 'bg-lime-700 text-white' : 'text-gray-400'
-        }`}
-        onClick={() => setStageHideCode(true)}
-        aria-pressed={hideCode}
-      >
-        <EyeOff className="w-3.5 h-3.5" />
-        Hide code
-      </button>
-    </div>
+    <SegmentPills
+      className="mt-2 mb-2"
+      value={hideCode}
+      onChange={setStageHideCode}
+      options={[
+        { id: false, label: 'Show', ariaLabel: 'Show code', activeClass: 'bg-gray-700 text-white' },
+        { id: true, label: 'Hide', ariaLabel: 'Hide code', icon: <EyeOff className="w-3.5 h-3.5" /> },
+      ]}
+    />
   );
 }
 
@@ -361,75 +363,36 @@ function StageAudiencePanel() {
   return (
     <div className="mb-3">
       <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold mb-2">Audience ideas</p>
-      <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold mb-1">Receive</p>
-      <div className="flex bg-[#1A1A1A] p-1 rounded-xl border border-gray-800 mb-2">
-        <button
-          type="button"
-          className={`flex-1 py-2 text-sm font-bold rounded-lg min-h-11 ${
-            !ideasOpen ? 'bg-gray-700 text-white' : 'text-gray-400'
-          }`}
-          onClick={() => setStageIdeasOpen(false)}
-          aria-pressed={!ideasOpen}
-        >
-          Off
-        </button>
-        <button
-          type="button"
-          className={`flex-1 py-2 text-sm font-bold rounded-lg min-h-11 ${
-            ideasOpen ? 'bg-lime-700 text-white' : 'text-gray-400'
-          }`}
-          onClick={() => setStageIdeasOpen(true)}
-          aria-pressed={ideasOpen}
-        >
-          On
-        </button>
-      </div>
-      <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold mb-1">Use session pool</p>
-      <div className="flex bg-[#1A1A1A] p-1 rounded-xl border border-gray-800 mb-2">
-        <button
-          type="button"
-          className={`flex-1 py-2 text-sm font-bold rounded-lg min-h-11 ${
-            !ideasUse ? 'bg-gray-700 text-white' : 'text-gray-400'
-          }`}
-          onClick={() => setStageIdeasUse(false)}
-          aria-pressed={!ideasUse}
-        >
-          Off
-        </button>
-        <button
-          type="button"
-          className={`flex-1 py-2 text-sm font-bold rounded-lg min-h-11 ${
-            ideasUse ? 'bg-lime-700 text-white' : 'text-gray-400'
-          }`}
-          onClick={() => setStageIdeasUse(true)}
-          aria-pressed={ideasUse}
-        >
-          On
-        </button>
-      </div>
-      <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold mb-1">Approve before Stage</p>
-      <div className="flex bg-[#1A1A1A] p-1 rounded-xl border border-gray-800 mb-2">
-        <button
-          type="button"
-          className={`flex-1 py-2 text-sm font-bold rounded-lg min-h-11 ${
-            !ideasHold ? 'bg-gray-700 text-white' : 'text-gray-400'
-          }`}
-          onClick={() => setStageIdeasHold(false)}
-          aria-pressed={!ideasHold}
-        >
-          Off
-        </button>
-        <button
-          type="button"
-          className={`flex-1 py-2 text-sm font-bold rounded-lg min-h-11 ${
-            ideasHold ? 'bg-amber-700 text-white' : 'text-gray-400'
-          }`}
-          onClick={() => setStageIdeasHold(true)}
-          aria-pressed={ideasHold}
-        >
-          On
-        </button>
-      </div>
+      <SegmentPills
+        className="mb-2"
+        label="Receive"
+        value={ideasOpen}
+        onChange={setStageIdeasOpen}
+        options={[
+          { id: false, label: 'Off', activeClass: 'bg-gray-700 text-white' },
+          { id: true, label: 'On' },
+        ]}
+      />
+      <SegmentPills
+        className="mb-2"
+        label="Use session pool"
+        value={ideasUse}
+        onChange={setStageIdeasUse}
+        options={[
+          { id: false, label: 'Off', activeClass: 'bg-gray-700 text-white' },
+          { id: true, label: 'On' },
+        ]}
+      />
+      <SegmentPills
+        className="mb-2"
+        label="Approve before Stage"
+        value={ideasHold}
+        onChange={setStageIdeasHold}
+        options={[
+          { id: false, label: 'Off', activeClass: 'bg-gray-700 text-white' },
+          { id: true, label: 'On', activeClass: 'bg-amber-700 text-white' },
+        ]}
+      />
       <p className="text-xs text-gray-500 mb-2">
         {ideasOpen && ideasUse
           ? ideasHold

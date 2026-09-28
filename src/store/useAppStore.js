@@ -13,11 +13,13 @@ import {
 import {
   DEFAULT_NAV_ORDER,
   DEFAULT_TOOL_ORDER,
+  DEFAULT_STAGE_MANAGER_TOOLS,
   STAGE_MANAGER_ID,
   clampNavId,
   clampToolId,
   mergeIdOrder,
   moveId,
+  normalizeStageManagerTools,
 } from '../lib/nav.js';
 import {
   buildStagePayload,
@@ -55,6 +57,7 @@ import {
   STAGE_PUBLISH_DEBOUNCE_MS,
 } from '../lib/stage.js';
 import { ideaIsNsfw } from '../lib/ideaFlag.js';
+import { generateSuggestionsFromStore } from '../lib/generateDraw.js';
 import { normalizeTheme } from '../lib/theme.js';
 
 const bundled = normalizePayload(fallback);
@@ -92,6 +95,7 @@ export const defaultSettings = {
   lastTool: 'timer',
   navOrder: [...DEFAULT_NAV_ORDER],
   toolOrder: [...DEFAULT_TOOL_ORDER],
+  stageManagerTools: [...DEFAULT_STAGE_MANAGER_TOOLS],
   stageCode: '',
   stageOn: false,
   stageBoardStyle: 'cards',
@@ -99,10 +103,13 @@ export const defaultSettings = {
 
 export function normalizeSettings(raw) {
   const merged = { ...defaultSettings, ...(raw || {}) };
+  delete merged.palette;
   return {
     ...merged,
+    theme: normalizeTheme(merged.theme),
     navOrder: mergeIdOrder(merged.navOrder, DEFAULT_NAV_ORDER),
     toolOrder: mergeIdOrder(merged.toolOrder, DEFAULT_TOOL_ORDER),
+    stageManagerTools: normalizeStageManagerTools(merged.stageManagerTools),
     lastRoute: clampNavId(merged.lastRoute, merged.stageOn === true),
     lastTool: clampToolId(merged.lastTool),
     generatorView: merged.generatorView === 'games' ? 'games' : 'suggestions',
@@ -398,6 +405,12 @@ export const useAppStore = create(
 
       setStageSlot: (id, data) => {
         if (!isStageSlotId(id)) return;
+        const prev = get().stageSlots[id];
+        try {
+          if (JSON.stringify(prev) === JSON.stringify(data)) return;
+        } catch {
+          /* publish */
+        }
         let shouldPublish = false;
         set((state) => {
           shouldPublish = state.stagePins.includes(id);
@@ -409,6 +422,14 @@ export const useAppStore = create(
       publishStageTimer: (timer) => {
         set((state) => ({ stageSlots: { ...state.stageSlots, timer } }));
         if (get().stagePins.includes('timer')) publishStageNow();
+      },
+
+      generateStageSuggestions: () => {
+        const items = generateSuggestionsFromStore(get());
+        if (!items.length) return false;
+        get().setStageSlot('suggestions', items);
+        if (!get().stagePins.includes('suggestions')) get().toggleStagePin('suggestions');
+        return true;
       },
 
       unpinStageSlot: (id) => {
@@ -709,10 +730,16 @@ export const useAppStore = create(
         if (!code) return;
         try {
           const data = await fetchStage(code);
-          set({
-            stageIdeas: data.ideas || {},
-            stageIdeasPending: data.ideasPending || {},
-          });
+          const ideas = data.ideas || {};
+          const ideasPending = data.ideasPending || {};
+          const current = get();
+          if (
+            JSON.stringify(current.stageIdeas) === JSON.stringify(ideas)
+            && JSON.stringify(current.stageIdeasPending) === JSON.stringify(ideasPending)
+          ) {
+            return;
+          }
+          set({ stageIdeas: ideas, stageIdeasPending: ideasPending });
         } catch {
           /* keep last pool */
         }
@@ -1187,7 +1214,7 @@ export const useAppStore = create(
             focusCustomSetId: id,
             sharedSetNotice: missing
               ? `${missing} game${missing === 1 ? '' : 's'} not in this catalog.`
-              : '',
+              : `Imported “${nextName}”.`,
           };
         });
         return { id, missing, added: knownIds.length };
@@ -1195,6 +1222,7 @@ export const useAppStore = create(
 
       clearFocusCustomSet: () => set({ focusCustomSetId: '' }),
       clearSharedSetNotice: () => set({ sharedSetNotice: '' }),
+      setSharedSetNotice: (raw) => set({ sharedSetNotice: String(raw || '').trim() }),
 
       syncFromSheet: async () => {
         set({ isSyncing: true, syncError: null });

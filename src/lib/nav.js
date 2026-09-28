@@ -23,6 +23,27 @@ export const TOOL_TABS = [
 export const DEFAULT_NAV_ORDER = NAV_TABS.map((tab) => tab.id);
 export const DEFAULT_TOOL_ORDER = TOOL_TABS.map((tab) => tab.id);
 
+export const STAGE_MANAGER_TOOLS = [
+  { id: 'generate', label: 'Generate', icon: Dices, accent: 'text-lime-400' },
+  { id: 'timer', label: 'Timer', icon: Timer, accent: 'text-cyan-300' },
+  { id: 'hat', label: 'Hat', icon: Lightbulb, accent: 'text-lime-300' },
+  { id: 'coin', label: 'Coin', icon: Coins, accent: 'text-amber-300' },
+  { id: 'ding', label: 'Ding', icon: Bell, accent: 'text-yellow-300' },
+];
+export const DEFAULT_STAGE_MANAGER_TOOLS = ['generate', 'timer', 'hat', 'coin'];
+
+export function normalizeStageManagerTools(saved) {
+  const known = new Set(STAGE_MANAGER_TOOLS.map((tool) => tool.id));
+  const seen = new Set();
+  const out = [];
+  (Array.isArray(saved) ? saved : DEFAULT_STAGE_MANAGER_TOOLS).forEach((id) => {
+    if (!known.has(id) || seen.has(id)) return;
+    seen.add(id);
+    out.push(id);
+  });
+  return out;
+}
+
 export function mergeIdOrder(saved, defaults) {
   const known = new Set(defaults);
   const seen = new Set();

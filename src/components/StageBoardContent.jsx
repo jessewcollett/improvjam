@@ -166,8 +166,7 @@ function StageTileFrame({ children, allowColumns = true, fitKey = '', align = 'c
       const w = box.clientWidth;
       const h = box.clientHeight;
       if (w < 4 || h < 4) return;
-      if (!force && lastW === w && lastH === h) return;
-      const grew = lastW >= 0 && (w > lastW + 4 || h > lastH + 4);
+      if (!force && Math.abs(lastW - w) < 2 && Math.abs(lastH - h) < 2) return;
       lastW = w;
       lastH = h;
       busy = true;
@@ -177,7 +176,12 @@ function StageTileFrame({ children, allowColumns = true, fitKey = '', align = 'c
           box.style.setProperty('--stage-cqmin', cqmin);
         }
         const nextLandscape = allowColumns && w >= h * TILE_LANDSCAPE_RATIO;
-        setLandscape((prev) => (prev === nextLandscape ? prev : nextLandscape));
+        setLandscape((prev) => {
+          if (prev === nextLandscape) return prev;
+          const ratio = h > 0 ? w / h : 0;
+          if (Math.abs(ratio - TILE_LANDSCAPE_RATIO) < 0.15) return prev;
+          return nextLandscape;
+        });
         const targetH = h * TILE_FILL;
         const fontRaw = box.style.getPropertyValue('--stage-font');
         const hasCommitted = Boolean(fontRaw);
@@ -188,9 +192,6 @@ function StageTileFrame({ children, allowColumns = true, fitKey = '', align = 'c
           nextFont = contentFits(w, targetH) ? TILE_FONT_MAX : searchFont(TILE_FONT_MIN, TILE_FONT_MAX, w, targetH);
         } else if (!contentFits(w, targetH)) {
           nextFont = searchFont(TILE_FONT_MIN, committed, w, targetH);
-        } else if (grew && committed < TILE_FONT_MAX) {
-          applyFont(TILE_FONT_MAX);
-          nextFont = contentFits(w, targetH) ? TILE_FONT_MAX : searchFont(committed, TILE_FONT_MAX, w, targetH);
         }
         applyFont(nextFont);
         const iw = Math.max(inner.scrollWidth, inner.offsetWidth, 1);

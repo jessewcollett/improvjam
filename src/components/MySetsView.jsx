@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
+  Link2,
   ListPlus,
   CheckCircle,
   Star,
@@ -17,7 +18,7 @@ import { AnimatePresence } from 'framer-motion';
 import { useAppStore, gamesInIds } from '../store/useAppStore.js';
 import { splitList } from '../lib/generator.js';
 import { copyText } from '../lib/stage.js';
-import { sharedSetUrl } from '../lib/setShare.js';
+import { decodeSharedSet, sharedSetUrl } from '../lib/setShare.js';
 import GameCard from './GameCard.jsx';
 import StagePin from './StagePin.jsx';
 import SyncButton from './SyncButton.jsx';
@@ -60,6 +61,8 @@ export default function MySetsView() {
   const sharedSetNotice = useAppStore((s) => s.sharedSetNotice);
   const clearFocusCustomSet = useAppStore((s) => s.clearFocusCustomSet);
   const clearSharedSetNotice = useAppStore((s) => s.clearSharedSetNotice);
+  const importSharedSet = useAppStore((s) => s.importSharedSet);
+  const setSharedSetNotice = useAppStore((s) => s.setSharedSetNotice);
   const stagePins = useAppStore((s) => s.stagePins);
   const stageSlots = useAppStore((s) => s.stageSlots);
   const setStageSlot = useAppStore((s) => s.setStageSlot);
@@ -72,6 +75,8 @@ export default function MySetsView() {
   const [activeCustomSetId, setActiveCustomSetId] = useState(null);
   const [newSetName, setNewSetName] = useState('');
   const [isCreatingSet, setIsCreatingSet] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importDraft, setImportDraft] = useState('');
   const [confirmDeleteSet, setConfirmDeleteSet] = useState(null);
   const [renamingId, setRenamingId] = useState(null);
   const [renameDraft, setRenameDraft] = useState('');
@@ -82,6 +87,8 @@ export default function MySetsView() {
   useEffect(() => {
     setConfirmClear(false);
     setIsCreatingSet(false);
+    setIsImporting(false);
+    setImportDraft('');
     setConfirmDeleteSet(null);
     setRenamingId(null);
     setRenameDraft('');
@@ -239,13 +246,55 @@ export default function MySetsView() {
                 ) : null}
                 <button
                   type="button"
-                  onClick={() => setIsCreatingSet((v) => !v)}
+                  onClick={() => {
+                    setIsImporting((v) => !v);
+                    setIsCreatingSet(false);
+                  }}
+                  className="bg-indigo-600/20 text-indigo-400 px-3 py-2 rounded-lg text-xs font-bold border border-indigo-500/30 flex items-center min-h-10"
+                >
+                  <Link2 className="w-3 h-3 mr-1" /> Import
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCreatingSet((v) => !v);
+                    setIsImporting(false);
+                  }}
                   className="bg-indigo-600/20 text-indigo-400 px-3 py-2 rounded-lg text-xs font-bold border border-indigo-500/30 flex items-center min-h-10"
                 >
                   <Plus className="w-3 h-3 mr-1" /> New set
                 </button>
               </div>
             </div>
+            {isImporting && (
+              <div className="bg-gray-800 p-3 rounded-xl border border-gray-700 flex gap-2">
+                <input
+                  type="text"
+                  value={importDraft}
+                  onChange={(e) => setImportDraft(e.target.value)}
+                  placeholder="Paste share link or token"
+                  className="flex-1 bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-sm min-w-0"
+                  autoComplete="off"
+                  autoCapitalize="off"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const decoded = decodeSharedSet(importDraft);
+                    if (!decoded) {
+                      setSharedSetNotice('Couldn’t read that share link.');
+                      return;
+                    }
+                    importSharedSet(decoded);
+                    setImportDraft('');
+                    setIsImporting(false);
+                  }}
+                  className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-bold"
+                >
+                  Import
+                </button>
+              </div>
+            )}
             {isCreatingSet && (
               <div className="bg-gray-800 p-3 rounded-xl border border-gray-700 flex gap-2">
                 <input

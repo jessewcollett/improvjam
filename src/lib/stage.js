@@ -172,7 +172,7 @@ export function stagePayloadSyncKey(payload) {
     slots,
     layout: payload.layout || '',
     boardStyle: payload.boardStyle || '',
-    frames: payload.frames || null,
+    frames: normalizeStageFrames(payload.frames),
     floats: payload.floats || null,
     aligns: payload.aligns || null,
     captions: payload.captions || null,
@@ -286,10 +286,11 @@ export function normalizeStageZooms(raw, fallbackSizes) {
 }
 
 export function clampStageFrame(frame) {
-  const x = Math.max(0, Math.min(100, Number(frame?.x) || 0));
-  const y = Math.max(0, Math.min(100, Number(frame?.y) || 0));
-  const w = Math.max(STAGE_FRAME_MIN, Math.min(100 - x, Number(frame?.w) || STAGE_FRAME_MIN));
-  const h = Math.max(STAGE_FRAME_MIN, Math.min(100 - y, Number(frame?.h) || STAGE_FRAME_MIN));
+  const roundPct = (n) => Math.round(n * 10) / 10;
+  const x = roundPct(Math.max(0, Math.min(100, Number(frame?.x) || 0)));
+  const y = roundPct(Math.max(0, Math.min(100, Number(frame?.y) || 0)));
+  const w = roundPct(Math.max(STAGE_FRAME_MIN, Math.min(100 - x, Number(frame?.w) || STAGE_FRAME_MIN)));
+  const h = roundPct(Math.max(STAGE_FRAME_MIN, Math.min(100 - y, Number(frame?.h) || STAGE_FRAME_MIN)));
   return { x, y, w, h };
 }
 

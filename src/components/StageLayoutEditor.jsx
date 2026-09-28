@@ -1,9 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  ChevronUp,
   LayoutGrid,
   Lock,
   LockOpen,
@@ -11,7 +7,6 @@ import {
   Minimize2,
   Moon,
   PictureInPicture2,
-  SlidersHorizontal,
   Sun,
   X,
 } from 'lucide-react';
@@ -36,13 +31,6 @@ import { useAppStore } from '../store/useAppStore.js';
 import { StageSlotGrid } from './StageBoardContent.jsx';
 import { GamePartToggles } from './StagePin.jsx';
 
-const EDGE_ICON = {
-  left: ChevronLeft,
-  right: ChevronRight,
-  top: ChevronUp,
-  bottom: ChevronDown,
-};
-
 function useLandscapePreview() {
   const [landscape, setLandscape] = useState(() => (
     typeof window !== 'undefined' ? window.innerWidth >= window.innerHeight : false
@@ -65,7 +53,7 @@ function frameStyle(frame) {
   };
 }
 
-function TileCustomizeOverlay({ slot }) {
+function TileCustomizeSheet({ slot }) {
   const setStageAlign = useAppStore((s) => s.setStageAlign);
   const setStageCaptions = useAppStore((s) => s.setStageCaptions);
   const toggleStageGamePart = useAppStore((s) => s.toggleStageGamePart);
@@ -75,12 +63,11 @@ function TileCustomizeOverlay({ slot }) {
   const showCaptionsToggle = (slot.id === 'suggestions' && slotHasSuggestionCaptions(slot.value))
     || slot.id === 'display';
   const nested = Array.isArray(slot.value) && (slot.id === 'games' || slot.id === 'suggestions' || slot.id === 'whosup');
+  const name = STAGE_SLOT_LABELS[slot.id] || slot.id;
 
   return (
-    <div
-      className="absolute z-[15] top-10 left-2 right-10 bottom-10 overflow-auto scrollbar-hide rounded-lg bg-black/70 p-2 pointer-events-auto"
-      onPointerDown={(event) => event.stopPropagation()}
-    >
+    <div className="mt-2 rounded-xl border border-gray-800 bg-[#1A1A1A] p-3">
+      <p className="text-sm font-bold text-gray-100 truncate mb-2">{name}</p>
       <p className="text-2xs uppercase tracking-wider text-gray-400 font-bold mb-1">Align</p>
       <div className="flex gap-1 mb-2">
         {[['left', 'Left'], ['center', 'Center']].map(([id, label]) => (
@@ -89,7 +76,7 @@ function TileCustomizeOverlay({ slot }) {
             type="button"
             aria-pressed={align === id}
             onClick={() => setStageAlign(slot.id, id)}
-            className={`min-h-8 px-2 rounded-md text-2xs font-bold ${
+            className={`min-h-11 px-3 rounded-lg text-xs font-bold ${
               align === id ? 'bg-lime-700 text-white' : 'bg-white/10 text-gray-200'
             }`}
           >
@@ -102,7 +89,7 @@ function TileCustomizeOverlay({ slot }) {
           type="button"
           aria-pressed={captionsOn}
           onClick={() => setStageCaptions(slot.id, !captionsOn)}
-          className={`min-h-8 px-2 mb-2 rounded-md text-2xs font-bold ${
+          className={`min-h-11 px-3 mb-2 rounded-lg text-xs font-bold ${
             captionsOn ? 'bg-lime-700 text-white' : 'bg-white/10 text-gray-200'
           }`}
         >
@@ -120,11 +107,11 @@ function TileCustomizeOverlay({ slot }) {
             return (
               <li key={`${slot.id}-${index}`} className="rounded-md bg-black/40 p-1.5">
                 <div className="flex items-center gap-1">
-                  <span className="flex-1 min-w-0 text-2xs font-bold text-gray-100 truncate">{label}</span>
+                  <span className="flex-1 min-w-0 text-xs font-bold text-gray-100 truncate">{label}</span>
                   <button
                     type="button"
                     onClick={() => removeStageSlotItem(slot.id, index)}
-                    className="min-w-8 min-h-8 inline-flex items-center justify-center text-gray-400 hover:text-red-300"
+                    className="min-w-11 min-h-11 inline-flex items-center justify-center text-gray-400 hover:text-red-300"
                     aria-label={`Remove ${label}`}
                   >
                     <X className="w-3.5 h-3.5" />
@@ -181,8 +168,19 @@ export default function StageLayoutEditor() {
   const spotlightOn = ids.includes(spotlight) ? spotlight : '';
   const [activeId, setActiveId] = useState('');
   const [hoverId, setHoverId] = useState('');
-  const [overlayOn, setOverlayOn] = useState(false);
-  const [resizeLocked, setResizeLocked] = useState(false);
+  const [selectedId, setSelectedId] = useState('');
+  const [resizeLocked, setResizeLocked] = useState(() => (
+    typeof window !== 'undefined' ? window.matchMedia('(max-width: 767px)').matches : true
+  ));
+  const idKey = ids.join('|');
+  useEffect(() => {
+    const next = idKey ? idKey.split('|') : [];
+    if (!next.length) {
+      setSelectedId('');
+      return;
+    }
+    setSelectedId((cur) => (next.includes(cur) ? cur : next[0]));
+  }, [idKey]);
 
   const pointPct = (event) => {
     const box = boxRef.current;
@@ -294,6 +292,7 @@ export default function StageLayoutEditor() {
   };
 
   const startBody = (event, id) => {
+    setSelectedId(id);
     if (!boxRef.current || resizeLocked) return;
     event.preventDefault();
     const pct = pointPct(event);
@@ -324,7 +323,7 @@ export default function StageLayoutEditor() {
     return (
       <div className="mb-3">
         <p className="text-2xs uppercase tracking-wider text-gray-500 font-bold mb-2">Stage board</p>
-        <p className="text-sm text-gray-500">Pin a panel from Generator or Tools and it shows up here.</p>
+        <p className="text-sm text-gray-500">Pin a panel from Show, Generator, or Tools and it shows up here.</p>
       </div>
     );
   }
@@ -343,17 +342,6 @@ export default function StageLayoutEditor() {
             title="Stage light/dark"
           >
             {stageTheme === 'light' ? <Moon className="w-3.5 h-3.5" /> : <Sun className="w-3.5 h-3.5" />}
-          </button>
-          <button
-            type="button"
-            aria-pressed={overlayOn}
-            onClick={() => setOverlayOn((on) => !on)}
-            className={`min-h-10 px-2.5 rounded-lg text-xs font-bold inline-flex items-center gap-1.5 border ${
-              overlayOn ? 'bg-lime-700 text-white border-lime-500' : 'bg-gray-800 text-gray-100 border-gray-700'
-            }`}
-          >
-            <SlidersHorizontal className="w-3.5 h-3.5" />
-            Overlay
           </button>
           <button
             type="button"
@@ -407,10 +395,13 @@ export default function StageLayoutEditor() {
           const SpotIcon = lit ? Minimize2 : Maximize2;
           const spotLabel = lit ? `Exit spotlight` : `Spotlight ${name}`;
           const canResize = !resizeLocked && !lit;
+          const selected = selectedId === id;
           return (
             <div
               key={id}
-              className={`absolute ${floating && !lit ? 'z-30' : 'z-20'} ${hoverId === id ? 'ring-1 ring-lime-400/80' : ''}`}
+              className={`absolute ${floating && !lit ? 'z-30' : 'z-20'} ${
+                selected || hoverId === id ? 'ring-1 ring-lime-400/80' : ''
+              }`}
               style={lit ? { left: 0, top: 0, width: '100%', height: '100%' } : frameStyle(frame)}
             >
               {canResize ? (
@@ -422,10 +413,20 @@ export default function StageLayoutEditor() {
                   onPointerCancel={onPointerUp}
                   className="absolute inset-0 touch-none cursor-grab"
                 />
-              ) : null}
+              ) : (
+                <button
+                  type="button"
+                  aria-label={`Select ${name}`}
+                  aria-pressed={selected}
+                  onPointerDown={(event) => {
+                    event.stopPropagation();
+                    setSelectedId(id);
+                  }}
+                  className="absolute inset-0 z-[5]"
+                />
+              )}
               {canResize ? ['left', 'right', 'top', 'bottom'].map((edge) => {
                 const vertical = edge === 'left' || edge === 'right';
-                const Icon = EDGE_ICON[edge];
                 return (
                   <button
                     key={edge}
@@ -435,20 +436,21 @@ export default function StageLayoutEditor() {
                     onPointerMove={onPointerMove}
                     onPointerUp={onPointerUp}
                     onPointerCancel={onPointerUp}
-                    className={`absolute z-10 touch-none text-lime-300/90 ${
-                      vertical ? 'top-10 bottom-10 w-11 cursor-ew-resize' : 'left-10 right-10 h-11 cursor-ns-resize'
-                    } ${edge === 'left' ? 'left-0' : ''} ${edge === 'right' ? 'right-0' : ''} ${
-                      edge === 'top' ? 'top-0' : ''
-                    } ${edge === 'bottom' ? 'bottom-0' : ''}`}
+                    className={`absolute z-10 touch-none ${
+                      vertical ? 'top-0 bottom-0 w-11' : 'left-0 right-0 h-11'
+                    } ${edge === 'left' ? 'left-0 cursor-ew-resize' : ''} ${
+                      edge === 'right' ? 'right-0 cursor-ew-resize' : ''
+                    } ${edge === 'top' ? 'top-0 cursor-ns-resize' : ''} ${
+                      edge === 'bottom' ? 'bottom-0 cursor-ns-resize' : ''
+                    }`}
                   >
                     <span
-                      className={`absolute bg-lime-400/55 pointer-events-none ${
+                      className={`absolute bg-lime-400/80 pointer-events-none ${
                         vertical
-                          ? 'left-1/2 top-5 bottom-5 w-px -ml-px'
-                          : 'top-1/2 left-5 right-5 h-px -mt-px'
+                          ? `${edge === 'left' ? 'left-0' : 'right-0'} top-0 bottom-0 w-px`
+                          : `${edge === 'top' ? 'top-0' : 'bottom-0'} left-0 right-0 h-px`
                       }`}
                     />
-                    <Icon className="absolute left-1/2 top-1/2 w-3.5 h-3.5 -translate-x-1/2 -translate-y-1/2 pointer-events-none" />
                   </button>
                 );
               }) : null}
@@ -461,7 +463,7 @@ export default function StageLayoutEditor() {
                   onPointerMove={onPointerMove}
                   onPointerUp={onPointerUp}
                   onPointerCancel={onPointerUp}
-                  className={`absolute z-10 w-11 h-11 touch-none ${
+                  className={`absolute z-20 w-11 h-11 touch-none ${
                     corner === 'nw' || corner === 'sw' ? 'left-0' : 'right-0'
                   } ${corner === 'nw' || corner === 'ne' ? 'top-0' : 'bottom-0'} ${
                     corner === 'nw' || corner === 'se' ? 'cursor-nwse-resize' : 'cursor-nesw-resize'
@@ -469,14 +471,13 @@ export default function StageLayoutEditor() {
                 >
                   <span
                     className={`absolute w-2.5 h-2.5 border-lime-400/80 pointer-events-none ${
-                      corner === 'nw' ? 'top-1.5 left-1.5 border-t border-l' : ''
-                    } ${corner === 'ne' ? 'top-1.5 right-1.5 border-t border-r' : ''} ${
-                      corner === 'sw' ? 'bottom-1.5 left-1.5 border-b border-l' : ''
-                    } ${corner === 'se' ? 'bottom-1.5 right-1.5 border-b border-r' : ''}`}
+                      corner === 'nw' ? 'top-0 left-0 border-t border-l' : ''
+                    } ${corner === 'ne' ? 'top-0 right-0 border-t border-r' : ''} ${
+                      corner === 'sw' ? 'bottom-0 left-0 border-b border-l' : ''
+                    } ${corner === 'se' ? 'bottom-0 right-0 border-b border-r' : ''}`}
                   />
                 </button>
               )) : null}
-              {overlayOn ? <TileCustomizeOverlay slot={slot} /> : null}
               <button
                 type="button"
                 aria-label={spotLabel}
@@ -525,12 +526,17 @@ export default function StageLayoutEditor() {
           );
         })}
       </div>
+      {listed.find((slot) => slot.id === selectedId) ? (
+        <TileCustomizeSheet
+          slot={listed.find((slot) => slot.id === selectedId)}
+        />
+      ) : null}
       <p className="text-xs text-gray-500 mt-2">
         {spotlightOn
           ? 'Spotlight fills the TV. Tap it again to restore the previous layout.'
           : resizeLocked
-            ? 'Resize is locked. Top-left spotlights a window. X unpins. Bottom-right pops it out or docks it.'
-            : 'Top-left spotlights a window. Drag edges to resize. Drag a window onto another to swap.'}
+            ? 'Resize is locked. Tap a window to edit it below. Top-left spotlights. X unpins. Bottom-right pops it out or docks it.'
+            : 'Tap a window to edit it below. Top-left spotlights. Bottom-right pops it out. Drag edges to resize. Drag onto another to swap.'}
       </p>
     </div>
   );

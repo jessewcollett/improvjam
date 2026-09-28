@@ -13,8 +13,29 @@ export function encodeSharedSet({ name, ids }) {
   return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
+export function sharedSetTokenFromInput(raw) {
+  const text = String(raw || '').trim();
+  if (!text) return '';
+  try {
+    const url = new URL(text, 'https://improv-jam.vercel.app');
+    const fromQuery = url.searchParams.get('set');
+    if (fromQuery) return String(fromQuery).trim();
+  } catch {
+    /* not a URL */
+  }
+  const match = text.match(/[?&]set=([^&\s#]+)/i);
+  if (match) {
+    try {
+      return decodeURIComponent(match[1]).trim();
+    } catch {
+      return match[1].trim();
+    }
+  }
+  return text;
+}
+
 export function decodeSharedSet(raw) {
-  const token = String(raw || '').trim();
+  const token = sharedSetTokenFromInput(raw);
   if (!token) return null;
   try {
     const padded = token.replace(/-/g, '+').replace(/_/g, '/');

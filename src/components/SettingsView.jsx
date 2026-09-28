@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import {
   BookOpen,
+  Check,
   ChevronDown,
+  ChevronUp,
   ExternalLink,
   Info,
   Minus,
@@ -15,9 +17,13 @@ import {
 import ReorderList from './ReorderList.jsx';
 import {
   DEFAULT_NAV_ORDER,
+  DEFAULT_STAGE_MANAGER_TOOLS,
   DEFAULT_TOOL_ORDER,
   NAV_TABS,
+  STAGE_MANAGER_TOOLS,
   TOOL_TABS,
+  moveId,
+  normalizeStageManagerTools,
   tabsInOrder,
 } from '../lib/nav.js';
 import { canWakeLock } from '../lib/useWakeLock.js';
@@ -28,7 +34,7 @@ import {
 } from '../lib/audio.js';
 import { INTAKE_FORM_URL } from '../lib/sheets.js';
 import { useAppStore } from '../store/useAppStore.js';
-import { StageSettingsPanel } from './StageControls.jsx';
+import { StageSettingsPanel, SegmentPills } from './StageControls.jsx';
 import SyncButton from './SyncButton.jsx';
 
 function SettingsSection({ title, icon: Icon, summary, defaultOpen = false, accent, children }) {
@@ -66,6 +72,85 @@ function ChoiceButton({ active, onClick, children }) {
     >
       {children}
     </button>
+  );
+}
+
+function StageManagerToolsEditor({ value, onChange }) {
+  const enabled = normalizeStageManagerTools(value);
+  const enabledSet = new Set(enabled);
+  const hidden = STAGE_MANAGER_TOOLS.filter((tool) => !enabledSet.has(tool.id));
+  const rows = [
+    ...enabled.map((id) => STAGE_MANAGER_TOOLS.find((tool) => tool.id === id)).filter(Boolean),
+    ...hidden,
+  ];
+
+  const setEnabled = (next) => onChange(normalizeStageManagerTools(next));
+
+  return (
+    <div>
+      <ol className="space-y-1">
+        {rows.map((tool) => {
+          const Icon = tool.icon;
+          const on = enabledSet.has(tool.id);
+          const enabledIndex = enabled.indexOf(tool.id);
+          return (
+            <li
+              key={tool.id}
+              className={`flex items-center gap-1 min-h-11 rounded-xl border px-1 ${
+                on ? 'bg-[#1A1A1A] border-gray-800' : 'bg-[#141414] border-gray-900'
+              }`}
+            >
+              <button
+                type="button"
+                aria-pressed={on}
+                aria-label={on ? `Hide ${tool.label} on Stage` : `Show ${tool.label} on Stage`}
+                onClick={() => {
+                  setEnabled(on ? enabled.filter((id) => id !== tool.id) : [...enabled, tool.id]);
+                }}
+                className={`min-w-11 min-h-11 flex items-center justify-center rounded-lg ${
+                  on ? 'text-lime-300' : 'text-gray-600'
+                }`}
+              >
+                <span className={`w-5 h-5 rounded border inline-flex items-center justify-center ${
+                  on ? 'bg-lime-800 border-lime-500' : 'border-gray-700 bg-gray-900'
+                }`}>
+                  {on ? <Check className="w-3.5 h-3.5" /> : null}
+                </span>
+              </button>
+              {Icon ? <Icon className={`w-4 h-4 shrink-0 ${on ? 'text-gray-400' : 'text-gray-700'}`} /> : null}
+              <span className={`flex-1 min-w-0 text-sm font-bold truncate ${on ? 'text-gray-100' : 'text-gray-600'}`}>
+                {tool.label}
+              </span>
+              <button
+                type="button"
+                aria-label={`Move ${tool.label} up`}
+                disabled={!on || enabledIndex <= 0}
+                onClick={() => setEnabled(moveId(enabled, enabledIndex, enabledIndex - 1))}
+                className="min-w-11 min-h-11 flex items-center justify-center text-gray-200 disabled:text-gray-700"
+              >
+                <ChevronUp className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                aria-label={`Move ${tool.label} down`}
+                disabled={!on || enabledIndex < 0 || enabledIndex >= enabled.length - 1}
+                onClick={() => setEnabled(moveId(enabled, enabledIndex, enabledIndex + 1))}
+                className="min-w-11 min-h-11 flex items-center justify-center text-gray-200 disabled:text-gray-700"
+              >
+                <ChevronDown className="w-4 h-4" />
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+      <button
+        type="button"
+        onClick={() => onChange([...DEFAULT_STAGE_MANAGER_TOOLS])}
+        className="mt-2 text-xs font-bold text-gray-400 hover:text-gray-200 min-h-11"
+      >
+        Reset tools
+      </button>
+    </div>
   );
 }
 
@@ -214,28 +299,15 @@ export default function SettingsView() {
         accent="text-amber-300"
       >
         <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Theme</p>
-        <div className="flex bg-[#1A1A1A] p-1 rounded-xl mb-3 border border-gray-800">
-          <button
-            type="button"
-            className={`flex-1 py-2 text-sm font-bold rounded-lg min-h-11 ${
-              settings.theme !== 'light' ? 'bg-gray-700 text-white' : 'text-gray-400'
-            }`}
-            onClick={() => updateSettings({ theme: 'dark' })}
-            aria-pressed={settings.theme !== 'light'}
-          >
-            Dark
-          </button>
-          <button
-            type="button"
-            className={`flex-1 py-2 text-sm font-bold rounded-lg min-h-11 ${
-              settings.theme === 'light' ? 'bg-gray-700 text-white' : 'text-gray-400'
-            }`}
-            onClick={() => updateSettings({ theme: 'light' })}
-            aria-pressed={settings.theme === 'light'}
-          >
-            Light
-          </button>
-        </div>
+        <SegmentPills
+          className="mb-3"
+          value={settings.theme === 'light' ? 'light' : 'dark'}
+          onChange={(theme) => updateSettings({ theme })}
+          options={[
+            { id: 'dark', label: 'Dark', activeClass: 'bg-gray-700 text-white' },
+            { id: 'light', label: 'Light' },
+          ]}
+        />
         <ToggleRow
           label="Reduced motion"
           hint="Less animation on cards, tabs, and page changes."
@@ -247,7 +319,7 @@ export default function SettingsView() {
       <SettingsSection
         title="Layout"
         icon={LayoutGrid}
-        summary="Tab and Tools order"
+        summary="Tab, Tools, and Stage Manager tools"
         accent="text-blue-300"
       >
         <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Bottom tabs</p>
@@ -263,6 +335,12 @@ export default function SettingsView() {
           items={tabsInOrder(TOOL_TABS, settings.toolOrder)}
           onOrder={(toolOrder) => updateSettings({ toolOrder })}
           onReset={() => updateSettings({ toolOrder: [...DEFAULT_TOOL_ORDER] })}
+        />
+        <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 mt-4">Stage Manager tools</p>
+        <p className="text-xs text-gray-500 mb-2">These sit under the Stage board. SFX pads and Music stay on Tools.</p>
+        <StageManagerToolsEditor
+          value={settings.stageManagerTools}
+          onChange={(stageManagerTools) => updateSettings({ stageManagerTools })}
         />
       </SettingsSection>
 

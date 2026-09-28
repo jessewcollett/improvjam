@@ -10,6 +10,12 @@ html[data-theme='dark'] {
   --color-ink: #1a1a1a;
   --color-line: #1f2937;
   --color-fg: #f3f4f6;
+  --color-muted: #9ca3af;
+  --color-faint: #6b7280;
+  --color-wash: #111827;
+  --color-panel: #1f2937;
+  --color-inverse: #374151;
+  --color-inverse-fg: #f9fafb;
 }
 
 html[data-theme='light'] {
@@ -19,6 +25,12 @@ html[data-theme='light'] {
   --color-ink: #ebe6da;
   --color-line: #d4ccbb;
   --color-fg: #1c1915;
+  --color-muted: #5c564c;
+  --color-faint: #6b6458;
+  --color-wash: #f7f3ea;
+  --color-panel: #e4dece;
+  --color-inverse: #3f3a32;
+  --color-inverse-fg: #fffdf8;
 }
 
 html {
@@ -170,60 +182,67 @@ html.reduce-motion *::after {
   scroll-behavior: auto !important;
 }
 
-/* Light mode: invert the theater surfaces and body text, keep accent chips readable. */
+/* Palette tokens: hardcoded theater hexes follow the active stage/card/ink/line. */
+.bg-\[\#1A1A1A\],
+.bg-\[\#1A1A1A\]\/95 {
+  background-color: var(--color-ink);
+}
+
+.bg-\[\#121212\] {
+  background-color: var(--color-stage);
+}
+
+.border-gray-800,
+.border-gray-800\/40 {
+  border-color: var(--color-line);
+}
+
+/* Light scheme: invert the theater surfaces and body text, keep accent chips readable. */
 html[data-theme='light'] .text-white {
-  color: #1c1915;
+  color: var(--color-fg);
 }
 
 html[data-theme='light'] .text-gray-100,
 html[data-theme='light'] .text-gray-200 {
-  color: #1f1a14;
+  color: var(--color-fg);
 }
 
 html[data-theme='light'] .text-gray-300 {
-  color: #3f3a32;
+  color: color-mix(in srgb, var(--color-fg) 72%, var(--color-stage));
 }
 
 html[data-theme='light'] .text-gray-400 {
-  color: #5c564c;
+  color: var(--color-muted);
 }
 
 html[data-theme='light'] .text-gray-500,
 html[data-theme='light'] .text-gray-600 {
-  color: #6b6458;
+  color: var(--color-faint);
 }
 
 html[data-theme='light'] .placeholder-gray-500::placeholder {
-  color: #8a8274;
-}
-
-html[data-theme='light'] .bg-\[\#1A1A1A\],
-html[data-theme='light'] .bg-\[\#1A1A1A\]\/95,
-html[data-theme='light'] .bg-\[\#121212\] {
-  background-color: #ebe6da;
+  color: var(--color-faint);
 }
 
 html[data-theme='light'] .bg-gray-900,
 html[data-theme='light'] .bg-gray-900\/50 {
-  background-color: #f7f3ea;
+  background-color: var(--color-wash);
 }
 
 html[data-theme='light'] .bg-gray-800,
 html[data-theme='light'] .bg-gray-800\/50 {
-  background-color: #e4dece;
+  background-color: var(--color-panel);
 }
 
 html[data-theme='light'] .bg-gray-700 {
-  background-color: #3f3a32;
-  color: #fffdf8;
+  background-color: var(--color-inverse);
+  color: var(--color-inverse-fg);
 }
 
-html[data-theme='light'] .border-gray-800,
-html[data-theme='light'] .border-gray-800\/40,
 html[data-theme='light'] .border-gray-700,
 html[data-theme='light'] .border-gray-700\/50,
 html[data-theme='light'] .border-gray-600 {
-  border-color: #d4ccbb;
+  border-color: var(--color-line);
 }
 
 html[data-theme='light'] .text-yellow-300 {
@@ -290,9 +309,9 @@ html[data-theme='light'] .bg-amber-700 {
 }
 
 html[data-theme='light'] .stage-board .border-white\/10 {
-  border-color: rgb(28 25 21 / 0.12);
+  border-color: color-mix(in srgb, var(--color-fg) 12%, transparent);
 }
 
 html[data-theme='light'] .stage-board .border-white\/20 {
-  border-color: rgb(28 25 21 / 0.16);
+  border-color: color-mix(in srgb, var(--color-fg) 16%, transparent);
 }

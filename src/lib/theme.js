@@ -11,6 +11,7 @@ export function applyTheme(theme) {
   const mode = normalizeTheme(theme);
   const root = document.documentElement;
   root.dataset.theme = mode;
+  delete root.dataset.palette;
   root.classList.toggle('theme-light', mode === 'light');
   if (document.body) document.body.classList.toggle('theme-light', mode === 'light');
   const meta = document.querySelector('meta[name="theme-color"]');

@@ -1,6 +1,7 @@
 import { Tv } from 'lucide-react';
 import { StageHeaderControl, StageRemoteBody } from './StageControls.jsx';
 import StageLayoutEditor from './StageLayoutEditor.jsx';
+import StageShowRunner from './StageShowRunner.jsx';
 import { useAppStore } from '../store/useAppStore.js';
 
 export default function StageManagerView() {
@@ -18,7 +19,15 @@ export default function StageManagerView() {
         </div>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide px-4 md:px-6 pt-3 pb-nav">
-        <StageRemoteBody extra={<StageLayoutEditor />} showPinList={false} />
+        <StageRemoteBody
+          extra={(
+            <>
+              <StageLayoutEditor />
+              <StageShowRunner />
+            </>
+          )}
+          showPinList={false}
+        />
         {publishError ? (
           <p className="text-xs text-amber-300 bg-amber-900/20 border border-amber-800/40 rounded-lg p-2 mt-3">
             {publishError}
