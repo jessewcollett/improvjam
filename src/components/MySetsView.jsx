@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Link2,
   ListPlus,
@@ -11,20 +11,18 @@ import {
   ChevronLeft,
   ListTodo,
   Share2,
-  Check,
   X,
   Play,
 } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
 import { useAppStore, gamesInIds } from '../store/useAppStore.js';
-import { splitList } from '../lib/generator.js';
 import { copyText } from '../lib/stage.js';
 import { decodeSharedSet, sharedSetUrl } from '../lib/setShare.js';
 import GameCard from './GameCard.jsx';
 import StagePin from './StagePin.jsx';
 import SyncButton from './SyncButton.jsx';
-import SearchField from './SearchField.jsx';
 import DragOrderList from './DragOrderList.jsx';
+import SetGamePicker from './SetGamePicker.jsx';
 
 const LIST_LABELS = {
   toPlay: 'To Play',
@@ -38,12 +36,6 @@ function setSlotFromIds(id, name, ids, games) {
     name,
     games: gamesInIds(games, ids).map((game) => game.name),
   };
-}
-
-function gameHay(game) {
-  const cats = game.categories?.length ? game.categories : splitList(game.category);
-  const tags = splitList(game.tags);
-  return [game.name, ...tags, ...cats].join(' ').toLowerCase();
 }
 
 export default function MySetsView() {
@@ -83,7 +75,7 @@ export default function MySetsView() {
   const [renamingId, setRenamingId] = useState(null);
   const [renameDraft, setRenameDraft] = useState('');
   const [editing, setEditing] = useState(false);
-  const [libraryQuery, setLibraryQuery] = useState('');
+  const [addingGames, setAddingGames] = useState(false);
   const [shareNote, setShareNote] = useState('');
 
   useEffect(() => {
@@ -95,7 +87,7 @@ export default function MySetsView() {
     setRenamingId(null);
     setRenameDraft('');
     setEditing(false);
-    setLibraryQuery('');
+    setAddingGames(false);
     setShareNote('');
   }, [activeTab]);
 
@@ -152,15 +144,6 @@ export default function MySetsView() {
 
   const activeCustomSet = lists.customSets.find((s) => s.id === activeCustomSetId);
   const customEditing = activeTab === 'custom' && editing;
-
-  const libraryMatches = useMemo(() => {
-    if (!customEditing || !activeCustomSet) return [];
-    const q = libraryQuery.trim().toLowerCase();
-    if (!q) return [];
-    return data.games
-      .filter((game) => gameHay(game).includes(q))
-      .slice(0, 40);
-  }, [activeCustomSet, customEditing, data.games, libraryQuery]);
 
   const shareActiveSet = async () => {
     if (!activeCustomSet?.games.length) return;
@@ -449,7 +432,7 @@ export default function MySetsView() {
                   onClick={() => {
                     setActiveCustomSetId(null);
                     setEditing(false);
-                    setLibraryQuery('');
+                    setAddingGames(false);
                   }}
                   className="flex items-center text-sm text-gray-400"
                 >
@@ -464,8 +447,8 @@ export default function MySetsView() {
                   type="button"
                   onClick={() => {
                     setEditing((v) => !v);
+                    setAddingGames(false);
                     setConfirmClear(false);
-                    setLibraryQuery('');
                   }}
                   className={`px-3 py-1.5 rounded-lg text-xs font-bold border min-h-10 ${
                     editing
@@ -577,43 +560,51 @@ export default function MySetsView() {
             )}
 
             {customEditing && activeCustomSet ? (
-              <div className="mb-4 space-y-2">
-                <SearchField
-                  value={libraryQuery}
-                  onChange={setLibraryQuery}
-                  placeholder="Search Library to add games…"
-                  ringClass="focus:ring-indigo-500"
-                  compact
+              <button
+                type="button"
+                onClick={() => setAddingGames(true)}
+                className="w-full mb-4 min-h-11 px-3 rounded-xl border border-indigo-500/40 bg-indigo-600/20 text-indigo-200 text-sm font-bold inline-flex items-center justify-center gap-1.5"
+              >
+                <Plus className="w-4 h-4" />
+                Add games
+              </button>
+            ) : null}
+
+            {customEditing && addingGames && activeCustomSet ? (
+              <div className="fixed inset-0 z-[80] flex flex-col justify-end">
+                <button
+                  type="button"
+                  className="absolute inset-0 bg-black/70"
+                  aria-label="Close add games"
+                  onClick={() => setAddingGames(false)}
                 />
-                {libraryQuery.trim() ? (
-                  libraryMatches.length ? (
-                    <ul className="space-y-1 max-h-48 overflow-y-auto scrollbar-hide">
-                      {libraryMatches.map((game) => {
-                        const inSet = activeCustomSet.games.includes(game.id);
-                        return (
-                          <li key={game.id}>
-                            <button
-                              type="button"
-                              onClick={() => toggleInCustomSet(activeCustomSet.id, game.id)}
-                              className={`w-full min-h-11 px-3 rounded-xl border flex items-center justify-between gap-2 text-left ${
-                                inSet
-                                  ? 'bg-indigo-950/60 border-indigo-600 text-indigo-100'
-                                  : 'bg-[#1A1A1A] border-gray-800 text-gray-200'
-                              }`}
-                            >
-                              <span className="min-w-0 truncate text-sm font-bold">{game.name}</span>
-                              {inSet ? <Check className="w-4 h-4 shrink-0" /> : <Plus className="w-4 h-4 shrink-0 text-gray-500" />}
-                            </button>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  ) : (
-                    <p className="text-xs text-gray-500">No matching games.</p>
-                  )
-                ) : (
-                  <p className="text-xs text-gray-500">Search by name, tags, or category. Tap to add or remove.</p>
-                )}
+                <div
+                  className="relative bg-[#121212] border-t border-gray-800 rounded-t-3xl px-4 pt-3 pb-nav max-h-[85vh] flex flex-col"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="add-games-title"
+                >
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <div className="min-w-0">
+                      <p id="add-games-title" className="text-sm font-black font-display text-white leading-tight">
+                        Add games
+                      </p>
+                      <p className="text-2xs text-gray-500 mt-0.5">
+                        {currentListGames.length} in {activeCustomSet.name}. Tap a chip to add or remove.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setAddingGames(false)}
+                      className="min-h-11 px-3 rounded-xl bg-indigo-600 text-white text-xs font-bold shrink-0"
+                    >
+                      Done
+                    </button>
+                  </div>
+                  <div className="overflow-y-auto overflow-x-hidden scrollbar-hide flex-1 min-h-0 pb-3">
+                    <SetGamePicker key={activeCustomSet.id} setId={activeCustomSet.id} />
+                  </div>
+                </div>
               </div>
             ) : null}
 
@@ -641,7 +632,7 @@ export default function MySetsView() {
                 <div className="flex flex-col items-center justify-center text-gray-500 px-8 text-center mt-10">
                   <Folder className="w-16 h-16 mb-4 text-indigo-500/50" />
                   <p className="text-lg font-medium text-gray-300 mb-2">This list is empty</p>
-                  <p className="text-sm">Edit, then add games here.</p>
+                  <p className="text-sm">Tap Add games to pick from the Library.</p>
                 </div>
               )
             ) : (

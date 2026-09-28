@@ -3,6 +3,9 @@ export const MESSAGE_MAX = 4000;
 const ALLOWED = new Set(['P', 'BR', 'UL', 'OL', 'LI', 'STRONG', 'EM', 'B', 'I']);
 const BLOCK = new Set(['P', 'DIV', 'LI', 'TR', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BLOCKQUOTE', 'PRE']);
 const SKIP = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'META', 'LINK', 'IMG', 'SVG', 'IFRAME', 'OBJECT']);
+const BULLET_MARK = '[-*•●○◦▪■‣·⁃–]';
+const BULLET_PREFIX = new RegExp(`^\\s*(?:${BULLET_MARK}\\s*|\\d+[.)]\\s+)`);
+const ORDERED_PREFIX = /^\s*\d+[.)]\s+/;
 
 function clampText(raw) {
   return String(raw || '').replace(/\u00a0/g, ' ').trim().slice(0, MESSAGE_MAX);
@@ -15,12 +18,31 @@ function escapeHtml(raw) {
     .replace(/>/g, '&gt;');
 }
 
+function tidyLine(line) {
+  return String(line || '').replace(/\u00a0/g, ' ');
+}
+
 function isBulletLine(line) {
-  return /^\s*(?:[-*•–]|\d+[.)])\s+/.test(line);
+  return BULLET_PREFIX.test(tidyLine(line));
+}
+
+function isOrderedLine(line) {
+  return ORDERED_PREFIX.test(tidyLine(line));
 }
 
 function stripBullet(line) {
-  return line.replace(/^\s*(?:[-*•–]|\d+[.)])\s+/, '').trim();
+  return tidyLine(line).replace(BULLET_PREFIX, '').trim();
+}
+
+function stripBulletHtml(inner) {
+  const raw = String(inner || '');
+  const next = raw.replace(new RegExp(`^\\s*(?:${BULLET_MARK}\\s*|\\d+[.)]\\s+)`), '');
+  if (next !== raw) return next.trim();
+  return stripBullet(htmlToText(`<p>${raw}</p>`) || raw.replace(/<[^>]+>/g, ' '));
+}
+
+function linesHaveList(raw) {
+  return String(raw || '').split(/\r\n|\n/).some((line) => isBulletLine(line));
 }
 
 export function plainToHtml(raw) {
@@ -29,6 +51,7 @@ export function plainToHtml(raw) {
   const out = [];
   let list = [];
   let ordered = false;
+  let pending = null;
   const flushList = () => {
     if (!list.length) return;
     const tag = ordered ? 'ol' : 'ul';
@@ -37,13 +60,31 @@ export function plainToHtml(raw) {
     ordered = false;
   };
   lines.forEach((line) => {
+    if (pending !== null) {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      if (!isBulletLine(line)) {
+        if (list.length && pending !== ordered) flushList();
+        ordered = pending;
+        list.push(trimmed);
+        pending = null;
+        return;
+      }
+      pending = null;
+    }
     if (isBulletLine(line)) {
-      const nextOrdered = /^\s*\d+[.)]\s+/.test(line);
+      const nextOrdered = isOrderedLine(line);
+      const item = stripBullet(line);
+      if (!item) {
+        pending = nextOrdered;
+        return;
+      }
       if (list.length && nextOrdered !== ordered) flushList();
       ordered = nextOrdered;
-      list.push(stripBullet(line));
+      list.push(item);
       return;
     }
+    if (!line.trim() && list.length) return;
     flushList();
     const trimmed = line.trim();
     if (!trimmed) {
@@ -63,7 +104,7 @@ export function htmlToText(html) {
     return clampText(raw.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|li|div|h[1-6])>/gi, '\n').replace(/<[^>]+>/g, ''));
   }
   const doc = new DOMParser().parseFromString(`<div>${raw}</div>`, 'text/html');
-  const walk = (node, acc) => {
+  const walk = (node, acc, ctx) => {
     if (!node) return;
     if (node.nodeType === 3) {
       acc.push(node.nodeValue || '');
@@ -76,15 +117,36 @@ export function htmlToText(html) {
       acc.push('\n');
       return;
     }
+    if (tag === 'UL' || tag === 'OL') {
+      const next = { ordered: tag === 'OL', index: 0 };
+      Array.from(node.childNodes).forEach((child) => walk(child, acc, next));
+      if (acc.length && !String(acc[acc.length - 1]).endsWith('\n')) acc.push('\n');
+      return;
+    }
+    if (tag === 'LI') {
+      acc.push('\n');
+      if (ctx?.ordered) {
+        ctx.index = (ctx.index || 0) + 1;
+        acc.push(`${ctx.index}. `);
+      } else {
+        acc.push('• ');
+      }
+      Array.from(node.childNodes).forEach((child) => walk(child, acc, { ordered: false, index: 0 }));
+      return;
+    }
     const parentTag = node.parentElement?.tagName;
-    if (tag === 'LI') acc.push('\n• ');
-    else if (BLOCK.has(tag) && tag !== 'P' && acc.length && !String(acc[acc.length - 1]).endsWith('\n')) acc.push('\n');
-    Array.from(node.childNodes).forEach((child) => walk(child, acc));
+    if (BLOCK.has(tag) && tag !== 'P' && acc.length && !String(acc[acc.length - 1]).endsWith('\n')) acc.push('\n');
+    Array.from(node.childNodes).forEach((child) => walk(child, acc, ctx));
     if (BLOCK.has(tag) && tag !== 'LI' && !(tag === 'P' && parentTag === 'LI')) acc.push('\n');
   };
   const acc = [];
-  Array.from(doc.body.childNodes).forEach((child) => walk(child, acc));
-  return clampText(acc.join('').replace(/\n{3,}/g, '\n\n'));
+  Array.from(doc.body.childNodes).forEach((child) => walk(child, acc, { ordered: false, index: 0 }));
+  return clampText(
+    acc.join('')
+      .replace(/\n• \n+/g, '\n• ')
+      .replace(/\n(\d+\. )\n+/g, '\n$1')
+      .replace(/\n{3,}/g, '\n\n'),
+  );
 }
 
 function attrStyle(node) {
@@ -143,38 +205,82 @@ function serialize(node, out) {
   wrap.slice().reverse().forEach((openTag) => out.push(`</${openTag}>`));
 }
 
-function promoteBulletParagraphs(html) {
+function unwrapLiParagraphs(html) {
+  return String(html || '').replace(/<li>([\s\S]*?)<\/li>/gi, (_, inner) => {
+    let unwrapped = String(inner || '')
+      .replace(/<p>\s*<\/p>/gi, '')
+      .replace(/^\s*<p>([\s\S]*?)<\/p>\s*$/i, '$1')
+      .replace(/<p>([\s\S]*?)<\/p>/gi, '$1<br>')
+      .replace(/^(<br>)+|(<br>)+$/g, '')
+      .trim();
+    unwrapped = unwrapped.replace(new RegExp(`^(?:${BULLET_MARK})\\s*(?:<br>\\s*)+`), '');
+    if (!unwrapped || /^(?:[-*•●○◦▪■‣·⁃–])$/.test(unwrapped)) return '';
+    return `<li>${unwrapped}</li>`;
+  }).replace(/<li>\s*<\/li>/gi, '');
+}
+
+function promoteLooseLists(html) {
   const parts = String(html || '').split(/(<ul[\s\S]*?<\/ul>|<ol[\s\S]*?<\/ol>)/i);
   return parts.map((part) => {
     if (/^<(ul|ol)\b/i.test(part)) return part;
-    const tokens = part.split(/(<p>[\s\S]*?<\/p>)/);
+    const tokens = part.split(/(<p>[\s\S]*?<\/p>|<br\s*\/?>)/i);
     const out = [];
     let bullets = [];
     let ordered = false;
+    let pending = null;
     const flush = () => {
       if (!bullets.length) return;
       const tag = ordered ? 'ol' : 'ul';
       out.push(`<${tag}>${bullets.map((item) => `<li>${item}</li>`).join('')}</${tag}>`);
       bullets = [];
     };
-    tokens.forEach((token) => {
-      const match = token.match(/^<p>([\s\S]*?)<\/p>$/);
-      if (!match) {
-        flush();
-        out.push(token);
-        return;
+    const consider = (inner, fallbackToken) => {
+      const text = htmlToText(`<p>${inner}</p>`) || String(inner || '').replace(/<[^>]+>/g, ' ');
+      const item = isBulletLine(text) ? (stripBulletHtml(inner) || stripBullet(text)) : '';
+      if (pending) {
+        const follow = (item || String(inner || '').replace(/<[^>]+>/g, ' ')).trim();
+        if (follow && !isBulletLine(text)) {
+          const nextOrdered = pending.ordered;
+          if (bullets.length && nextOrdered !== ordered) flush();
+          ordered = nextOrdered;
+          bullets.push(inner.trim() || follow);
+          pending = null;
+          return;
+        }
+        pending = null;
       }
-      const inner = match[1];
-      const text = htmlToText(`<p>${inner}</p>`) || inner.replace(/<[^>]+>/g, ' ');
       if (!isBulletLine(text)) {
         flush();
-        out.push(token);
+        if (fallbackToken != null && fallbackToken !== '') out.push(fallbackToken);
         return;
       }
-      const nextOrdered = /^\s*\d+[.)]\s+/.test(text);
+      const nextOrdered = isOrderedLine(text);
+      if (!item) {
+        pending = { ordered: nextOrdered };
+        return;
+      }
       if (bullets.length && nextOrdered !== ordered) flush();
       ordered = nextOrdered;
-      bullets.push(stripBullet(inner));
+      bullets.push(item);
+    };
+    tokens.forEach((token) => {
+      if (!token) return;
+      const match = token.match(/^<p>([\s\S]*?)<\/p>$/i);
+      if (match) {
+        consider(match[1], token);
+        return;
+      }
+      if (/^<br\s*\/?>$/i.test(token)) {
+        if (pending) return;
+        if (!bullets.length) out.push(token);
+        return;
+      }
+      const lines = token.split('\n');
+      if (lines.length > 1) {
+        lines.forEach((line) => consider(line, line));
+        return;
+      }
+      consider(token, token);
     });
     flush();
     return out.join('');
@@ -192,7 +298,10 @@ export function sanitizeStageMessageHtml(rawHtml, fallbackText = '') {
   let next = out.join('')
     .replace(/(<br>)+/g, '<br>')
     .replace(/^(<br>)+|(<br>)+$/g, '');
-  next = promoteBulletParagraphs(next);
+  next = unwrapLiParagraphs(promoteLooseLists(next))
+    .replace(/<\/ul><ul>/gi, '')
+    .replace(/<\/ol><ol>/gi, '')
+    .replace(/<(ul|ol)>\s*<\/\1>/gi, '');
   if (!next.trim()) return plainToHtml(fallbackText);
   const text = htmlToText(next);
   if (text.length > MESSAGE_MAX) {
@@ -206,6 +315,10 @@ export function messageFromClipboard(html, plain) {
   const pastedText = String(plain || '');
   if (pastedHtml && /<[a-z][\s\S]*>/i.test(pastedHtml)) {
     const clean = sanitizeStageMessageHtml(pastedHtml, pastedText);
+    if (linesHaveList(pastedText) && !messageHasBlocks(clean)) {
+      const fromPlain = normalizeStageMessage(pastedText);
+      if (fromPlain) return fromPlain;
+    }
     const text = htmlToText(clean) || clampText(pastedText);
     if (!text) return '';
     return { html: clean, text };

@@ -147,9 +147,9 @@ input[type='search']::-webkit-search-decoration {
 .stage-message ul,
 .stage-message ol {
   margin: 0.25em 0;
-  padding-inline-start: 1.2em;
+  padding-inline-start: 1.5em;
   text-align: left;
-  list-style-position: outside;
+  list-style-position: inside;
 }
 
 .stage-message ul {
@@ -162,6 +162,11 @@ input[type='search']::-webkit-search-decoration {
 
 .stage-message li {
   margin: 0.12em 0;
+}
+
+.stage-message li > p {
+  display: inline;
+  margin: 0;
 }
 
 .stage-message strong,
@@ -362,4 +367,11 @@ html[data-theme='light'] .stage-board .border-white\/10 {
 
 html[data-theme='light'] .stage-board .border-white\/20 {
   border-color: color-mix(in srgb, var(--color-fg) 16%, transparent);
+}
+
+body.reorder-dragging {
+  cursor: grabbing;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
 }

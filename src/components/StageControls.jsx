@@ -27,6 +27,8 @@ import IdeaQueue from './IdeaQueue.jsx';
 import {
   MESSAGE_MAX,
   messageFromClipboard,
+  htmlToText,
+  stageMessageHtml,
   stageMessageText,
 } from '../lib/stageMessage.js';
 
@@ -504,14 +506,15 @@ function StageAudiencePanel() {
 
 function StageMessagePanel() {
   const message = useAppStore((s) => s.stageSlots.message);
-  const text = stageMessageText(message);
+  const html = stageMessageHtml(message);
+  const text = html ? (htmlToText(html) || stageMessageText(message)) : stageMessageText(message);
   const pinned = useAppStore((s) => s.stagePins.includes('message'));
   const extras = useAppStore((s) => s.stageMessageFavorites) || [];
   const setStageMessage = useAppStore((s) => s.setStageMessage);
   const toggleStageMessage = useAppStore((s) => s.toggleStageMessage);
   const addStageMessageFavorite = useAppStore((s) => s.addStageMessageFavorite);
   const removeStageMessageFavorite = useAppStore((s) => s.removeStageMessageFavorite);
-  const pasteLock = useRef(false);
+  const ignoreInputUntil = useRef(0);
   const extraSet = new Set(extras.map((item) => item.toLowerCase()));
   const defaultSet = new Set(DEFAULT_STAGE_MESSAGES.map((item) => item.toLowerCase()));
   const saved = extras.filter((item) => !defaultSet.has(item.toLowerCase()));
@@ -527,12 +530,11 @@ function StageMessagePanel() {
     const plain = event.clipboardData?.getData('text/plain') || '';
     if (!pastedHtml && !plain) return;
     event.preventDefault();
-    pasteLock.current = true;
+    event.stopPropagation();
     const next = messageFromClipboard(pastedHtml, plain);
-    if (next) setStageMessage(next);
-    window.setTimeout(() => {
-      pasteLock.current = false;
-    }, 200);
+    if (!next) return;
+    ignoreInputUntil.current = Date.now() + 600;
+    setStageMessage(next);
   };
 
   return (
@@ -541,7 +543,7 @@ function StageMessagePanel() {
       <textarea
         value={text}
         onChange={(event) => {
-          if (pasteLock.current) return;
+          if (Date.now() < ignoreInputUntil.current) return;
           setStageMessage(event.target.value);
         }}
         onPaste={onPaste}
