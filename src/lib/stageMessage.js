@@ -370,6 +370,40 @@ function tidyListHtml(html) {
     .replace(/(?:<br\s*\/?>)+\s*<\/(ul|ol)>/gi, '</$1>');
 }
 
+function liHasOwnText(li) {
+  return [...li.childNodes].some((node) => {
+    if (node.nodeType === 3) return Boolean(String(node.nodeValue || '').trim());
+    if (node.nodeType !== 1) return false;
+    if (node.tagName === 'UL' || node.tagName === 'OL' || node.tagName === 'BR') return false;
+    return Boolean((node.textContent || '').trim());
+  });
+}
+
+function adoptOrphanLists(root) {
+  let moved = true;
+  while (moved) {
+    moved = false;
+    [...root.querySelectorAll('ul, ol')].forEach((parent) => {
+      [...parent.children].forEach((child) => {
+        if (child.tagName !== 'UL' && child.tagName !== 'OL') return;
+        const prev = child.previousElementSibling;
+        if (prev && prev.tagName === 'LI') {
+          prev.appendChild(child);
+          moved = true;
+        }
+      });
+    });
+  }
+  [...root.querySelectorAll('li')].forEach((li) => {
+    const nested = [...li.children].filter((child) => child.tagName === 'UL' || child.tagName === 'OL');
+    if (!nested.length || liHasOwnText(li)) return;
+    const prev = li.previousElementSibling;
+    if (!prev || prev.tagName !== 'LI') return;
+    nested.forEach((list) => prev.appendChild(list));
+    li.remove();
+  });
+}
+
 function promoteTopLevelBullets(root, doc) {
   const nodes = [...root.childNodes];
   let i = 0;
@@ -424,11 +458,7 @@ export function sanitizeStageMessageHtml(rawHtml, fallbackText = '') {
   const root = wrap.getElementById('root') || wrap.body;
   unwrapLiParagraphsDom(root);
   promoteTopLevelBullets(root, wrap);
-  [...root.querySelectorAll('ul > ul, ol > ol, ul > ol, ol > ul')].forEach((inner) => {
-    const li = wrap.createElement('li');
-    inner.parentNode.insertBefore(li, inner);
-    li.appendChild(inner);
-  });
+  adoptOrphanLists(root);
   next = tidyListHtml(root.innerHTML
     .replace(/<\/ul><ul>/gi, '')
     .replace(/<\/ol><ol>/gi, '')
