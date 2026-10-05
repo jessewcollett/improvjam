@@ -33,6 +33,7 @@ function emptyRecord(code) {
     ideasUse: false,
     ideasHold: false,
     ideaFlags: false,
+    hostOn: false,
     updatedAt: '',
   };
 }
@@ -121,6 +122,7 @@ function normalizeRecord(code, raw) {
     ideasUse: raw.ideasUse === true,
     ideasHold: raw.ideasHold === true,
     ideaFlags: raw.ideaFlags === true,
+    hostOn: Object.prototype.hasOwnProperty.call(raw, 'hostOn') ? raw.hostOn === true : true,
     updatedAt: String(raw.updatedAt || ''),
   };
 }
@@ -291,11 +293,15 @@ export default async function handler(req, res) {
       if (Object.prototype.hasOwnProperty.call(body, 'ideasHold')) {
         record.ideasHold = body.ideasHold === true;
       }
+      if (Object.prototype.hasOwnProperty.call(body, 'hostOn')) {
+        record.hostOn = body.hostOn === true;
+      }
       if (Array.isArray(body.ideaCats)) {
         record.ideaCats = ideaCats(body.ideaCats);
       }
       const hostWrite = Object.prototype.hasOwnProperty.call(body, 'payload');
       if (hostWrite) {
+        if (!Object.prototype.hasOwnProperty.call(body, 'hostOn')) record.hostOn = true;
         if (Object.prototype.hasOwnProperty.call(body, 'ideas') || Object.prototype.hasOwnProperty.call(body, 'ideasPending')) {
           const next = reconcileHostIdeas(
             prev,

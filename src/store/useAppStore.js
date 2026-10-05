@@ -1,5 +1,19 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { createJSONStorage, persist } from 'zustand/middleware';
+import { buildDeviceBackup, parseDeviceBackup, persistStorage, STORE_KEY } from '../lib/appStorage.js';
+import {
+  buildProfilePayload,
+  fetchProfile,
+  incomingWouldWipe,
+  mergeProfilePayload,
+  mintProfileId,
+  mintUserId,
+  normalizeUserId,
+  postProfile,
+  PROFILE_PUSH_MS,
+  profileHasData,
+  profileSignature,
+} from '../lib/profile.js';
 import fallback from '../data/mockData.json';
 import { fetchSheetData, normalizePayload } from '../lib/sheets.js';
 import { normalizeMusicTags, tagsForTrack, toggleTagList } from '../lib/music.js';
@@ -28,6 +42,7 @@ import {
   fetchStage,
   framesCoverSlots,
   gamesFromCatalog,
+  hostStateFromRecord,
   isStageSlotId,
   listedStageSlots,
   mintStageCode,
@@ -55,6 +70,7 @@ import {
   popOutStageTile,
   postStage,
   publishStageGame,
+  recordHasHostState,
   seedStageLayout,
   stageIdeasUrl,
   swapStageFrames,
@@ -125,6 +141,8 @@ export const defaultSettings = {
   stageCode: '',
   stageOn: false,
   stageBoardStyle: 'cards',
+  userId: '',
+  profileNamed: false,
 };
 
 export function normalizeSettings(raw) {
@@ -142,6 +160,8 @@ export function normalizeSettings(raw) {
     stageCode: normalizeStageCode(merged.stageCode),
     stageOn: merged.stageOn === true,
     stageBoardStyle: normalizeStageBoardStyle(merged.stageBoardStyle),
+    userId: normalizeUserId(merged.userId),
+    profileNamed: merged.profileNamed === true,
   };
 }
 
@@ -172,6 +192,13 @@ let stageIdeasPullQueued = false;
 let ideaTombstones = new Map();
 let lastGenerateFromGameAt = 0;
 const IDEA_TOMBSTONE_MS = 45000;
+
+let profilePushTimer = null;
+let profilePushInflight = false;
+let profilePushQueued = false;
+let lastProfileSignature = '';
+let profileWatchStarted = false;
+let profilePullInflight = false;
 
 function tombstoneIdea(kind, cat, text) {
   const key = `${kind}:${String(cat || '').trim()}:${String(text || '').trim().toLowerCase()}`;
@@ -317,6 +344,7 @@ async function publishStageNow() {
     const captions = normalizeStageCaptions(state.stageCaptions);
     if (Object.keys(captions).length) payload.captions = captions;
     const extra = {
+      hostOn: true,
       ideasOpen: Boolean(state.stageIdeasOpen),
       ideasUse: Boolean(state.stageIdeasUse),
       ideasHold: Boolean(state.stageIdeasHold),
@@ -357,6 +385,128 @@ async function publishStageNow() {
       publishStageNow();
     }
   }
+}
+
+function applyProfileToState(current, payload, syncedAt) {
+  const combined = mergeProfilePayload(buildProfilePayload(current), payload);
+  const merged = mergePersisted(combined, current);
+  return {
+    ...merged,
+    data: current.data,
+    lastSynced: current.lastSynced,
+    settings: {
+      ...merged.settings,
+      lastRoute: current.settings.lastRoute,
+      lastTool: current.settings.lastTool,
+      stageOn: current.settings.stageOn,
+      stageCode: current.settings.stageCode,
+      userId: current.settings.userId,
+      profileNamed: current.settings.profileNamed === true,
+    },
+    userSyncedAt: typeof syncedAt === 'string' && syncedAt ? syncedAt : current.userSyncedAt,
+    userSyncError: null,
+    userSyncing: false,
+  };
+}
+
+function queueProfilePush() {
+  if (typeof window === 'undefined' || profilePullInflight) return;
+  if (profilePushTimer) window.clearTimeout(profilePushTimer);
+  profilePushTimer = window.setTimeout(() => {
+    profilePushTimer = null;
+    useAppStore.getState().pushUserProfile().catch(() => {});
+  }, PROFILE_PUSH_MS);
+}
+
+function startProfileWatch() {
+  if (profileWatchStarted) return;
+  profileWatchStarted = true;
+  lastProfileSignature = profileSignature(useAppStore.getState());
+  useAppStore.subscribe((state) => {
+    const next = profileSignature(state);
+    if (next === lastProfileSignature) return;
+    lastProfileSignature = next;
+    queueProfilePush();
+  });
+}
+
+function mergePersisted(persisted, current) {
+  return {
+    ...current,
+    ...(persisted || {}),
+    data:
+      persisted?.lastSynced && persisted?.data?.games?.length
+        ? normalizePayload(persisted.data)
+        : current.data,
+    lists: persisted?.lists != null ? normalizeLists(persisted.lists) : current.lists,
+    settings: persisted?.settings != null ? normalizeSettings(persisted.settings) : current.settings,
+    dismissedTipDate:
+      typeof persisted?.dismissedTipDate === 'string' ? persisted.dismissedTipDate : current.dismissedTipDate,
+    userSyncedAt:
+      typeof persisted?.userSyncedAt === 'string' ? persisted.userSyncedAt : current.userSyncedAt,
+    generatorBanks: Array.isArray(persisted?.generatorBanks)
+      ? persisted.generatorBanks
+      : current.generatorBanks,
+    generatorSkills: Array.isArray(persisted?.generatorSkills)
+      ? persisted.generatorSkills
+      : current.generatorSkills,
+    generatorBankFavorites: Array.isArray(persisted?.generatorBankFavorites)
+      ? persisted.generatorBankFavorites
+      : current.generatorBankFavorites,
+    generatorDrawCounts: normalizeDrawCounts(persisted?.generatorDrawCounts),
+    generatorSessionBanks: normalizeIdeaCats(
+      Array.isArray(persisted?.generatorSessionBanks) ? persisted.generatorSessionBanks : current.generatorSessionBanks,
+    ),
+    generatorDrawNonce: 0,
+    gameGeneratorLinks: normalizeGameGeneratorLinks(persisted?.gameGeneratorLinks),
+    sfxHidden: Array.isArray(persisted?.sfxHidden) ? persisted.sfxHidden : current.sfxHidden,
+    sfxOrder: Array.isArray(persisted?.sfxOrder) ? persisted.sfxOrder : current.sfxOrder,
+    sfxSlots: normalizeSfxSlots(persisted?.sfxSlots, persisted?.sfxOrder, persisted?.sfxHidden),
+    sfxSlotColors: normalizeSfxSlotColors(
+      persisted?.sfxSlotColors,
+      normalizeSfxSlots(persisted?.sfxSlots, persisted?.sfxOrder, persisted?.sfxHidden).length,
+    ),
+    sfxIconOverrides:
+      persisted?.sfxIconOverrides && typeof persisted.sfxIconOverrides === 'object' && !Array.isArray(persisted.sfxIconOverrides)
+        ? persisted.sfxIconOverrides
+        : current.sfxIconOverrides,
+    musicTags: normalizeMusicTags(persisted?.musicTags),
+    stagePins: normalizeStagePins(persisted?.stagePins),
+    stageSlots: normalizeStageSlots(persisted?.stageSlots),
+    stageSizes: normalizeStageSizes(persisted?.stageSizes),
+    stageZooms: normalizeStageZooms(persisted?.stageZooms, persisted?.stageSizes),
+    stageFrames: normalizeStageFrames(persisted?.stageFrames),
+    stageFloats: normalizeStageFloats(persisted?.stageFloats, normalizeStagePins(persisted?.stagePins)),
+    stageLayout: normalizeStageLayout(persisted?.stageLayout),
+    stageAligns: normalizeStageAligns(persisted?.stageAligns),
+    stageCaptions: normalizeStageCaptions(persisted?.stageCaptions),
+    stageHideCode: persisted?.stageHideCode === true,
+    stageTheme: normalizeTheme(persisted?.stageTheme),
+    stageSpotlight: normalizeStageSpotlight(persisted?.stageSpotlight, normalizeStagePins(persisted?.stagePins)),
+    stageIdeasOpen: persisted?.stageIdeasOpen === true,
+    stageIdeasUse: persisted?.stageIdeasUse === true,
+    stageIdeasHold: persisted?.stageIdeasHold === true,
+    stageIdeaCats: normalizeIdeaCats(
+      Array.isArray(persisted?.stageIdeaCats) ? persisted.stageIdeaCats : current.stageIdeaCats,
+    ),
+    stageMessageFavorites: normalizeStageMessages(persisted?.stageMessageFavorites, []),
+    stageIdeas: persisted?.stageIdeas != null ? normalizeStageIdeasMap(persisted.stageIdeas) : current.stageIdeas,
+    stageIdeasPending: persisted?.stageIdeasPending != null
+      ? normalizeStageIdeasMap(persisted.stageIdeasPending)
+      : current.stageIdeasPending,
+    stagePlay: persisted?.stagePlay !== undefined ? normalizeStagePlay(persisted.stagePlay) : current.stagePlay,
+    stageFolds: {
+      pending: true,
+      live: true,
+      message: true,
+      board: true,
+      show: true,
+      ...(persisted?.stageFolds && typeof persisted.stageFolds === 'object' && !Array.isArray(persisted.stageFolds)
+        ? persisted.stageFolds
+        : current.stageFolds || {}),
+    },
+    stagePublishError: null,
+  };
 }
 
 export const useAppStore = create(
@@ -405,6 +555,9 @@ export const useAppStore = create(
       stageMessageFavorites: [],
       stagePublishError: null,
       stagePlay: null,
+      userSyncedAt: null,
+      userSyncError: null,
+      userSyncing: false,
       stageFolds: {
         pending: true,
         live: true,
@@ -485,7 +638,11 @@ export const useAppStore = create(
           }
           return next;
         });
-        publishStageNow();
+        get().adoptStageSession(code).finally(() => {
+          if (get().settings.stageOn && normalizeStageCode(get().settings.stageCode) === code) {
+            publishStageNow();
+          }
+        });
         return code;
       },
 
@@ -501,8 +658,26 @@ export const useAppStore = create(
           }
           return next;
         });
-        publishStageNow();
+        if (get().settings.stageOn) publishStageNow();
         return code;
+      },
+
+      adoptStageSession: async (code) => {
+        const normalized = normalizeStageCode(code);
+        if (!normalized) return false;
+        try {
+          const data = await fetchStage(normalized);
+          if (!recordHasHostState(data)) return false;
+          const adopted = hostStateFromRecord(data);
+          set((state) => ({
+            ...adopted,
+            stageTheme: adopted.stageTheme || state.stageTheme,
+            stageIdeaCats: adopted.stageIdeaCats || state.stageIdeaCats,
+          }));
+          return true;
+        } catch {
+          return false;
+        }
       },
 
       setStageOn: (on) => {
@@ -512,7 +687,13 @@ export const useAppStore = create(
           set((state) => ({
             settings: { ...state.settings, stageOn: true, stageCode: code || state.settings.stageCode },
           }));
-          publishStageNow();
+          const shouldAdopt = !(get().stagePins || []).length;
+          const ready = shouldAdopt ? get().adoptStageSession(code) : Promise.resolve(false);
+          ready.finally(() => {
+            if (get().settings.stageOn && normalizeStageCode(get().settings.stageCode) === code) {
+              publishStageNow();
+            }
+          });
           return;
         }
         const code = normalizeStageCode(get().settings.stageCode);
@@ -520,13 +701,13 @@ export const useAppStore = create(
           settings: {
             ...state.settings,
             stageOn: false,
-            lastRoute: state.settings.lastRoute === STAGE_MANAGER_ID ? 'generator' : state.settings.lastRoute,
           },
         }));
         if (code) {
-          postStage(code, {}, {
+          postStage(code, undefined, {
+            hostOn: false,
             ideasOpen: false,
-            ideasUse: Boolean(get().stageIdeasUse),
+            ideasUse: false,
             ideasHold: Boolean(get().stageIdeasHold),
             ideaCats: normalizeIdeaCats(get().stageIdeaCats),
           }).catch(() => {});
@@ -1573,9 +1754,151 @@ export const useAppStore = create(
       resetLibraryToBundled: () => {
         set({ data: bundled, lastSynced: null, syncError: null });
       },
+
+      exportDeviceBackup: () => buildDeviceBackup(get()),
+
+      restoreDeviceBackup: (raw) => {
+        const parsed = parseDeviceBackup(raw);
+        if (!parsed) return { ok: false, error: 'Not an Improv Jam backup.' };
+        set((current) => mergePersisted(parsed, current));
+        return { ok: true };
+      },
+
+      ensureUserId: async () => {
+        const existing = normalizeUserId(get().settings.userId);
+        if (existing) return existing;
+        const id = await mintProfileId();
+        set((state) => ({
+          settings: { ...state.settings, userId: id, profileNamed: state.settings.profileNamed === true },
+        }));
+        return id;
+      },
+
+      setUserId: async (raw) => {
+        const next = normalizeUserId(raw);
+        if (!next) return '';
+        const current = normalizeUserId(get().settings.userId);
+        if (next === current && get().settings.profileNamed) {
+          await get().pullUserProfile();
+          return next;
+        }
+        set((state) => ({
+          settings: { ...state.settings, userId: next, profileNamed: true },
+          userSyncedAt: next === current ? state.userSyncedAt : null,
+          userSyncError: null,
+        }));
+        lastProfileSignature = '';
+        await get().pullUserProfile();
+        return next;
+      },
+
+      mintNewUserId: async () => {
+        const id = mintUserId();
+        set((state) => ({
+          settings: { ...state.settings, userId: id, profileNamed: false },
+          userSyncedAt: null,
+          userSyncError: null,
+        }));
+        lastProfileSignature = '';
+        await get().pushUserProfile();
+        return id;
+      },
+
+      pullUserProfile: async () => {
+        if (profilePullInflight) return get().settings.userId;
+        profilePullInflight = true;
+        set({ userSyncing: true, userSyncError: null });
+        try {
+          const id = await get().ensureUserId();
+          const remote = await fetchProfile(id);
+          const state = get();
+          const localPayload = buildProfilePayload(state);
+          const remoteAt = Date.parse(remote.updatedAt) || 0;
+          const localAt = Date.parse(state.userSyncedAt) || 0;
+          if (incomingWouldWipe(localPayload, remote.payload)) {
+            lastProfileSignature = profileSignature(state);
+            set({ userSyncing: false, userSyncedAt: state.userSyncedAt || remote.updatedAt || null });
+            if (profileHasData(localPayload)) profilePushQueued = true;
+          } else if (profileHasData(remote.payload) || remoteAt > localAt) {
+            set((current) => applyProfileToState(current, remote.payload, remote.updatedAt || current.userSyncedAt));
+            lastProfileSignature = profileSignature(get());
+            profilePushQueued = true;
+          } else if (profileHasData(localPayload)) {
+            set({ userSyncing: false });
+            profilePushQueued = true;
+          } else {
+            set({ userSyncing: false });
+          }
+          startProfileWatch();
+          return id;
+        } catch (error) {
+          set({ userSyncing: false, userSyncError: error.message || 'Profile sync failed.' });
+          startProfileWatch();
+          return get().settings.userId;
+        } finally {
+          profilePullInflight = false;
+          if (profilePushQueued) {
+            profilePushQueued = false;
+            queueProfilePush();
+          }
+        }
+      },
+
+      pushUserProfile: async () => {
+        if (profilePullInflight) {
+          profilePushQueued = true;
+          return;
+        }
+        if (profilePushInflight) {
+          profilePushQueued = true;
+          return;
+        }
+        const id = normalizeUserId(get().settings.userId);
+        if (!id) return;
+        const localPayload = buildProfilePayload(get());
+        profilePushInflight = true;
+        set({ userSyncing: true, userSyncError: null });
+        try {
+          let payload = localPayload;
+          try {
+            const remote = await fetchProfile(id);
+            if (incomingWouldWipe(remote.payload, localPayload)) {
+              payload = mergeProfilePayload(localPayload, remote.payload);
+              if (profileHasData(remote.payload)) {
+                set((current) => applyProfileToState(current, payload, remote.updatedAt));
+              }
+            } else {
+              payload = mergeProfilePayload(localPayload, remote.payload);
+            }
+          } catch {
+            payload = localPayload;
+          }
+          if (!profileHasData(payload) && !get().userSyncedAt) {
+            set({ userSyncing: false });
+            lastProfileSignature = profileSignature(get());
+            return;
+          }
+          const result = await postProfile(id, payload);
+          if (result.kept) {
+            set((current) => applyProfileToState(current, result.payload, result.updatedAt));
+          } else {
+            lastProfileSignature = profileSignature(get());
+            set({ userSyncedAt: result.updatedAt, userSyncing: false, userSyncError: null });
+          }
+        } catch (error) {
+          set({ userSyncing: false, userSyncError: error.message || 'Profile save failed.' });
+        } finally {
+          profilePushInflight = false;
+          if (profilePushQueued) {
+            profilePushQueued = false;
+            queueProfilePush();
+          }
+        }
+      },
     }),
     {
-      name: 'improv-jam-store',
+      name: STORE_KEY,
+      storage: createJSONStorage(() => persistStorage),
       partialize: (state) => ({
         data: state.data,
         lists: state.lists,
@@ -1588,6 +1911,7 @@ export const useAppStore = create(
         gameGeneratorLinks: state.gameGeneratorLinks,
         lastSynced: state.lastSynced,
         dismissedTipDate: state.dismissedTipDate,
+        userSyncedAt: state.userSyncedAt,
         sfxHidden: state.sfxHidden,
         sfxOrder: state.sfxOrder,
         sfxSlots: state.sfxSlots,
@@ -1616,78 +1940,7 @@ export const useAppStore = create(
         stagePlay: state.stagePlay,
         stageFolds: state.stageFolds,
       }),
-      merge: (persisted, current) => ({
-        ...current,
-        ...(persisted || {}),
-        data:
-          persisted?.lastSynced && persisted?.data?.games?.length
-            ? normalizePayload(persisted.data)
-            : current.data,
-        lists: normalizeLists(persisted?.lists || current.lists),
-        settings: normalizeSettings(persisted?.settings),
-        dismissedTipDate:
-          typeof persisted?.dismissedTipDate === 'string' ? persisted.dismissedTipDate : current.dismissedTipDate,
-        generatorBanks: Array.isArray(persisted?.generatorBanks)
-          ? persisted.generatorBanks
-          : current.generatorBanks,
-        generatorSkills: Array.isArray(persisted?.generatorSkills)
-          ? persisted.generatorSkills
-          : current.generatorSkills,
-        generatorBankFavorites: Array.isArray(persisted?.generatorBankFavorites)
-          ? persisted.generatorBankFavorites
-          : current.generatorBankFavorites,
-        generatorDrawCounts: normalizeDrawCounts(persisted?.generatorDrawCounts),
-        generatorSessionBanks: normalizeIdeaCats(
-          Array.isArray(persisted?.generatorSessionBanks) ? persisted.generatorSessionBanks : current.generatorSessionBanks,
-        ),
-        generatorDrawNonce: 0,
-        gameGeneratorLinks: normalizeGameGeneratorLinks(persisted?.gameGeneratorLinks),
-        sfxHidden: Array.isArray(persisted?.sfxHidden) ? persisted.sfxHidden : current.sfxHidden,
-        sfxOrder: Array.isArray(persisted?.sfxOrder) ? persisted.sfxOrder : current.sfxOrder,
-        sfxSlots: normalizeSfxSlots(persisted?.sfxSlots, persisted?.sfxOrder, persisted?.sfxHidden),
-        sfxSlotColors: normalizeSfxSlotColors(
-          persisted?.sfxSlotColors,
-          normalizeSfxSlots(persisted?.sfxSlots, persisted?.sfxOrder, persisted?.sfxHidden).length,
-        ),
-        sfxIconOverrides:
-          persisted?.sfxIconOverrides && typeof persisted.sfxIconOverrides === 'object' && !Array.isArray(persisted.sfxIconOverrides)
-            ? persisted.sfxIconOverrides
-            : current.sfxIconOverrides,
-        musicTags: normalizeMusicTags(persisted?.musicTags),
-        stagePins: normalizeStagePins(persisted?.stagePins),
-        stageSlots: normalizeStageSlots(persisted?.stageSlots),
-        stageSizes: normalizeStageSizes(persisted?.stageSizes),
-        stageZooms: normalizeStageZooms(persisted?.stageZooms, persisted?.stageSizes),
-        stageFrames: normalizeStageFrames(persisted?.stageFrames),
-        stageFloats: normalizeStageFloats(persisted?.stageFloats, normalizeStagePins(persisted?.stagePins)),
-        stageLayout: normalizeStageLayout(persisted?.stageLayout),
-        stageAligns: normalizeStageAligns(persisted?.stageAligns),
-        stageCaptions: normalizeStageCaptions(persisted?.stageCaptions),
-        stageHideCode: persisted?.stageHideCode === true,
-        stageTheme: normalizeTheme(persisted?.stageTheme),
-        stageSpotlight: normalizeStageSpotlight(persisted?.stageSpotlight, normalizeStagePins(persisted?.stagePins)),
-        stageIdeasOpen: persisted?.stageIdeasOpen === true,
-        stageIdeasUse: persisted?.stageIdeasUse === true,
-        stageIdeasHold: persisted?.stageIdeasHold === true,
-        stageIdeaCats: normalizeIdeaCats(
-          Array.isArray(persisted?.stageIdeaCats) ? persisted.stageIdeaCats : current.stageIdeaCats,
-        ),
-        stageMessageFavorites: normalizeStageMessages(persisted?.stageMessageFavorites, []),
-        stageIdeas: normalizeStageIdeasMap(persisted?.stageIdeas),
-        stageIdeasPending: normalizeStageIdeasMap(persisted?.stageIdeasPending),
-        stagePlay: normalizeStagePlay(persisted?.stagePlay),
-        stageFolds: {
-          pending: true,
-          live: true,
-          message: true,
-          board: true,
-          show: true,
-          ...(persisted?.stageFolds && typeof persisted.stageFolds === 'object' && !Array.isArray(persisted.stageFolds)
-            ? persisted.stageFolds
-            : {}),
-        },
-        stagePublishError: null,
-      }),
+      merge: mergePersisted,
     },
   ),
 );

@@ -133,6 +133,19 @@ function IdeasForm({ code }) {
 
   const ideasClosed = Boolean(session?.ideaFlags && !session.ideasOpen);
   const ideasWaiting = !session || (!session.ideasOpen && !session.ideaFlags);
+  const sessionOff = Boolean(session && session.hostOn === false && !session.miss);
+
+  if (sessionOff) {
+    return (
+      <div className="min-h-dvh w-full bg-stage text-gray-100 flex flex-col items-center justify-center px-6 py-10">
+        <Lightbulb className="w-12 h-12 text-gray-500 mb-4" />
+        <h1 className="text-3xl font-black font-display mb-2">Session off</h1>
+        <p className="text-gray-400 text-center max-w-md">
+          Session {code} isn’t live. The host can turn Stage on to resume.
+        </p>
+      </div>
+    );
+  }
 
   if (ideasClosed) {
     return (

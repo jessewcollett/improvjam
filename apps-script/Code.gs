@@ -16,7 +16,9 @@ var TAB_BANKS = 'Banks';
 var TAB_ICONS = 'Icons';
 var TAB_HELP = 'Help';
 var TAB_STAGE = 'Stage';
+var TAB_PROFILES = 'Profiles';
 var STAGE_HEADERS = ['code', 'payload', 'updatedAt'];
+var PROFILE_HEADERS = ['id', 'payload', 'payload2', 'payload3', 'payload4', 'payload5', 'payload6', 'payload7', 'payload8', 'updatedAt'];
 
 var AUDIO_HEADERS = ['id', 'name', 'kind', 'url', 'icon', 'credit', 'creditUrl', 'notes', 'active', 'tags'];
 var SOURCES_HEADERS = ['id', 'name', 'url', 'note', 'active'];
@@ -69,8 +71,9 @@ function onOpen() {
 }
 
 function doGet(e) {
+  var profileId = e && e.parameter && String(e.parameter.profile || e.parameter.user || '').trim();
   var stageCode = e && e.parameter && String(e.parameter.stage || '').trim();
-  var payload = stageCode ? readStage_(stageCode) : readCatalog();
+  var payload = profileId ? readProfile_(profileId) : (stageCode ? readStage_(stageCode) : readCatalog());
   return ContentService
     .createTextOutput(JSON.stringify(payload))
     .setMimeType(ContentService.MimeType.JSON);
@@ -83,7 +86,11 @@ function doPost(e) {
   } catch (err) {
     body = {};
   }
-  var result = upsertStage_(body);
+  var result = (body && body.kind === 'profile' && body.mint === true)
+    ? mintProfile_(body)
+    : ((body && (body.kind === 'profile' || body.profile === true))
+      ? upsertProfile_(body)
+      : upsertStage_(body));
   return ContentService
     .createTextOutput(JSON.stringify(result))
     .setMimeType(ContentService.MimeType.JSON);
@@ -117,6 +124,7 @@ function ensureAllTabs_(ss) {
     return ensureTabHeaders_(ss, schema.tab, schema.headers);
   });
   results.push(ensureTabHeaders_(ss, TAB_STAGE, STAGE_HEADERS));
+  results.push(ensureTabHeaders_(ss, TAB_PROFILES, PROFILE_HEADERS));
   return results;
 }
 
@@ -201,7 +209,7 @@ function ensureTabHeaders_(ss, tab, headers) {
 }
 
 function finishTabSetup_(sheet, tab) {
-  if (tab === TAB_STAGE) return;
+  if (tab === TAB_STAGE || tab === TAB_PROFILES) return;
   if (tab === TAB_GENERATOR) ensureGroupValidation_(sheet);
   if (tab === TAB_BANKS) {
     seedBanksIfEmpty_(sheet);
@@ -579,15 +587,16 @@ function ensureKnownSources_(ss) {
 function helpTabRows_() {
   return [
     ['Topic', 'Details'],
-    ['Sync', 'Edit this Google Sheet, then tap Sync Data in the app. Games, glossary, generator banks, and Audio (SFX / Track) refresh on the device. To Play, Favorites, Played, custom sets, and hidden SFX pads stay on the device.'],
+    ['Sync', 'Edit this Google Sheet, then tap Sync Data in the app for games and glossary. Lists and prefs auto-save to the Profiles tab under a username (or a hidden guest id until they pick a name). Type the same name on another phone to pull that profile.'],
     ['Audio credits', 'Credits live on the Audio tab (credit, creditUrl). SFX icons use the icon column (drum, bell-ring, or an emoji like 🥁).'],
     ['Music tags', 'Tracks use the tags column only — no genre column (Pop, 80s, Underscore — comma or pipe separated). People can also tag on the device in Music.'],
     ['Photos', 'Game and glossary photos use the image column (Drive share link, Anyone with the link).'],
     ['Audio url', 'The Audio tab url column must be a Drive file share link (not a folder), Anyone with the link → Viewer, under 25MB. Community intake writes that file URL after an upload — respondents do not paste a link.'],
     ['Intake form uploads', 'File upload questions: "SFX file" and "Music file" (required, audio, under 25MB). Photos: "Game photo" / "Game photo (optional)" and "Term Photo" / "Term photo (optional)" — titles are matched loosely. Apps Script cannot create File upload questions. The default media folder is the parent Forms uploads folder (GOOGLE_MEDIA_FOLDER_ID). Improv Jam → Create intake form stores it; Set media folder can override. Move-to uses that parent, not the per-question subfolders.'],
     ['Intake form responses', 'Linking the form to THIS catalog spreadsheet only creates a Form Responses tab as a raw log. It does not write Games, Terms, Audio, or Generator. Catalog rows come from the installable onIntakeFormSubmit / onFormSubmit trigger (Improv Jam → Create intake form). The PWA does not live-update; tap Sync Data (or reopen the app) to fetch the catalog. Do not run Populate catalog after submissions.'],
-    ['Update tabs', 'Improv Jam → Update tabs adds missing columns (tags, image, Generator group) and creates the Icons, Banks, Help, and Stage tabs without overwriting catalog rows.'],
+    ['Update tabs', 'Improv Jam → Update tabs adds missing columns (tags, image, Generator group) and creates the Icons, Banks, Help, Stage, and Profiles tabs without overwriting catalog rows.'],
     ['Stage', 'A Stage session is one row (code, payload, updatedAt). The phone POSTs JSON { code, payload } to the web app; the /stage board GETs ?stage=CODE. Missing or empty rows return { code, payload: {}, updatedAt: "" }. Stage is not part of the catalog — Update tabs creates the tab; Populate catalog does not seed or overwrite sessions.'],
+    ['Profiles', 'One row per profile name (id, payload…payload8, updatedAt). Guest saves use a minted 6-character id until the person picks a username. The PWA POSTs { kind: "profile", id, payload } and GETs ?profile=ID. Payload JSON is split across payload columns (Sheets 50k/cell). Not part of the catalog — Update tabs creates the tab; Populate catalog does not seed or overwrite profiles.'],
     ['Generator / Banks', 'Generator categories live on the Banks tab: set group to Ask-for, Skill Building, or Both, and icon to a keyword from the Icons tab (footprints, drum, sparkles) or any emoji. Leave Generator group blank to use the Banks value; fill a row to override that category.'],
     ['sourceIds', 'Pipe-separated ids that match the Sources tab (src-encyclopedia, src-learnimprov, src-jam-terms). This is what the app uses to decide which sites a card should link to.'],
     ['source', 'Display label only (for example "Improv Encyclopedia"). Not used for outbound links.'],
@@ -1144,5 +1153,241 @@ function imageMap_(ss, tab, idKey) {
     if (id && image) map[id] = image;
   });
   return map;
+}
+
+var PROFILE_CHUNK = 49000;
+var PROFILE_PARTS = 8;
+var PROFILE_CACHE_TTL = 21600;
+var PROFILE_CACHE_MAX = 90000;
+
+function emptyProfile_(id) {
+  return { id: String(id || ''), payload: {}, updatedAt: '' };
+}
+
+function profilePayloadColumns_() {
+  var out = ['payload'];
+  var i;
+  for (i = 2; i <= PROFILE_PARTS; i++) out.push('payload' + i);
+  return out;
+}
+
+function profileCacheKey_(id) {
+  return 'profile:' + String(id || '');
+}
+
+function profileRowKey_(id) {
+  return 'profilerow:' + String(id || '');
+}
+
+function profileSheet_(ss, create) {
+  var sheet = ss.getSheetByName(TAB_PROFILES);
+  if (sheet || !create) return sheet;
+  ensureTabHeaders_(ss, TAB_PROFILES, PROFILE_HEADERS);
+  return ss.getSheetByName(TAB_PROFILES);
+}
+
+function splitProfilePayload_(text) {
+  var raw = String(text || '');
+  var chunks = [];
+  var i = 0;
+  while (i < raw.length && chunks.length < PROFILE_PARTS) {
+    chunks.push(raw.slice(i, i + PROFILE_CHUNK));
+    i += PROFILE_CHUNK;
+  }
+  return chunks;
+}
+
+function joinProfilePayload_(row, headers) {
+  var parts = profilePayloadColumns_();
+  var text = '';
+  var i;
+  for (i = 0; i < parts.length; i++) {
+    var col = headerIndex_(headers, parts[i]);
+    if (col < 0) continue;
+    var cell = row[col];
+    if (cell == null || cell === '') continue;
+    if (typeof cell === 'object') {
+      try {
+        text += JSON.stringify(cell);
+      } catch (err) {}
+    } else {
+      text += String(cell);
+    }
+  }
+  return parseStagePayload_(text);
+}
+
+function profileFromCache_(id) {
+  try {
+    var raw = CacheService.getScriptCache().get(profileCacheKey_(id));
+    if (!raw) return null;
+    var parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    return {
+      id: id,
+      payload: parseStagePayload_(parsed.payload),
+      updatedAt: String(parsed.updatedAt || ''),
+    };
+  } catch (err) {
+    return null;
+  }
+}
+
+function profileToCache_(id, payload, updatedAt, row) {
+  try {
+    var cache = CacheService.getScriptCache();
+    var text = JSON.stringify({ payload: payload, updatedAt: updatedAt || '' });
+    if (text.length <= PROFILE_CACHE_MAX) {
+      cache.put(profileCacheKey_(id), text, PROFILE_CACHE_TTL);
+    }
+    if (row >= 2) cache.put(profileRowKey_(id), String(row), PROFILE_CACHE_TTL);
+  } catch (err) {}
+}
+
+function readProfile_(id) {
+  var key = String(id || '').trim();
+  var empty = emptyProfile_(key);
+  if (!key) return empty;
+  var cached = profileFromCache_(key);
+  if (cached) return cached;
+  var sheet = profileSheet_(SpreadsheetApp.getActive(), false);
+  if (!sheet || sheet.getLastRow() < 2) return empty;
+  var last = Math.max(sheet.getLastColumn(), 1);
+  var headers = sheet.getRange(1, 1, 1, last).getValues()[0];
+  var idCol = headerIndex_(headers, 'id');
+  var updatedCol = headerIndex_(headers, 'updatedAt');
+  if (idCol < 0) return empty;
+  var values = sheet.getDataRange().getValues();
+  var r;
+  for (r = 1; r < values.length; r++) {
+    if (String(values[r][idCol] || '').trim() !== key) continue;
+    var found = {
+      id: key,
+      payload: joinProfilePayload_(values[r], headers),
+      updatedAt: stageUpdatedAt_(updatedCol >= 0 ? values[r][updatedCol] : ''),
+    };
+    profileToCache_(key, found.payload, found.updatedAt, r + 1);
+    return found;
+  }
+  return empty;
+}
+
+var PROFILE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+function profileHasLists_(payload) {
+  var lists = payload && payload.lists;
+  if (!lists || typeof lists !== 'object') return false;
+  if (lists.customSets && lists.customSets.length) return true;
+  if (lists.favorites && lists.favorites.length) return true;
+  if (lists.toPlay && lists.toPlay.length) return true;
+  if (lists.played && lists.played.length) return true;
+  if (lists.learned && lists.learned.length) return true;
+  return false;
+}
+
+function incomingWouldWipe_(existing, incoming) {
+  if (!profileHasLists_(existing)) return false;
+  if (!profileHasLists_(incoming)) return true;
+  var aSets = existing.lists && existing.lists.customSets ? existing.lists.customSets.length : 0;
+  var bSets = incoming.lists && incoming.lists.customSets ? incoming.lists.customSets.length : 0;
+  return aSets > 0 && bSets === 0;
+}
+
+function randomProfileId_() {
+  var id = '';
+  var i;
+  for (i = 0; i < 6; i++) {
+    id += PROFILE_ALPHABET.charAt(Math.floor(Math.random() * PROFILE_ALPHABET.length));
+  }
+  return id;
+}
+
+function mintProfile_(body) {
+  var requested = String((body && (body.id || body.code)) || '').trim();
+  var ss = SpreadsheetApp.getActive();
+  var sheet = profileSheet_(ss, true);
+  var last = Math.max(sheet.getLastColumn(), 1);
+  var headers = sheet.getRange(1, 1, 1, last).getValues()[0];
+  var idCol = headerIndex_(headers, 'id');
+  var taken = {};
+  if (sheet.getLastRow() >= 2 && idCol >= 0) {
+    var values = sheet.getDataRange().getValues();
+    var r;
+    for (r = 1; r < values.length; r++) {
+      var existing = String(values[r][idCol] || '').trim();
+      if (existing) taken[existing] = true;
+    }
+  }
+  var id = requested && !taken[requested] ? requested : '';
+  var n;
+  for (n = 0; n < 16 && !id; n++) {
+    var next = randomProfileId_();
+    if (!taken[next]) id = next;
+  }
+  if (!id) return { error: 'Could not mint id', id: '', payload: {}, updatedAt: '' };
+  var updatedAt = new Date().toISOString();
+  var row = sheet.getLastRow() + 1;
+  var writeCol = headerIndex_(headers, 'id') + 1;
+  var updatedCol = headerIndex_(headers, 'updatedAt') + 1;
+  if (writeCol > 0) sheet.getRange(row, writeCol).setValue(id);
+  if (updatedCol > 0) sheet.getRange(row, updatedCol).setValue(updatedAt);
+  profileToCache_(id, {}, updatedAt, row);
+  return { id: id, payload: {}, updatedAt: updatedAt, minted: true };
+}
+
+function upsertProfile_(body) {
+  var id = String((body && (body.id || body.code)) || '').trim();
+  if (!id) {
+    return { error: 'Missing id', id: '', payload: {}, updatedAt: '' };
+  }
+  var payload = body && body.payload != null ? body.payload : {};
+  var payloadText = typeof payload === 'string' ? payload : JSON.stringify(payload);
+  if (payloadText.length > PROFILE_CHUNK * PROFILE_PARTS) {
+    return { error: 'Profile too large', id: id, payload: {}, updatedAt: '' };
+  }
+  var parsed = parseStagePayload_(payloadText);
+  var existing = readProfile_(id);
+  if (incomingWouldWipe_(existing.payload, parsed)) {
+    return { id: id, payload: existing.payload, updatedAt: existing.updatedAt, kept: true };
+  }
+  var updatedAt = new Date().toISOString();
+  var chunks = splitProfilePayload_(payloadText);
+  profileToCache_(id, parsed, updatedAt, 0);
+
+  var ss = SpreadsheetApp.getActive();
+  var sheet = profileSheet_(ss, true);
+  var last = Math.max(sheet.getLastColumn(), 1);
+  var headers = sheet.getRange(1, 1, 1, last).getValues()[0];
+  var idCol = headerIndex_(headers, 'id') + 1;
+  var updatedCol = headerIndex_(headers, 'updatedAt') + 1;
+  var row = -1;
+  try {
+    var cachedRow = parseInt(CacheService.getScriptCache().get(profileRowKey_(id)), 10);
+    if (cachedRow >= 2 && idCol > 0 && String(sheet.getRange(cachedRow, idCol).getValue() || '').trim() === id) {
+      row = cachedRow;
+    }
+  } catch (err) {}
+  if (row < 0) {
+    var values = sheet.getDataRange().getValues();
+    var r;
+    for (r = 1; r < values.length; r++) {
+      if (String(values[r][idCol - 1] || '').trim() === id) {
+        row = r + 1;
+        break;
+      }
+    }
+  }
+  if (row < 0) row = sheet.getLastRow() + 1;
+  if (idCol > 0) sheet.getRange(row, idCol).setValue(id);
+  if (updatedCol > 0) sheet.getRange(row, updatedCol).setValue(updatedAt);
+  var parts = profilePayloadColumns_();
+  var i;
+  for (i = 0; i < parts.length; i++) {
+    var col = headerIndex_(headers, parts[i]) + 1;
+    if (col < 1) continue;
+    sheet.getRange(row, col).setValue(chunks[i] || '');
+  }
+  profileToCache_(id, parsed, updatedAt, row);
+  return { id: id, payload: parsed, updatedAt: updatedAt };
 }
 

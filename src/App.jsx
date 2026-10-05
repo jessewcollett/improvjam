@@ -8,6 +8,7 @@ import ToolsView from './components/ToolsView.jsx';
 import MySetsView from './components/MySetsView.jsx';
 import SettingsView from './components/SettingsView.jsx';
 import { applyTheme } from './lib/theme.js';
+import { requestPersistentStorage } from './lib/appStorage.js';
 import { STAGE_MANAGER_ID, clampNavId } from './lib/nav.js';
 import { resolveSharedSet } from './lib/setShare.js';
 import { useAppStore } from './store/useAppStore.js';
@@ -75,14 +76,31 @@ export default function App() {
   }, [importSharedSet, updateSettings]);
 
   useEffect(() => {
-    syncFromSheet().catch(() => {});
-  }, [syncFromSheet]);
-
-  useEffect(() => {
-    if (!stageOn && settings.lastRoute === STAGE_MANAGER_ID) {
-      updateSettings({ lastRoute: 'generator' });
+    requestPersistentStorage();
+    const start = () => {
+      const params = new URLSearchParams(window.location.search);
+      const userParam = params.get('u');
+      if (userParam) {
+        params.delete('u');
+        const next = params.toString();
+        const path = `${window.location.pathname}${next ? `?${next}` : ''}${window.location.hash}`;
+        window.history.replaceState({}, '', path);
+        useAppStore.getState().setUserId(userParam).catch(() => {});
+      } else {
+        useAppStore.getState().pullUserProfile().catch(() => {});
+      }
+      syncFromSheet().catch(() => {});
+    };
+    if (useAppStore.persist?.hasHydrated?.()) {
+      start();
+      return undefined;
     }
-  }, [stageOn, settings.lastRoute, updateSettings]);
+    if (useAppStore.persist?.onFinishHydration) {
+      return useAppStore.persist.onFinishHydration(start);
+    }
+    start();
+    return undefined;
+  }, [syncFromSheet]);
 
   return (
     <MotionConfig reducedMotion={settings.reducedMotion ? 'always' : 'user'}>

@@ -81,8 +81,14 @@ function writeLocalHideCode(hidden) {
   }
 }
 
-function BoardStandby({ code, connecting, hardError, hideCode }) {
-  const headline = connecting ? 'Connecting…' : hardError ? 'Couldn’t reach the board.' : 'Waiting.';
+function BoardStandby({ code, connecting, hardError, hideCode, sessionOff }) {
+  const headline = connecting
+    ? 'Connecting…'
+    : hardError
+      ? 'Couldn’t reach the board.'
+      : sessionOff
+        ? 'Session off.'
+        : 'Waiting.';
   return (
     <div className="h-full flex flex-col items-center justify-center text-center px-6">
       {hideCode ? null : (
@@ -104,6 +110,7 @@ function StageBoard({ code }) {
   const [payload, setPayload] = useState({});
   const [hardError, setHardError] = useState('');
   const [ready, setReady] = useState(false);
+  const [hostOn, setHostOn] = useState(true);
   const [localHide, setLocalHide] = useState(readLocalHideCode);
   const [localTheme, setLocalTheme] = useState('');
   const publishedTheme = sessionThemeFromPayload(payload);
@@ -134,6 +141,7 @@ function StageBoard({ code }) {
       try {
         const data = await fetchStage(code);
         if (cancelled) return;
+        setHostOn(data.miss === true || data.hostOn !== false);
         const incoming = data.payload && typeof data.payload === 'object' ? data.payload : {};
         setPayload((prev) => {
           const next = coalesceStagePayload(prev, incoming, {
@@ -238,7 +246,7 @@ function StageBoard({ code }) {
       </header>
 
       <div className="flex-1 min-h-0">
-        {hasBoard ? (
+        {hostOn && hasBoard ? (
           <StageSlotGrid
             slots={slots}
             layout={payload.layout}
@@ -253,6 +261,7 @@ function StageBoard({ code }) {
             connecting={!ready && !hardError}
             hardError={Boolean(hardError && !ready)}
             hideCode={hideCode}
+            sessionOff={ready && !hostOn}
           />
         )}
       </div>

@@ -198,7 +198,8 @@ function StageSessionBar() {
   };
 
   return (
-    <div className="mb-3 flex items-center gap-1.5 min-w-0">
+    <div className="mb-3 flex flex-col gap-1.5 min-w-0">
+      <div className="flex items-center gap-1.5 min-w-0">
       <SegmentPills
         value={on}
         onChange={setStageOn}
@@ -207,7 +208,7 @@ function StageSessionBar() {
           { id: true, label: 'On' },
         ]}
       />
-      {on && code ? (
+      {code ? (
         <div className="ml-auto flex items-center gap-1.5 min-w-0 shrink-0">
           <input
             value={draft}
@@ -224,7 +225,7 @@ function StageSessionBar() {
             spellCheck={false}
             maxLength={5}
             aria-label="Session code"
-            className="w-[7.25rem] min-h-9 rounded-lg bg-[#1A1A1A] border border-gray-700 px-1.5 text-base font-black font-display tracking-[0.12em] text-white text-center focus:outline-none focus:border-lime-600 shrink-0"
+            className="w-[8.5rem] min-h-9 rounded-lg bg-[#1A1A1A] border border-gray-700 px-1.5 text-base font-black font-display tracking-[0.12em] text-white text-center focus:outline-none focus:border-lime-600 shrink-0"
           />
           <button
             type="button"
@@ -234,15 +235,23 @@ function StageSessionBar() {
             <RefreshCw className="w-3.5 h-3.5" />
             New
           </button>
-          <SegmentPills
-            value={hideCode}
-            onChange={setStageHideCode}
-            options={[
-              { id: false, label: 'Show', ariaLabel: 'Show code', activeClass: 'bg-gray-700 text-white' },
-              { id: true, label: 'Hide', ariaLabel: 'Hide code', icon: <EyeOff className="w-3.5 h-3.5" /> },
-            ]}
-          />
+          {on ? (
+            <SegmentPills
+              value={hideCode}
+              onChange={setStageHideCode}
+              options={[
+                { id: false, label: 'Show', ariaLabel: 'Show code', activeClass: 'bg-gray-700 text-white' },
+                { id: true, label: 'Hide', ariaLabel: 'Hide code', icon: <EyeOff className="w-3.5 h-3.5" /> },
+              ]}
+            />
+          ) : null}
         </div>
+      ) : null}
+      </div>
+      {!on && code ? (
+        <p className="text-2xs text-gray-500 leading-snug">
+          Session paused. The Stage tab is hidden. The board and audience form stay inactive until you turn Stage on. Same code resumes this room.
+        </p>
       ) : null}
     </div>
   );
@@ -332,6 +341,7 @@ function StageBoardChrome({ boardStyle, onBoardStyle, count, layout, onLayout })
 
 function StageAudiencePanel() {
   const code = useAppStore((s) => s.settings.stageCode);
+  const stageOn = useAppStore((s) => s.settings.stageOn);
   const ideasOpen = useAppStore((s) => s.stageIdeasOpen);
   const ideasUse = useAppStore((s) => s.stageIdeasUse);
   const ideasHold = useAppStore((s) => s.stageIdeasHold);
@@ -357,11 +367,11 @@ function StageAudiencePanel() {
     : 'None selected';
 
   useEffect(() => {
-    if (!(ideasOpen || ideasUse)) return undefined;
+    if (!stageOn || !(ideasOpen || ideasUse)) return undefined;
     pullStageIdeas();
     const id = window.setInterval(pullStageIdeas, STAGE_IDEAS_POLL_MS);
     return () => window.clearInterval(id);
-  }, [ideasOpen, ideasUse, pullStageIdeas]);
+  }, [stageOn, ideasOpen, ideasUse, pullStageIdeas]);
 
   const onCopy = async () => {
     if (!url) return;
@@ -750,7 +760,7 @@ export function StageHeaderControl() {
       >
         <Tv className={`w-3.5 h-3.5 shrink-0 ${stageOn ? 'text-lime-400' : 'text-gray-500'}`} aria-hidden />
         <span className="text-xs font-black font-display tracking-[0.12em] text-gray-200 tabular-nums min-w-[5.5rem] text-center">
-          {stageOn && code ? code : 'Off'}
+          {code ? (stageOn ? code : `Off · ${code}`) : 'Off'}
         </span>
         {stageOn && preview.pinCount ? (
           <span className="text-2xs font-bold text-lime-400">{preview.pinCount}</span>
@@ -788,7 +798,7 @@ export function StageSettingsPanel() {
   return (
     <div>
       <p className="text-sm text-gray-400 mb-3">
-        Turn Stage on to publish pins to a classroom computer or Apple TV. Music and SFX stay here.
+        Turn Stage on to show the Stage tab and publish to a classroom computer or Apple TV. Off hides the tab and pauses the session; the code stays here.
       </p>
       {url ? <p className="text-xs text-gray-500 break-all mb-3">{url}</p> : null}
       <StageRemoteBody

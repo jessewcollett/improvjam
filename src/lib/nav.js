@@ -68,8 +68,10 @@ export function moveId(order, from, to) {
 }
 
 export function visibleNavTabs(stageOn) {
-  if (!stageOn) return NAV_TABS;
-  return [NAV_TABS[0], STAGE_MANAGER_TAB, ...NAV_TABS.slice(1)];
+  if (stageOn) {
+    return [NAV_TABS[0], STAGE_MANAGER_TAB, ...NAV_TABS.slice(1)];
+  }
+  return NAV_TABS;
 }
 
 export function tabsInOrder(tabs, order) {

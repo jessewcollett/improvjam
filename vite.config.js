@@ -5,6 +5,7 @@ import catalogHandler from './api/catalog.js';
 import mediaHandler from './api/media.js';
 import shareHandler from './api/share.js';
 import stageHandler from './api/stage.js';
+import profileHandler from './api/profile.js';
 
 function vercelAdapter(handler, prefix) {
   return async (req, res, next) => {
@@ -63,6 +64,7 @@ function localApis() {
       server.middlewares.use(vercelAdapter(mediaHandler, '/api/media'));
       server.middlewares.use(vercelAdapter(shareHandler, '/api/share'));
       server.middlewares.use(vercelAdapter(stageHandler, '/api/stage'));
+      server.middlewares.use(vercelAdapter(profileHandler, '/api/profile'));
     },
   };
 }
@@ -79,7 +81,7 @@ export default defineConfig(({ mode }) => {
       localApis(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['favicon.svg', 'sounds/counter-bell.mp3', 'sounds/ringing-bell.mp3'],
+        includeAssets: ['favicon.png', 'apple-touch-icon.png', 'icon-192.png', 'icon-512.png', 'sounds/counter-bell.mp3', 'sounds/ringing-bell.mp3'],
         workbox: {
           navigateFallbackDenylist: [/^\/api\//],
           runtimeCaching: [
@@ -89,6 +91,7 @@ export default defineConfig(({ mode }) => {
                 || url.pathname.startsWith('/api/media')
                 || url.pathname.startsWith('/api/share')
                 || url.pathname.startsWith('/api/stage')
+                || url.pathname.startsWith('/api/profile')
                 || url.hostname.includes('script.google.com')
                 || url.hostname.includes('script.googleusercontent.com')
               ),
@@ -105,7 +108,10 @@ export default defineConfig(({ mode }) => {
           display: 'standalone',
           start_url: '/',
           icons: [
-            { src: 'favicon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
+            { src: 'favicon.png', sizes: '32x32', type: 'image/png', purpose: 'any' },
+            { src: 'icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+            { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+            { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
           ],
         },
       }),

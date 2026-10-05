@@ -108,6 +108,32 @@ export function normalizeLists(raw) {
   };
 }
 
+export function mergeLists(a, b) {
+  const left = normalizeLists(a);
+  const right = normalizeLists(b);
+  const weight = (set) => normalizeSetItems(set).length;
+  const byId = new Map();
+  left.customSets.forEach((set) => byId.set(set.id, set));
+  right.customSets.forEach((set) => {
+    const prev = byId.get(set.id);
+    if (!prev || weight(set) > weight(prev)) byId.set(set.id, set);
+  });
+  const seen = new Set();
+  const customSets = [];
+  [...left.customSets, ...right.customSets].forEach((set) => {
+    if (seen.has(set.id)) return;
+    seen.add(set.id);
+    customSets.push(byId.get(set.id));
+  });
+  return {
+    favorites: idList([...left.favorites, ...right.favorites]),
+    toPlay: idList([...left.toPlay, ...right.toPlay]),
+    played: idList([...left.played, ...right.played]),
+    learned: idList([...left.learned, ...right.learned]),
+    customSets,
+  };
+}
+
 export function termIsSetSlide(set, termId) {
   const key = String(termId || '').trim();
   if (!key) return false;

@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   BookOpen,
   Check,
   ChevronDown,
   ChevronUp,
+  Copy,
   ExternalLink,
   Info,
   Minus,
@@ -13,6 +14,7 @@ import {
   Plus,
   RefreshCw,
   Tv,
+  UserRound,
 } from 'lucide-react';
 import ReorderList from './ReorderList.jsx';
 import {
@@ -36,6 +38,8 @@ import { INTAKE_FORM_URL } from '../lib/sheets.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { StageSettingsPanel, SegmentPills } from './StageControls.jsx';
 import SyncButton from './SyncButton.jsx';
+import { PROFILE_NAME_MAX, PROFILE_NAME_MIN, profileUrl, sanitizeUserIdInput } from '../lib/profile.js';
+import { copyText } from '../lib/stage.js';
 
 function SettingsSection({ title, icon: Icon, summary, defaultOpen = false, accent, children }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -154,6 +158,109 @@ function StageManagerToolsEditor({ value, onChange }) {
   );
 }
 
+function DeviceBackupSection() {
+  const userId = useAppStore((s) => s.settings.userId);
+  const named = useAppStore((s) => s.settings.profileNamed === true);
+  const userSyncedAt = useAppStore((s) => s.userSyncedAt);
+  const userSyncError = useAppStore((s) => s.userSyncError);
+  const userSyncing = useAppStore((s) => s.userSyncing);
+  const setUserId = useAppStore((s) => s.setUserId);
+  const pullUserProfile = useAppStore((s) => s.pullUserProfile);
+  const [draft, setDraft] = useState(named ? (userId || '') : '');
+  const [note, setNote] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    setDraft(named ? (userId || '') : '');
+  }, [named, userId]);
+
+  const flash = (message) => {
+    setNote(message);
+    window.setTimeout(() => setNote(''), 2400);
+  };
+
+  const commit = async () => {
+    const next = sanitizeUserIdInput(draft);
+    if (next.length < PROFILE_NAME_MIN) {
+      setDraft(named ? (userId || '') : '');
+      if (draft.trim()) flash('Use at least 3 letters or numbers.');
+      return;
+    }
+    const id = await setUserId(next);
+    if (id) flash(named && id === userId ? 'Synced.' : `Signed in as ${id}.`);
+  };
+
+  const onCopy = async () => {
+    const url = profileUrl(userId);
+    if (url && await copyText(url)) {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    }
+  };
+
+  return (
+    <SettingsSection
+      title="Profile"
+      icon={UserRound}
+      summary={named ? userId : 'Pick a username to sync phones'}
+      accent="text-teal-400"
+      defaultOpen
+    >
+      <p className="text-sm text-gray-400 mb-2">
+        This is your jam name, not a device code. Same name on another phone pulls this profile. An empty phone will not wipe a set list.
+      </p>
+      <div className="flex items-center gap-1.5 min-w-0 mb-2">
+        <input
+          value={draft}
+          onChange={(e) => setDraft(sanitizeUserIdInput(e.target.value))}
+          onBlur={() => { commit().catch(() => {}); }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              commit().catch(() => {});
+            }
+          }}
+          placeholder="username"
+          autoCapitalize="characters"
+          autoCorrect="off"
+          spellCheck={false}
+          maxLength={PROFILE_NAME_MAX}
+          aria-label="Profile name"
+          className="flex-1 min-w-0 min-h-11 rounded-xl bg-[#1A1A1A] border border-gray-700 px-3 text-base font-black font-display tracking-wide text-white placeholder:text-gray-600 placeholder:font-bold focus:outline-none focus:border-teal-600"
+        />
+        <button
+          type="button"
+          onClick={onCopy}
+          disabled={!named || !userId}
+          className="min-w-11 min-h-11 rounded-xl bg-gray-800 border border-gray-700 text-gray-200 disabled:text-gray-600 inline-flex items-center justify-center"
+          aria-label={copied ? 'Link copied' : 'Copy profile link'}
+        >
+          {copied ? <Check className="w-4 h-4 text-lime-400" /> : <Copy className="w-4 h-4" />}
+        </button>
+      </div>
+      <p className="text-xs text-gray-500 mb-2">
+        {userSyncing
+          ? 'Syncing…'
+          : userSyncError
+            ? userSyncError
+            : named
+              ? (userSyncedAt ? `Saved ${new Date(userSyncedAt).toLocaleString()}` : `Signed in as ${userId}`)
+              : 'Saving on this phone until you pick a name.'}
+      </p>
+      {named ? (
+        <button
+          type="button"
+          onClick={() => pullUserProfile().then(() => flash('Pulled from the sheet.'))}
+          className="text-xs font-bold text-teal-400 min-h-11"
+        >
+          Sync now
+        </button>
+      ) : null}
+      {note ? <p className="text-xs text-teal-300 mt-1">{note}</p> : null}
+    </SettingsSection>
+  );
+}
+
 function ToggleRow({ label, hint, checked, onChange, disabled }) {
   return (
     <div className="flex items-start gap-3 min-h-12 py-1">
@@ -194,7 +301,7 @@ export default function SettingsView() {
   return (
     <div className="h-full flex flex-col pt-safe px-4 md:px-6 pb-nav overflow-y-auto scrollbar-hide">
       <h1 className="text-2xl font-black font-display text-white mb-1 tracking-tight">Settings</h1>
-      <p className="text-xs text-gray-500 mb-4">Prefs stay on this device. Sync pulls the live Google Sheet.</p>
+      <p className="text-xs text-gray-500 mb-4">Prefs stay on this device unless you sign in to a profile. Catalog sync pulls the live Google Sheet.</p>
 
       <div className="lg:grid lg:grid-cols-2 lg:gap-x-4 lg:items-start">
       <SettingsSection
@@ -286,7 +393,11 @@ export default function SettingsView() {
       <SettingsSection
         title="Stage"
         icon={Tv}
-        summary={settings.stageOn && settings.stageCode ? `On · ${settings.stageCode}` : 'Off until you start a session'}
+        summary={settings.stageOn && settings.stageCode
+          ? `On · ${settings.stageCode}`
+          : settings.stageCode
+            ? `Off · ${settings.stageCode}`
+            : 'Off until you start a session'}
         accent="text-lime-400"
       >
         <StageSettingsPanel />
@@ -420,6 +531,7 @@ export default function SettingsView() {
           </button>
         </div>
       </SettingsSection>
+      <DeviceBackupSection />
       </div>
     </div>
   );

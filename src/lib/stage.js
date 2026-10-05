@@ -123,11 +123,62 @@ export function payloadHasSlots(payload) {
   return STAGE_SLOT_IDS.some((id) => slotHasContent(id, payload[id]));
 }
 
+function ideaMapHasRows(map) {
+  return Object.values(normalizeStageIdeasMap(map)).some((rows) => Array.isArray(rows) && rows.length > 0);
+}
+
+export function recordHasHostState(data) {
+  if (!data || data.miss) return false;
+  const payload = data.payload && typeof data.payload === 'object' && !Array.isArray(data.payload)
+    ? data.payload
+    : {};
+  return payloadHasSlots(payload)
+    || (Array.isArray(payload.order) && payload.order.length > 0)
+    || ideaMapHasRows(data.ideas)
+    || ideaMapHasRows(data.ideasPending);
+}
+
+export function hostStateFromRecord(data) {
+  const payload = data?.payload && typeof data.payload === 'object' && !Array.isArray(data.payload)
+    ? data.payload
+    : {};
+  const pins = normalizeStagePins(
+    Array.isArray(payload.order) && payload.order.length
+      ? payload.order
+      : STAGE_SLOT_IDS.filter((id) => slotHasContent(id, payload[id])),
+  );
+  const next = {
+    stagePins: pins,
+    stageSlots: normalizeStageSlots(payload),
+    stageSizes: normalizeStageSizes(payload.sizes),
+    stageZooms: normalizeStageZooms(payload.zooms),
+    stageFrames: normalizeStageFrames(payload.frames),
+    stageFloats: normalizeStageFloats(payload.floats, pins),
+    stageLayout: normalizeStageLayout(payload.layout),
+    stageAligns: normalizeStageAligns(payload.aligns),
+    stageCaptions: normalizeStageCaptions(payload.captions),
+    stageHideCode: payload.hideCode === true,
+    stageSpotlight: normalizeStageSpotlight(payload.spotlight, pins),
+    stageIdeas: normalizeStageIdeasMap(data?.ideas),
+    stageIdeasPending: normalizeStageIdeasMap(data?.ideasPending),
+    stageIdeaCats: normalizeIdeaCats(data?.ideaCats).length
+      ? normalizeIdeaCats(data.ideaCats)
+      : undefined,
+    stageIdeasOpen: data?.ideasOpen === true,
+    stageIdeasUse: data?.ideasUse === true,
+    stageIdeasHold: data?.ideasHold === true,
+  };
+  if (payload.theme === 'light' || payload.theme === 'dark') next.stageTheme = payload.theme;
+  if (next.stageIdeaCats === undefined) delete next.stageIdeaCats;
+  return next;
+}
+
 /** Keep last known Receive state when a poll is an empty miss or Apps Script payload-only row. */
 export function coalesceStageSession(prev, next) {
   const incoming = next && typeof next === 'object' ? next : {};
   const previous = prev && typeof prev === 'object' ? prev : null;
   if (incoming.miss && previous) return previous;
+  if (incoming.hostOn === false) return incoming;
   if (previous?.ideaFlags && !incoming.ideaFlags) {
     return {
       ...incoming,
@@ -1363,6 +1414,7 @@ export async function fetchStage(code) {
     ideasUse: data.ideasUse === true,
     ideasHold: data.ideasHold === true,
     ideaFlags: data.ideaFlags === true,
+    hostOn: data.hostOn !== false,
     updatedAt: data.updatedAt || '',
     miss: data.miss === true,
   };
