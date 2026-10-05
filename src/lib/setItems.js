@@ -108,15 +108,64 @@ export function normalizeLists(raw) {
   };
 }
 
+function richerMessageItem(prev, next) {
+  const prevText = stageMessageText(prev.message);
+  const nextText = stageMessageText(next.message);
+  if (nextText.length > prevText.length) return next;
+  if (prevText.length > nextText.length) return prev;
+  const prevHtml = prev.message && typeof prev.message === 'object' ? String(prev.message.html || '') : '';
+  const nextHtml = next.message && typeof next.message === 'object' ? String(next.message.html || '') : '';
+  return nextHtml.length > prevHtml.length ? next : prev;
+}
+
+function mergeSetItem(prev, next) {
+  if (!prev) return next;
+  if (!next) return prev;
+  if (prev.type === 'message' && next.type === 'message') return richerMessageItem(prev, next);
+  if (prev.type === 'game' && next.type === 'game') {
+    const terms = uniqueIds([...(prev.terms || []), ...(next.terms || [])]);
+    return terms.length ? { type: 'game', id: prev.id, terms } : { type: 'game', id: prev.id };
+  }
+  return prev;
+}
+
+export function mergeSetItems(a, b) {
+  const left = (Array.isArray(a) ? a : []).map(normalizeSetItem).filter(Boolean);
+  const right = (Array.isArray(b) ? b : []).map(normalizeSetItem).filter(Boolean);
+  const byKey = new Map();
+  const order = [];
+  const put = (item) => {
+    const key = setItemKey(item);
+    if (!key) return;
+    const prev = byKey.get(key);
+    if (!prev) {
+      byKey.set(key, item);
+      order.push(key);
+      return;
+    }
+    byKey.set(key, mergeSetItem(prev, item));
+  };
+  left.forEach(put);
+  right.forEach(put);
+  return order.map((key) => byKey.get(key)).filter(Boolean).slice(0, SET_ITEM_MAX);
+}
+
+function mergeCustomSet(left, right) {
+  const a = normalizeCustomSet(left);
+  const b = normalizeCustomSet(right);
+  if (!a) return b;
+  if (!b) return a;
+  return withSetItems({ id: a.id, name: a.name || b.name }, mergeSetItems(a.items, b.items));
+}
+
 export function mergeLists(a, b) {
   const left = normalizeLists(a);
   const right = normalizeLists(b);
-  const weight = (set) => normalizeSetItems(set).length;
   const byId = new Map();
   left.customSets.forEach((set) => byId.set(set.id, set));
   right.customSets.forEach((set) => {
     const prev = byId.get(set.id);
-    if (!prev || weight(set) > weight(prev)) byId.set(set.id, set);
+    byId.set(set.id, prev ? mergeCustomSet(prev, set) : set);
   });
   const seen = new Set();
   const customSets = [];

@@ -171,9 +171,10 @@ export function htmlToText(html) {
       return;
     }
     const parentTag = node.parentElement?.tagName;
-    if (BLOCK.has(tag) && tag !== 'P' && acc.length && !String(acc[acc.length - 1]).endsWith('\n')) acc.push('\n');
+    const skipBreak = (tag === 'P' || tag === 'DIV') && parentTag === 'LI';
+    if (BLOCK.has(tag) && tag !== 'P' && !skipBreak && acc.length && !String(acc[acc.length - 1]).endsWith('\n')) acc.push('\n');
     Array.from(node.childNodes).forEach((child) => walk(child, acc, ctx));
-    if (BLOCK.has(tag) && tag !== 'LI' && !(tag === 'P' && parentTag === 'LI')) acc.push('\n');
+    if (BLOCK.has(tag) && tag !== 'LI' && !skipBreak) acc.push('\n');
   };
   const acc = [];
   Array.from(doc.body.childNodes).forEach((child) => walk(child, acc, { ordered: false, index: 0, depth: 0 }));
@@ -206,7 +207,11 @@ function styleMarks(node) {
   };
 }
 
-function serialize(node, out) {
+function inListContext(tag) {
+  return tag === 'LI' || tag === 'UL' || tag === 'OL';
+}
+
+function serialize(node, out, parentTag = '') {
   if (!node) return;
   if (node.nodeType === 3) {
     const text = node.nodeValue || '';
@@ -239,21 +244,26 @@ function serialize(node, out) {
     if (keep) {
       const open = tag.toLowerCase();
       out.push(`<${open}>`);
-      Array.from(node.childNodes).forEach((child) => serialize(child, out));
+      Array.from(node.childNodes).forEach((child) => serialize(child, out, tag));
       out.push(`</${open}>`);
       wrap.slice().reverse().forEach((openTag) => out.push(`</${openTag}>`));
       return;
     }
   }
 
-  Array.from(node.childNodes).forEach((child) => serialize(child, out));
-  if (BLOCK.has(tag) && tag !== 'LI' && tag !== 'BLOCKQUOTE') out.push('<br>');
+  Array.from(node.childNodes).forEach((child) => serialize(child, out, tag));
+  if (BLOCK.has(tag) && tag !== 'LI' && tag !== 'BLOCKQUOTE' && !inListContext(parentTag) && tag !== 'DIV') {
+    out.push('<br>');
+  } else if (tag === 'DIV' && !inListContext(parentTag) && !inListContext(tag)) {
+    const last = out[out.length - 1];
+    if (last && last !== '<br>' && !/<\/(ul|ol|li)>$/i.test(last)) out.push('<br>');
+  }
   wrap.slice().reverse().forEach((openTag) => out.push(`</${openTag}>`));
 }
 
 function innerHtml(node) {
   const out = [];
-  Array.from(node.childNodes).forEach((child) => serialize(child, out));
+  Array.from(node.childNodes).forEach((child) => serialize(child, out, node.tagName));
   return out.join('');
 }
 
@@ -329,14 +339,15 @@ function nestIndentedBlocks(root, doc) {
 
 function unwrapLiParagraphsDom(root) {
   [...root.querySelectorAll('li')].reverse().forEach((li) => {
-    [...li.children].filter((child) => child.tagName === 'P').forEach((p) => {
-      if (p.querySelector('ul,ol')) return;
-      while (p.firstChild) li.insertBefore(p.firstChild, p);
-      p.remove();
+    [...li.children].filter((child) => child.tagName === 'P' || child.tagName === 'DIV').forEach((block) => {
+      while (block.firstChild) li.insertBefore(block.firstChild, block);
+      block.remove();
     });
     const html = li.innerHTML
       .replace(new RegExp(`^(?:${BULLET_MARK})\\s*(?:<br\\s*\\/?>\\s*)+`, 'i'), '')
       .replace(/^(<br\s*\/?>)+|(<br\s*\/?>)+$/gi, '')
+      .replace(/(?:<br\s*\/?>)+\s*(<(?:ul|ol)\b)/gi, '$1')
+      .replace(/(<\/(?:ul|ol)>)\s*(?:<br\s*\/?>)+/gi, '$1')
       .trim();
     if (!html || /^(?:[-*•●○◦▪■‣·⁃–])$/.test(html)) {
       li.remove();
@@ -347,6 +358,16 @@ function unwrapLiParagraphsDom(root) {
   [...root.querySelectorAll('ul,ol')].forEach((list) => {
     if (!list.querySelector('li')) list.remove();
   });
+}
+
+function tidyListHtml(html) {
+  return String(html || '')
+    .replace(/<li>\s*(?:<br\s*\/?>\s*)+/gi, '<li>')
+    .replace(/(?:<br\s*\/?>\s*)+<\/li>/gi, '</li>')
+    .replace(/(?:<br\s*\/?>\s*)+(<(?:ul|ol)\b)/gi, '$1')
+    .replace(/(<\/(?:ul|ol)>)\s*(?:<br\s*\/?>)+/gi, '$1')
+    .replace(/<(ul|ol)>\s*(?:<br\s*\/?>)+/gi, '<$1>')
+    .replace(/(?:<br\s*\/?>)+\s*<\/(ul|ol)>/gi, '</$1>');
 }
 
 function promoteTopLevelBullets(root, doc) {
@@ -408,10 +429,10 @@ export function sanitizeStageMessageHtml(rawHtml, fallbackText = '') {
     inner.parentNode.insertBefore(li, inner);
     li.appendChild(inner);
   });
-  next = root.innerHTML
+  next = tidyListHtml(root.innerHTML
     .replace(/<\/ul><ul>/gi, '')
     .replace(/<\/ol><ol>/gi, '')
-    .replace(/<(ul|ol)>\s*<\/\1>/gi, '');
+    .replace(/<(ul|ol)>\s*<\/\1>/gi, ''));
   if (!next.trim()) return plainToHtml(fallbackText);
   const text = htmlToText(next);
   if (text.length > MESSAGE_MAX) {

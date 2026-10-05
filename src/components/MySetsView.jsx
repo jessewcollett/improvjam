@@ -27,7 +27,7 @@ import {
   setCountLabel,
   setItemKey,
 } from '../lib/setItems.js';
-import { MESSAGE_MAX, stageMessageText } from '../lib/stageMessage.js';
+import { MESSAGE_MAX, sanitizeStageMessageHtml, stageMessageHtml, stageMessageText } from '../lib/stageMessage.js';
 import GameCard from './GameCard.jsx';
 import TermCard from './TermCard.jsx';
 import StagePin from './StagePin.jsx';
@@ -98,15 +98,28 @@ function CenteredSheet({ title, subtitle, onClose, children }) {
   );
 }
 
-function MessageSlideCard({ item }) {
+function MessageSlideCard({ item, onEdit }) {
   const text = stageMessageText(item.message);
   return (
     <div className="bg-card border border-gray-800 rounded-xl px-3 py-2.5">
       <div className="flex items-center gap-2 mb-1">
         <Type className="w-4 h-4 text-amber-400 shrink-0" />
-        <p className="text-sm font-bold text-gray-100 truncate">{messageItemLabel(item.message)}</p>
+        <p className="flex-1 min-w-0 text-sm font-bold text-gray-100 truncate">{messageItemLabel(item.message)}</p>
+        {onEdit ? (
+          <button
+            type="button"
+            onClick={onEdit}
+            className="min-w-11 min-h-11 flex items-center justify-center text-gray-500 hover:text-amber-300"
+            aria-label={`Edit ${messageItemLabel(item.message)}`}
+          >
+            <Pencil className="w-4 h-4" />
+          </button>
+        ) : null}
       </div>
-      <p className="text-xs text-gray-500 whitespace-pre-wrap line-clamp-4">{text}</p>
+      <div
+        className="stage-message text-xs text-gray-400 line-clamp-4"
+        dangerouslySetInnerHTML={{ __html: sanitizeStageMessageHtml(stageMessageHtml(item.message), text) }}
+      />
     </div>
   );
 }
@@ -125,6 +138,7 @@ export default function MySetsView() {
   const reorderCustomSetItems = useAppStore((s) => s.reorderCustomSetItems);
   const removeSetItem = useAppStore((s) => s.removeSetItem);
   const addSetMessage = useAppStore((s) => s.addSetMessage);
+  const updateSetMessage = useAppStore((s) => s.updateSetMessage);
   const focusCustomSetId = useAppStore((s) => s.focusCustomSetId);
   const sharedSetNotice = useAppStore((s) => s.sharedSetNotice);
   const clearFocusCustomSet = useAppStore((s) => s.clearFocusCustomSet);
@@ -154,12 +168,21 @@ export default function MySetsView() {
   const [sheet, setSheet] = useState('');
   const [linkingGameId, setLinkingGameId] = useState('');
   const [messageDraft, setMessageDraft] = useState('');
+  const [editingMessageId, setEditingMessageId] = useState('');
   const [shareNote, setShareNote] = useState('');
 
   const closeSheets = () => {
     setSheet('');
     setLinkingGameId('');
     setMessageDraft('');
+    setEditingMessageId('');
+  };
+
+  const openMessageEditor = (item) => {
+    if (!item || item.type !== 'message') return;
+    setEditingMessageId(item.id);
+    setMessageDraft(item.message || '');
+    setSheet('message');
   };
 
   useEffect(() => {
@@ -260,9 +283,9 @@ export default function MySetsView() {
   const commitMessageSlide = () => {
     if (!activeCustomSet) return;
     if (!stageMessageText(messageDraft)) return;
-    addSetMessage(activeCustomSet.id, messageDraft);
-    setMessageDraft('');
-    setSheet('');
+    if (editingMessageId) updateSetMessage(activeCustomSet.id, editingMessageId, messageDraft);
+    else addSetMessage(activeCustomSet.id, messageDraft);
+    closeSheets();
   };
 
   return (
@@ -682,6 +705,7 @@ export default function MySetsView() {
                 <button
                   type="button"
                   onClick={() => {
+                    setEditingMessageId('');
                     setMessageDraft('');
                     setSheet('message');
                   }}
@@ -727,10 +751,10 @@ export default function MySetsView() {
               </CenteredSheet>
             ) : null}
 
-            {customEditing && sheet === 'message' && activeCustomSet ? (
+            {sheet === 'message' && activeCustomSet ? (
               <CenteredSheet
-                title="Add board message"
-                subtitle="This becomes a slide in the rundown."
+                title={editingMessageId ? 'Edit board message' : 'Add board message'}
+                subtitle={editingMessageId ? 'Updates this slide in the rundown.' : 'This becomes a slide in the rundown.'}
                 onClose={closeSheets}
               >
                 <StageMessageEditor value={messageDraft} onChange={setMessageDraft} />
@@ -771,7 +795,7 @@ export default function MySetsView() {
                   disabled={!stageMessageText(messageDraft)}
                   className="w-full min-h-11 rounded-xl bg-amber-700 text-white text-sm font-bold disabled:bg-gray-800 disabled:text-gray-500"
                 >
-                  Add to set
+                  {editingMessageId ? 'Save message' : 'Add to set'}
                 </button>
               </CenteredSheet>
             ) : null}
@@ -797,11 +821,30 @@ export default function MySetsView() {
                       badgeClass,
                       itemType: item.type,
                       gameId: item.type === 'game' ? item.id : '',
+                      messageId: item.type === 'message' ? item.id : '',
                     };
                   })}
                   onOrder={(ids) => reorderCustomSetItems(activeCustomSet.id, ids)}
+                  onActivate={(row) => {
+                    if (row.itemType !== 'message' || !row.messageId) return;
+                    const item = customItems.find((entry) => entry.type === 'message' && entry.id === row.messageId);
+                    openMessageEditor(item);
+                  }}
                   renderAfter={(row) => (
                     <>
+                      {row.itemType === 'message' ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const item = customItems.find((entry) => entry.type === 'message' && entry.id === row.messageId);
+                            openMessageEditor(item);
+                          }}
+                          className="min-w-11 min-h-11 flex items-center justify-center text-gray-500 hover:text-amber-300"
+                          aria-label={`Edit ${row.label}`}
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                      ) : null}
                       {row.itemType === 'game' ? (
                         <button
                           type="button"
@@ -851,7 +894,7 @@ export default function MySetsView() {
                           const term = data.terms.find((entry) => entry.id === item.id);
                           return term ? <TermCard key={key} termData={term} /> : null;
                         }
-                        return <MessageSlideCard key={key} item={item} />;
+                        return <MessageSlideCard key={key} item={item} onEdit={() => openMessageEditor(item)} />;
                       })}
                     </div>
                   ) : (

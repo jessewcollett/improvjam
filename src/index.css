@@ -146,18 +146,18 @@ input[type='search']::-webkit-search-decoration {
 
 .stage-message ul,
 .stage-message ol {
-  margin: 0.25em 0;
-  padding-inline-start: 1.5em;
+  margin: 0.15em 0;
+  padding-inline-start: 1.35em;
   text-align: left;
-  list-style-position: inside;
+  list-style-position: outside;
 }
 
 .stage-message ul ul,
 .stage-message ol ol,
 .stage-message ul ol,
 .stage-message ol ul {
-  margin: 0.08em 0;
-  padding-inline-start: 1.35em;
+  margin: 0.06em 0 0;
+  padding-inline-start: 1.25em;
 }
 
 .stage-message ul {
@@ -181,12 +181,23 @@ input[type='search']::-webkit-search-decoration {
 }
 
 .stage-message li {
-  margin: 0.12em 0;
+  margin: 0;
+  padding: 0;
+}
+
+.stage-message li + li {
+  margin-top: 0.05em;
 }
 
 .stage-message li > p {
   display: inline;
   margin: 0;
+}
+
+.stage-message li > ul,
+.stage-message li > ol {
+  display: block;
+  margin: 0.05em 0 0;
 }
 
 .stage-message blockquote {

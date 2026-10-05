@@ -1596,6 +1596,22 @@ export const useAppStore = create(
         return item.id;
       },
 
+      updateSetMessage: (setId, itemId, raw) => {
+        const id = String(itemId || '').trim();
+        const next = normalizeSetItem({ type: 'message', id, message: raw });
+        if (!id || !next) return false;
+        let found = false;
+        set((state) => patchCustomSet(state, setId, (items) => {
+          const mapped = items.map((item) => {
+            if (item.type !== 'message' || item.id !== id) return item;
+            found = true;
+            return next;
+          });
+          return found ? mapped : items;
+        }));
+        return found;
+      },
+
       removeSetItem: (setId, key) => {
         const itemKey = String(key || '').trim();
         if (!itemKey) return;
