@@ -84,7 +84,15 @@ function bindSharedCtx(audio) {
     // #region agent log
     debugSessionLog({ hypothesisId: 'D-E', location: 'audio.js:statechange', message: 'ctx statechange', data: { state: sharedCtx?.state, vis: document.visibilityState } });
     // #endregion
-    if (audio.state === 'interrupted' || audio.state === 'closed') markAudioRebuild(audio.state);
+    if (audio.state === 'closed') {
+      markAudioRebuild('closed');
+    } else if (audio.state === 'interrupted') {
+      if (document.visibilityState === 'visible') {
+        audio.resume();
+      } else {
+        markAudioRebuild('interrupted');
+      }
+    }
   });
 }
 

@@ -12,6 +12,9 @@ import { requestPersistentStorage } from './lib/appStorage.js';
 import { STAGE_MANAGER_ID, clampNavId } from './lib/nav.js';
 import { resolveSharedSet } from './lib/setShare.js';
 import { useAppStore } from './store/useAppStore.js';
+import { syncAppViewport } from './lib/viewport.js';
+
+syncAppViewport();
 
 const views = [
   { id: 'generator', View: GeneratorView },
@@ -77,28 +80,19 @@ export default function App() {
 
   useEffect(() => {
     const root = document.documentElement;
-    const syncViewport = () => {
-      const vv = window.visualViewport;
-      const height = Math.round(vv?.height ?? window.innerHeight);
-      const top = Math.round(vv?.offsetTop ?? 0);
-      root.style.setProperty('--app-height', `${height}px`);
-      root.style.setProperty('--app-top', `${top}px`);
-      if (window.scrollY !== 0 || root.scrollTop !== 0) {
-        window.scrollTo(0, 0);
-      }
-    };
-    syncViewport();
-    window.addEventListener('resize', syncViewport);
-    window.addEventListener('scroll', syncViewport, { capture: true, passive: true });
-    window.visualViewport?.addEventListener('resize', syncViewport);
-    window.visualViewport?.addEventListener('scroll', syncViewport);
+    syncAppViewport();
+    window.addEventListener('resize', syncAppViewport);
+    window.addEventListener('scroll', syncAppViewport, { capture: true, passive: true });
+    window.visualViewport?.addEventListener('resize', syncAppViewport);
+    window.visualViewport?.addEventListener('scroll', syncAppViewport);
     return () => {
-      window.removeEventListener('resize', syncViewport);
-      window.removeEventListener('scroll', syncViewport, { capture: true });
-      window.visualViewport?.removeEventListener('resize', syncViewport);
-      window.visualViewport?.removeEventListener('scroll', syncViewport);
+      window.removeEventListener('resize', syncAppViewport);
+      window.removeEventListener('scroll', syncAppViewport, { capture: true });
+      window.visualViewport?.removeEventListener('resize', syncAppViewport);
+      window.visualViewport?.removeEventListener('scroll', syncAppViewport);
       root.style.removeProperty('--app-height');
       root.style.removeProperty('--app-top');
+      root.style.removeProperty('--safe-bottom');
     };
   }, []);
 

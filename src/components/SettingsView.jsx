@@ -41,6 +41,7 @@ import SyncButton from './SyncButton.jsx';
 import { PROFILE_NAME_MAX, PROFILE_NAME_MIN, profileUrl, sanitizeUserIdInput } from '../lib/profile.js';
 import { copyText } from '../lib/stage.js';
 import { readDebugSessionLogs } from '../lib/debugSessionLog.js';
+import { APP_RELEASE_DATE, APP_VERSION, RELEASE_NOTES } from '../lib/appVersion.js';
 
 function SettingsSection({ title, icon: Icon, summary, defaultOpen = false, accent, children }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -547,6 +548,35 @@ export default function SettingsView() {
         </div>
       </SettingsSection>
       <DeviceBackupSection />
+      <SettingsSection
+        title="About"
+        icon={Info}
+        summary={`v${APP_VERSION}`}
+        accent="text-blue-400"
+      >
+        <p className="text-sm font-black font-display text-white">Improv Jam {APP_VERSION}</p>
+        <p className="text-xs text-gray-500 mb-3">{APP_RELEASE_DATE}</p>
+        {RELEASE_NOTES.added.length ? (
+          <>
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Added</p>
+            <ul className="text-sm text-gray-300 mb-3 list-disc pl-4 space-y-1">
+              {RELEASE_NOTES.added.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </>
+        ) : null}
+        {RELEASE_NOTES.fixed.length ? (
+          <>
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Fixed</p>
+            <ul className="text-sm text-gray-300 list-disc pl-4 space-y-1">
+              {RELEASE_NOTES.fixed.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </>
+        ) : null}
+      </SettingsSection>
       </div>
     </div>
   );

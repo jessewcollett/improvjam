@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
@@ -6,6 +9,8 @@ import mediaHandler from './api/media.js';
 import shareHandler from './api/share.js';
 import stageHandler from './api/stage.js';
 import profileHandler from './api/profile.js';
+
+const pkg = JSON.parse(readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 'package.json'), 'utf8'));
 
 function vercelAdapter(handler, prefix) {
   return async (req, res, next) => {
@@ -76,6 +81,9 @@ export default defineConfig(({ mode }) => {
   }
 
   return {
+    define: {
+      'import.meta.env.VITE_APP_VERSION': JSON.stringify(pkg.version),
+    },
     plugins: [
       react(),
       localApis(),
