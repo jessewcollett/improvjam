@@ -1,3 +1,5 @@
+import { debugSessionLog } from './debugSessionLog.js';
+
 let sharedCtx;
 let noiseBuffer;
 const activeVoices = new Set();
@@ -65,12 +67,25 @@ export function preloadPadSamples(pads = []) {
 const STYLE_IDS = new Set(BELL_STYLES.map((s) => s.id));
 
 function ctx() {
+  const before = sharedCtx?.state || 'none';
   if (!sharedCtx) {
     sharedCtx = new (window.AudioContext || window.webkitAudioContext)();
+    // #region agent log
+    sharedCtx.addEventListener('statechange', () => {
+      debugSessionLog({ hypothesisId: 'D-E', location: 'audio.js:statechange', message: 'ctx statechange', data: { state: sharedCtx?.state, vis: document.visibilityState } });
+    });
+    document.addEventListener('visibilitychange', () => {
+      debugSessionLog({ hypothesisId: 'D-E', location: 'audio.js:visibility', message: 'visibility', data: { vis: document.visibilityState, ctxState: sharedCtx?.state || 'none' } });
+    });
+    // #endregion
   }
-  if (sharedCtx.state === 'suspended') {
+  const willResume = sharedCtx.state === 'suspended';
+  if (willResume) {
     sharedCtx.resume();
   }
+  // #region agent log
+  debugSessionLog({ hypothesisId: 'D-E', location: 'audio.js:ctx', message: 'audio ctx', data: { before, after: sharedCtx.state, willResume, vis: document.visibilityState } });
+  // #endregion
   return sharedCtx;
 }
 
@@ -503,6 +518,9 @@ export function playDing(style = 'bell', volume = 0.8) {
 }
 
 export function playPad(pad, volume = 0.8) {
+  // #region agent log
+  debugSessionLog({ hypothesisId: 'D-E', location: 'audio.js:playPad', message: 'playPad', data: { id: pad?.id || pad?.styleId || 'none', ctxState: sharedCtx?.state || 'none', vis: document.visibilityState } });
+  // #endregion
   if (!pad) return playDing('bell', volume);
   const bundledUrl = pad.styleId ? SAMPLE_STYLES[pad.styleId]?.url : '';
   const useUrl = pad.playUrl && (!pad.bundled || pad.playUrl !== bundledUrl);

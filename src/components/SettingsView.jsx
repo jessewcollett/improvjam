@@ -40,6 +40,7 @@ import { StageSettingsPanel, SegmentPills } from './StageControls.jsx';
 import SyncButton from './SyncButton.jsx';
 import { PROFILE_NAME_MAX, PROFILE_NAME_MIN, profileUrl, sanitizeUserIdInput } from '../lib/profile.js';
 import { copyText } from '../lib/stage.js';
+import { readDebugSessionLogs } from '../lib/debugSessionLog.js';
 
 function SettingsSection({ title, icon: Icon, summary, defaultOpen = false, accent, children }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -256,6 +257,20 @@ function DeviceBackupSection() {
           Sync now
         </button>
       ) : null}
+      <button
+        type="button"
+        onClick={async () => {
+          const logs = readDebugSessionLogs();
+          if (!logs) {
+            flash('No debug logs yet.');
+            return;
+          }
+          if (await copyText(logs)) flash('Debug logs copied.');
+        }}
+        className="block text-xs font-bold text-gray-500 min-h-11"
+      >
+        Copy debug logs
+      </button>
       {note ? <p className="text-xs text-teal-300 mt-1">{note}</p> : null}
     </SettingsSection>
   );
