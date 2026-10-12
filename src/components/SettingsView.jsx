@@ -312,7 +312,10 @@ export default function SettingsView() {
 
   return (
     <div className="h-full flex flex-col pt-safe px-4 md:px-6 pb-6 overflow-y-auto scrollbar-hide">
-      <h1 className="text-2xl font-black font-display text-white mb-1 tracking-tight">Settings</h1>
+      <div className="flex items-baseline justify-between gap-3 mb-1">
+        <h1 className="text-2xl font-black font-display text-white tracking-tight">Settings</h1>
+        <span className="text-xs font-bold text-gray-500 tabular-nums">v{APP_VERSION}</span>
+      </div>
       <p className="text-xs text-gray-500 mb-4">Prefs stay on this device unless you sign in to a profile. Catalog sync pulls the live Google Sheet.</p>
 
       <div className="lg:grid lg:grid-cols-2 lg:gap-x-4 lg:items-start">

@@ -6,6 +6,7 @@ export const RELEASE_NOTES = {
   added: [
     'Version and release notes in Settings so you can tell which build is installed',
     'Copy screen layout from Profile (full PWA geometry snapshot)',
+    'Version shown at the top of Settings; PWA reloads when a new build is ready',
   ],
   fixed: [
     'PWA tab labels sitting 34px above the home indicator',

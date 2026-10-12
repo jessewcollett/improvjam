@@ -89,6 +89,7 @@ export default defineConfig(({ mode }) => {
       localApis(),
       VitePWA({
         registerType: 'autoUpdate',
+        injectRegister: false,
         includeAssets: ['favicon.png', 'apple-touch-icon.png', 'icon-192.png', 'icon-512.png', 'sounds/counter-bell.mp3', 'sounds/ringing-bell.mp3'],
         workbox: {
           navigateFallbackDenylist: [/^\/api\//],
