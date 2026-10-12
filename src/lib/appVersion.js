@@ -7,7 +7,7 @@ export const RELEASE_NOTES = {
     'Version and release notes in Settings so you can tell which build is installed',
   ],
   fixed: [
-    'Tab bar sitting too high on iPhone after reopen (safe area vs Safari chrome)',
+    'Home-screen PWA tab bar sitting too high (shell was the small viewport, not the full screen)',
     'SFX going silent over Bluetooth after the app backgrounds',
   ],
 };

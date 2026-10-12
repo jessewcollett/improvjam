@@ -80,16 +80,26 @@ export default function App() {
 
   useEffect(() => {
     const root = document.documentElement;
-    syncAppViewport();
-    window.addEventListener('resize', syncAppViewport);
-    window.addEventListener('scroll', syncAppViewport, { capture: true, passive: true });
-    window.visualViewport?.addEventListener('resize', syncAppViewport);
-    window.visualViewport?.addEventListener('scroll', syncAppViewport);
+    const onShow = () => {
+      syncAppViewport();
+      requestAnimationFrame(syncAppViewport);
+    };
+    onShow();
+    window.addEventListener('resize', onShow);
+    window.addEventListener('scroll', onShow, { capture: true, passive: true });
+    window.addEventListener('pageshow', onShow);
+    window.addEventListener('orientationchange', onShow);
+    document.addEventListener('visibilitychange', onShow);
+    window.visualViewport?.addEventListener('resize', onShow);
+    window.visualViewport?.addEventListener('scroll', onShow);
     return () => {
-      window.removeEventListener('resize', syncAppViewport);
-      window.removeEventListener('scroll', syncAppViewport, { capture: true });
-      window.visualViewport?.removeEventListener('resize', syncAppViewport);
-      window.visualViewport?.removeEventListener('scroll', syncAppViewport);
+      window.removeEventListener('resize', onShow);
+      window.removeEventListener('scroll', onShow, { capture: true });
+      window.removeEventListener('pageshow', onShow);
+      window.removeEventListener('orientationchange', onShow);
+      document.removeEventListener('visibilitychange', onShow);
+      window.visualViewport?.removeEventListener('resize', onShow);
+      window.visualViewport?.removeEventListener('scroll', onShow);
       root.style.removeProperty('--app-height');
       root.style.removeProperty('--app-top');
       root.style.removeProperty('--safe-bottom');
