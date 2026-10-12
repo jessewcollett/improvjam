@@ -31,9 +31,9 @@ export default function BottomNav({ activeRoute, onChange }) {
   return (
     <nav
       ref={navRef}
-      className="shrink-0 w-full bg-[#1A1A1A]/95 backdrop-blur-md border-t border-gray-800 pb-safe z-50 shadow-[0_-10px_40px_rgba(0,0,0,0.5)]"
+      className="shrink-0 w-full bg-[#1A1A1A] border-t border-gray-800 pb-safe z-50"
     >
-      <div className="flex justify-around items-stretch px-1 py-1.5 max-w-md md:max-w-none mx-auto">
+      <div className="flex justify-around items-stretch px-1 pt-1 max-w-md md:max-w-none mx-auto">
         {items.map((item) => {
           const Icon = item.icon;
           const isActive = activeRoute === item.id;
@@ -42,7 +42,7 @@ export default function BottomNav({ activeRoute, onChange }) {
               key={item.id}
               type="button"
               onClick={() => onChange(item.id)}
-              className={`flex flex-col items-center justify-center w-full py-1.5 px-0.5 relative rounded-xl transition-colors min-h-12 ${
+              className={`flex flex-col items-center justify-center w-full py-1 px-0.5 relative rounded-xl transition-colors min-h-11 ${
                 isActive ? 'text-white' : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800/50'
               }`}
             >

@@ -8,7 +8,7 @@ export const RELEASE_NOTES = {
     'Copy screen layout from Profile (full PWA geometry snapshot)',
   ],
   fixed: [
-    'Extra empty space under the PWA tab bar (100dvh plus home-indicator padding)',
+    'Tab bar icons sitting too high above the home indicator in the PWA',
     'SFX going silent over Bluetooth after the app backgrounds',
   ],
 };
