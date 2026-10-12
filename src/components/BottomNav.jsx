@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { orderedVisibleNavTabs } from '../lib/nav.js';
+import { captureAppLayout } from '../lib/debugSessionLog.js';
 import { useAppStore } from '../store/useAppStore.js';
 
 export default function BottomNav({ activeRoute, onChange }) {
@@ -18,6 +19,9 @@ export default function BottomNav({ activeRoute, onChange }) {
     sync();
     const observer = new ResizeObserver(sync);
     observer.observe(el);
+    // #region agent log
+    captureAppLayout('nav-mount');
+    // #endregion
     return () => {
       observer.disconnect();
       document.documentElement.style.removeProperty('--bottom-nav-height');

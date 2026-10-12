@@ -262,15 +262,11 @@ function DeviceBackupSection() {
         type="button"
         onClick={async () => {
           const logs = readDebugSessionLogs();
-          if (!logs) {
-            flash('No debug logs yet.');
-            return;
-          }
-          if (await copyText(logs)) flash('Debug logs copied.');
+          if (await copyText(logs)) flash('Screen layout copied.');
         }}
         className="block text-xs font-bold text-gray-500 min-h-11"
       >
-        Copy debug logs
+        Copy screen layout
       </button>
       {note ? <p className="text-xs text-teal-300 mt-1">{note}</p> : null}
     </SettingsSection>

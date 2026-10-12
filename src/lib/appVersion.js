@@ -5,6 +5,7 @@ export const APP_RELEASE_DATE = '2026-10-12';
 export const RELEASE_NOTES = {
   added: [
     'Version and release notes in Settings so you can tell which build is installed',
+    'Copy screen layout from Profile (full PWA geometry snapshot)',
   ],
   fixed: [
     'Extra empty space under the PWA tab bar (100dvh plus home-indicator padding)',
