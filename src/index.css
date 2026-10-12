@@ -76,9 +76,15 @@ body {
   padding-top: calc(env(safe-area-inset-top, 0px) + 1.25rem);
 }
 
-/* Clear BottomNav (measured height, rem fallback) + iOS home indicator. */
+/* Clear BottomNav (measured height, rem fallback) + iOS home indicator.
+   Used by fixed sheets that still overlay the in-flow tab bar. */
 .pb-nav {
   padding-bottom: var(--bottom-nav-height, calc(6.5rem + env(safe-area-inset-bottom, 16px)));
+}
+
+.app-shell {
+  height: 100vh;
+  height: 100dvh;
 }
 
 /* iOS Safari zooms the page when a focused field is under 16px. Use px so rem

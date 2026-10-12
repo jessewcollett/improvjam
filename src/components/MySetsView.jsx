@@ -70,7 +70,7 @@ function CenteredSheet({ title, subtitle, onClose, children }) {
         onClick={onClose}
       />
       <div
-        className="relative w-full h-[min(85dvh,100%)] max-h-[85dvh] min-h-0 overflow-hidden flex flex-col rounded-2xl border border-gray-700 bg-[#121212] px-4 pt-3 pb-3"
+        className="relative w-full h-[min(92dvh,100%)] max-h-[92dvh] min-h-0 overflow-hidden flex flex-col rounded-2xl border border-gray-700 bg-[#121212] px-4 pt-3 pb-3"
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
@@ -321,7 +321,7 @@ export default function MySetsView() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto pb-nav scrollbar-hide">
+      <div className="flex-1 overflow-y-auto pb-6 scrollbar-hide">
         {sharedSetNotice ? (
           <div className="mb-3 rounded-xl border border-amber-800/60 bg-amber-950/40 px-3 py-2 flex items-start gap-2">
             <p className="flex-1 text-sm text-amber-200">{sharedSetNotice}</p>
@@ -720,7 +720,7 @@ export default function MySetsView() {
             {customEditing && sheet === 'games' && activeCustomSet ? (
               <CenteredSheet
                 title="Add games"
-                subtitle={`${currentListGames.length} in ${activeCustomSet.name}. Tap a chip to add or remove.`}
+                subtitle={`${currentListGames.length} in ${activeCustomSet.name}. Expand a card for instructions; folder adds or removes this set.`}
                 onClose={closeSheets}
               >
                 <SetGamePicker key={activeCustomSet.id} setId={activeCustomSet.id} />

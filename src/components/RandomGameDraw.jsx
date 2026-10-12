@@ -159,7 +159,7 @@ export default function RandomGameDraw() {
           </div>
         ) : null}
       </div>
-      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide px-4 md:px-6 pt-3 pb-nav">
+      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide px-4 md:px-6 pt-3 pb-6">
         {drawn.length ? (
           <div className="space-y-1.5">
             {drawn.map((game) => (

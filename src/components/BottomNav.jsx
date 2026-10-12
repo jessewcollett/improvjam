@@ -22,12 +22,12 @@ export default function BottomNav({ activeRoute, onChange }) {
       observer.disconnect();
       document.documentElement.style.removeProperty('--bottom-nav-height');
     };
-  }, []);
+  }, [items.length]);
 
   return (
     <nav
       ref={navRef}
-      className="fixed bottom-0 left-0 w-full bg-[#1A1A1A]/95 backdrop-blur-md border-t border-gray-800 pb-safe z-50 shadow-[0_-10px_40px_rgba(0,0,0,0.5)]"
+      className="shrink-0 w-full bg-[#1A1A1A]/95 backdrop-blur-md border-t border-gray-800 pb-safe z-50 shadow-[0_-10px_40px_rgba(0,0,0,0.5)]"
     >
       <div className="flex justify-around items-stretch px-1 py-1.5 max-w-md md:max-w-none mx-auto">
         {items.map((item) => {

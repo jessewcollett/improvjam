@@ -627,7 +627,7 @@ export default function GeneratorView() {
       </div>
 
       <div className={generatorView === 'suggestions' ? 'flex flex-col flex-1 min-h-0' : 'hidden'}>
-        <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide px-4 md:px-6 pt-3 pb-3 md:pb-nav">
+        <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide px-4 md:px-6 pt-3 pb-4">
         <AnimatePresence>
           {hasOutput && (
             <motion.div

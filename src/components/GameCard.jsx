@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   Star,
   ListPlus,
@@ -27,7 +27,7 @@ function iconClass(active, on) {
   }`;
 }
 
-export default function GameCard({ game, onCategoryClick }) {
+export default function GameCard({ game, onCategoryClick, activeSetId = '' }) {
   const lists = useAppStore((s) => s.lists);
   const sources = useAppStore((s) => s.data.sources);
   const toggleInList = useAppStore((s) => s.toggleInList);
@@ -44,8 +44,18 @@ export default function GameCard({ game, onCategoryClick }) {
   const isToPlay = lists.toPlay.includes(game.id);
   const isPlayed = lists.played.includes(game.id);
   const inAnySet = lists.customSets.some((set) => set.games.includes(game.id));
+  const inActiveSet = Boolean(activeSetId) && lists.customSets.some((set) => set.id === activeSetId && set.games.includes(game.id));
   const [expanded, setExpanded] = useState(false);
   const [showSets, setShowSets] = useState(false);
+  const setHoldRef = useRef(null);
+  const setHeldRef = useRef(false);
+
+  const clearSetHold = () => {
+    if (setHoldRef.current) {
+      window.clearTimeout(setHoldRef.current);
+      setHoldRef.current = null;
+    }
+  };
   const categories = game.categories?.length ? game.categories : splitList(game.category);
   const tags = splitList(game.tags);
   const lifeSkills = splitList(game.lifeSkills);
@@ -89,7 +99,9 @@ export default function GameCard({ game, onCategoryClick }) {
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.98 }}
-      className="bg-card border border-gray-800 rounded-xl shadow-lg overflow-visible relative h-full"
+      className={`bg-card rounded-xl shadow-lg overflow-visible relative h-full border ${
+        inActiveSet ? 'border-indigo-400' : 'border-gray-800'
+      }`}
     >
       <div className="flex items-center gap-1 px-2.5 py-1.5">
         <div className="flex-1 min-w-0">
@@ -150,12 +162,43 @@ export default function GameCard({ game, onCategoryClick }) {
           <div className="relative">
             <button
               type="button"
-              onClick={() => setShowSets((v) => !v)}
-              className={iconClass(inAnySet || showSets, 'text-blue-400')}
-              aria-label="Add to custom set"
+              onPointerDown={() => {
+                setHeldRef.current = false;
+                clearSetHold();
+                setHoldRef.current = window.setTimeout(() => {
+                  setHeldRef.current = true;
+                  setShowSets(true);
+                }, 420);
+              }}
+              onPointerUp={clearSetHold}
+              onPointerCancel={clearSetHold}
+              onPointerLeave={clearSetHold}
+              onClick={() => {
+                if (setHeldRef.current) {
+                  setHeldRef.current = false;
+                  return;
+                }
+                if (activeSetId) {
+                  toggleInCustomSet(activeSetId, game.id);
+                  setShowSets(false);
+                  return;
+                }
+                setShowSets((v) => !v);
+              }}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                setShowSets(true);
+              }}
+              className={iconClass(activeSetId ? inActiveSet || showSets : inAnySet || showSets, activeSetId ? 'text-indigo-300' : 'text-blue-400')}
+              aria-label={
+                activeSetId
+                  ? (inActiveSet ? 'Remove from this set' : 'Add to this set')
+                  : 'Add to custom set'
+              }
+              aria-pressed={activeSetId ? inActiveSet : inAnySet}
               aria-expanded={showSets}
             >
-              <FolderPlus className="w-5 h-5" />
+              {activeSetId && inActiveSet ? <CheckSquare className="w-5 h-5" /> : <FolderPlus className="w-5 h-5" />}
             </button>
             {showSets && customSetMenu}
           </div>

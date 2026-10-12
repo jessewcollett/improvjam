@@ -1,10 +1,9 @@
 import { useMemo, useState } from 'react';
-import { Check, CheckCircle, Folder, ListPlus, Plus, Star, X } from 'lucide-react';
+import { CheckCircle, Folder, ListPlus, Star, X } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore.js';
 import { splitList } from '../lib/generator.js';
 import SearchField from './SearchField.jsx';
-
-const RESULT_CAP = 80;
+import GameCard from './GameCard.jsx';
 
 const LIST_SOURCES = [
   { id: 'toPlay', label: 'To Play', Icon: ListPlus },
@@ -23,6 +22,10 @@ function byLabel(a, b) {
   const keyB = labelB.replace(/^[^0-9A-Za-z]+/, '');
   return keyA.localeCompare(keyB, undefined, { sensitivity: 'base' })
     || labelA.localeCompare(labelB, undefined, { sensitivity: 'base' });
+}
+
+function byName(a, b) {
+  return byLabel(a?.name, b?.name);
 }
 
 function toggleValue(list, value) {
@@ -57,11 +60,8 @@ function FilterChip({ active, onClick, children, icon: Icon }) {
 export default function SetGamePicker({ setId }) {
   const games = useAppStore((s) => s.data.games) || [];
   const lists = useAppStore((s) => s.lists);
-  const toggleInCustomSet = useAppStore((s) => s.toggleInCustomSet);
   const customSets = lists.customSets || [];
-  const activeSet = customSets.find((set) => set.id === setId);
-  const inSetIds = activeSet?.games || [];
-  const inSet = useMemo(() => new Set(inSetIds), [inSetIds]);
+  const otherSets = customSets.filter((set) => set.id !== setId);
 
   const [query, setQuery] = useState('');
   const [listFilters, setListFilters] = useState([]);
@@ -76,14 +76,12 @@ export default function SetGamePicker({ setId }) {
     () => [...new Set(games.flatMap((game) => splitList(game.tags)).filter(Boolean))].sort(byLabel),
     [games],
   );
-  const otherSets = customSets.filter((set) => set.id !== setId);
 
   const filterActive = Boolean(
     query.trim() || listFilters.length || categoryFilters.length || tagFilters.length,
   );
 
   const matches = useMemo(() => {
-    if (!filterActive) return [];
     const q = query.trim().toLowerCase();
     const listIdSet = new Set(listFilters);
     const catSet = new Set(categoryFilters);
@@ -98,11 +96,8 @@ export default function SetGamePicker({ setId }) {
       if (catSet.size && !cats.some((cat) => catSet.has(cat))) return false;
       if (tagSet.size && !gameTags.some((tag) => tagSet.has(tag))) return false;
       return true;
-    });
-  }, [filterActive, games, query, listFilters, categoryFilters, tagFilters, lists]);
-
-  const visible = matches.slice(0, RESULT_CAP);
-  const extra = matches.length - visible.length;
+    }).sort(byName);
+  }, [games, query, listFilters, categoryFilters, tagFilters, lists]);
 
   const clearFilters = () => {
     setQuery('');
@@ -116,7 +111,7 @@ export default function SetGamePicker({ setId }) {
       <SearchField
         value={query}
         onChange={setQuery}
-        placeholder="Search Library to add games…"
+        placeholder="Search games, skills, or tags…"
         ringClass="focus:ring-indigo-500"
         compact
       />
@@ -181,54 +176,38 @@ export default function SetGamePicker({ setId }) {
         </div>
       ) : null}
 
-      {filterActive ? (
-        <>
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-2xs text-gray-500">
-              {matches.length
-                ? extra > 0
-                  ? `Showing ${visible.length} of ${matches.length}`
-                  : `${matches.length} game${matches.length === 1 ? '' : 's'}`
-                : 'No matching games.'}
-            </p>
-            <button
-              type="button"
-              onClick={clearFilters}
-              className="inline-flex items-center gap-1 min-h-9 px-2 rounded-full text-2xs font-bold text-gray-400 border border-gray-800"
-            >
-              <X className="w-3 h-3" />
-              Clear filters
-            </button>
-          </div>
-          {visible.length ? (
-            <div className="flex flex-wrap gap-1">
-              {visible.map((game) => {
-                const selected = inSet.has(game.id);
-                return (
-                  <button
-                    key={game.id}
-                    type="button"
-                    onClick={() => toggleInCustomSet(setId, game.id)}
-                    aria-pressed={selected}
-                    className={`inline-flex items-center gap-1 rounded-full border text-xs font-bold min-h-9 px-2.5 max-w-full ${
-                      selected
-                        ? 'bg-indigo-600 text-white border-indigo-400'
-                        : 'bg-[#1A1A1A] text-gray-200 border-gray-700'
-                    }`}
-                  >
-                    {selected ? <Check className="w-3 h-3 shrink-0" /> : <Plus className="w-3 h-3 shrink-0 text-gray-500" />}
-                    <span className="truncate">{game.name}</span>
-                  </button>
-                );
-              })}
-            </div>
-          ) : null}
-        </>
-      ) : (
-        <p className="text-xs text-gray-500">
-          Search, or tap a list, category, or tag. Tap a game chip to add or remove.
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-2xs text-gray-500">
+          {matches.length
+            ? `${matches.length} game${matches.length === 1 ? '' : 's'}`
+            : filterActive
+              ? 'No matching games.'
+              : 'No games in the catalog.'}
         </p>
-      )}
+        {filterActive ? (
+          <button
+            type="button"
+            onClick={clearFilters}
+            className="inline-flex items-center gap-1 min-h-9 px-2 rounded-full text-2xs font-bold text-gray-400 border border-gray-800"
+          >
+            <X className="w-3 h-3" />
+            Clear filters
+          </button>
+        ) : null}
+      </div>
+
+      {matches.length ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 lg:gap-3">
+          {matches.map((game) => (
+            <GameCard
+              key={game.id}
+              game={game}
+              activeSetId={setId}
+              onCategoryClick={(cat) => setCategoryFilters((prev) => toggleValue(prev, cat))}
+            />
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -19,7 +19,7 @@ export default function StageManagerView() {
           <StageHeaderControl />
         </div>
       </div>
-      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide px-4 md:px-6 pt-3 pb-nav">
+      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide px-4 md:px-6 pt-3 pb-6">
         <StageRemoteBody
           showFirst
           extra={(

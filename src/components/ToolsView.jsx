@@ -279,8 +279,8 @@ export default function ToolsView({ active = true }) {
           activeTool === 'sfx'
             ? 'flex-1 min-h-0 px-1 flex flex-col overflow-hidden'
             : activeTool === 'music'
-              ? 'flex-1 min-h-0 px-4 md:px-6 pb-2 md:pb-nav flex flex-col overflow-hidden'
-              : 'flex-1 overflow-y-auto scrollbar-hide px-4 md:px-6 pb-6 md:pb-nav'
+              ? 'flex-1 min-h-0 px-4 md:px-6 pb-4 flex flex-col overflow-hidden'
+              : 'flex-1 overflow-y-auto scrollbar-hide px-4 md:px-6 pb-6'
         }
       >
         {activeTool === 'sfx' && (

@@ -299,7 +299,7 @@ export default function SettingsView() {
   const fadeSeconds = clampFadeSeconds(settings.fadeSeconds);
 
   return (
-    <div className="h-full flex flex-col pt-safe px-4 md:px-6 pb-nav overflow-y-auto scrollbar-hide">
+    <div className="h-full flex flex-col pt-safe px-4 md:px-6 pb-6 overflow-y-auto scrollbar-hide">
       <h1 className="text-2xl font-black font-display text-white mb-1 tracking-tight">Settings</h1>
       <p className="text-xs text-gray-500 mb-4">Prefs stay on this device unless you sign in to a profile. Catalog sync pulls the live Google Sheet.</p>
 

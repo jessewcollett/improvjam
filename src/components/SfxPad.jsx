@@ -246,7 +246,7 @@ export default function SfxPad({
         </div>
       </div>
 
-      <div className="shrink-0 px-1 pt-1 pb-nav">
+      <div className="shrink-0 px-1 pt-1 pb-4">
         <label className="flex items-center gap-2 px-1 py-0.5">
           <Volume2 className="w-3.5 h-3.5 text-gray-500 shrink-0" />
           <input

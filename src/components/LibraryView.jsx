@@ -470,7 +470,7 @@ export default function LibraryView() {
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto scrollbar-hide pb-nav">
+      <div className="flex-1 overflow-y-auto scrollbar-hide pb-6">
         <AnimatePresence mode="popLayout">
           {viewType === 'games' ? (
             filteredGames.length > 0 ? (
