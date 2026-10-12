@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { orderedVisibleNavTabs } from '../lib/nav.js';
-import { debugSessionLog } from '../lib/debugSessionLog.js';
 import { useAppStore } from '../store/useAppStore.js';
 
 export default function BottomNav({ activeRoute, onChange }) {
@@ -19,39 +18,9 @@ export default function BottomNav({ activeRoute, onChange }) {
     sync();
     const observer = new ResizeObserver(sync);
     observer.observe(el);
-    // #region agent log
-    let lastNavLog = 0;
-    const reportNav = (reason) => {
-      const now = Date.now();
-      if (reason !== 'mount' && now - lastNavLog < 400) return;
-      lastNavLog = now;
-      const nav = navRef.current;
-      const shell = document.querySelector('.app-shell');
-      const vv = window.visualViewport;
-      const navRect = nav?.getBoundingClientRect();
-      const shellRect = shell?.getBoundingClientRect();
-      const padB = nav ? getComputedStyle(nav).paddingBottom : '';
-      const appH = document.documentElement.style.getPropertyValue('--app-height');
-      const appTop = document.documentElement.style.getPropertyValue('--app-top');
-      const ds = document.documentElement.dataset;
-      debugSessionLog({ hypothesisId: 'I', location: 'BottomNav.jsx:reportNav', message: 'nav geometry', data: { runId: 'v0.2.1', reason, scrollY: window.scrollY, docScroll: document.documentElement.scrollTop, bodyScroll: document.body.scrollTop, innerH: window.innerHeight, vvH: vv?.height, vvOff: vv?.offsetTop, navTop: navRect?.top, navBottom: navRect?.bottom, navH: navRect?.height, shellH: shellRect?.height, shellBottom: shellRect?.bottom, gapInner: (window.innerHeight || 0) - (navRect?.bottom || 0), gapVv: (vv?.offsetTop || 0) + (vv?.height || 0) - (navRect?.bottom || 0), padB, screenH: window.screen?.height, appH, appTop, safeB: document.documentElement.style.getPropertyValue('--safe-bottom'), chromeB: ds.chromeBottom, topInset: ds.topInset, bottomInset: ds.bottomInset, standalone: ds.standalone, keyboard: ds.keyboard, lvh: ds.lvh, dvh: ds.dvh, svh: ds.svh } });
-    };
-    reportNav('mount');
-    const onWinScroll = () => reportNav('win-scroll');
-    const onVv = () => reportNav('visualViewport');
-    const viewport = window.visualViewport;
-    window.addEventListener('scroll', onWinScroll, { passive: true, capture: true });
-    viewport?.addEventListener('resize', onVv);
-    viewport?.addEventListener('scroll', onVv);
-    // #endregion
     return () => {
       observer.disconnect();
       document.documentElement.style.removeProperty('--bottom-nav-height');
-      // #region agent log
-      window.removeEventListener('scroll', onWinScroll, { capture: true });
-      window.visualViewport?.removeEventListener('resize', onVv);
-      window.visualViewport?.removeEventListener('scroll', onVv);
-      // #endregion
     };
   }, [items.length]);
 

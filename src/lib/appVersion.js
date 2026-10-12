@@ -7,7 +7,7 @@ export const RELEASE_NOTES = {
     'Version and release notes in Settings so you can tell which build is installed',
   ],
   fixed: [
-    'Home-screen PWA tab bar sitting too high (shell was the small viewport, not the full screen)',
+    'Tab bar clipped in the home-screen PWA and sitting under Safari chrome in the browser',
     'SFX going silent over Bluetooth after the app backgrounds',
   ],
 };
