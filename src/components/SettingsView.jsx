@@ -207,7 +207,7 @@ function DeviceBackupSection() {
       defaultOpen
     >
       <p className="text-sm text-gray-400 mb-2">
-        This is your jam name, not a device code. Same name on another phone pulls this profile. An empty phone will not wipe a set list.
+        This is your jam name, not a device code. Same name on another phone pulls this profile. Saving from a phone overwrites that profile (sets, order, and deletes). An empty phone will not wipe a set list.
       </p>
       <div className="flex items-center gap-1.5 min-w-0 mb-2">
         <input

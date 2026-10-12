@@ -1,5 +1,5 @@
 import { BACKUP_KEYS, buildDeviceBackup } from './appStorage.js';
-import { mergeLists } from './setItems.js';
+import { normalizeLists } from './setItems.js';
 import { STAGE_ALPHABET } from './stage.js';
 
 export const USER_ID_LEN = 6;
@@ -131,7 +131,9 @@ export function mergeProfilePayload(local, remote) {
     else if (right !== undefined) out[key] = right;
     else out[key] = left;
   });
-  out.lists = mergeLists(a.lists, b.lists);
+  out.lists = incomingWouldWipe({ lists: a.lists }, { lists: b.lists })
+    ? normalizeLists(a.lists)
+    : normalizeLists(b.lists != null ? b.lists : a.lists);
   const leftSettings = a.settings && typeof a.settings === 'object' ? a.settings : {};
   const rightSettings = b.settings && typeof b.settings === 'object' ? b.settings : {};
   const settings = { ...leftSettings, ...rightSettings };

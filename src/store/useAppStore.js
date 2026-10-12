@@ -5,7 +5,6 @@ import {
   buildProfilePayload,
   fetchProfile,
   incomingWouldWipe,
-  mergeProfilePayload,
   mintProfileId,
   mintUserId,
   normalizeUserId,
@@ -388,8 +387,8 @@ async function publishStageNow() {
 }
 
 function applyProfileToState(current, payload, syncedAt) {
-  const combined = mergeProfilePayload(buildProfilePayload(current), payload);
-  const merged = mergePersisted(combined, current);
+  const incoming = payload && typeof payload === 'object' ? payload : {};
+  const merged = mergePersisted(incoming, current);
   return {
     ...merged,
     data: current.data,
@@ -1835,10 +1834,9 @@ export const useAppStore = create(
             lastProfileSignature = profileSignature(state);
             set({ userSyncing: false, userSyncedAt: state.userSyncedAt || remote.updatedAt || null });
             if (profileHasData(localPayload)) profilePushQueued = true;
-          } else if (profileHasData(remote.payload) || remoteAt > localAt) {
+          } else if (profileHasData(remote.payload) && (remoteAt >= localAt || !profileHasData(localPayload))) {
             set((current) => applyProfileToState(current, remote.payload, remote.updatedAt || current.userSyncedAt));
             lastProfileSignature = profileSignature(get());
-            profilePushQueued = true;
           } else if (profileHasData(localPayload)) {
             set({ userSyncing: false });
             profilePushQueued = true;
@@ -1879,12 +1877,12 @@ export const useAppStore = create(
           try {
             const remote = await fetchProfile(id);
             if (incomingWouldWipe(remote.payload, localPayload)) {
-              payload = mergeProfilePayload(localPayload, remote.payload);
               if (profileHasData(remote.payload)) {
-                set((current) => applyProfileToState(current, payload, remote.updatedAt));
+                set((current) => applyProfileToState(current, remote.payload, remote.updatedAt));
+                lastProfileSignature = profileSignature(get());
               }
-            } else {
-              payload = mergeProfilePayload(localPayload, remote.payload);
+              set({ userSyncing: false });
+              return;
             }
           } catch {
             payload = localPayload;
