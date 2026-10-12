@@ -7,7 +7,7 @@ export const RELEASE_NOTES = {
     'Version and release notes in Settings so you can tell which build is installed',
   ],
   fixed: [
-    'Tab bar clipped in the home-screen PWA and sitting under Safari chrome in the browser',
+    'Extra empty space under the PWA tab bar (100dvh plus home-indicator padding)',
     'SFX going silent over Bluetooth after the app backgrounds',
   ],
 };

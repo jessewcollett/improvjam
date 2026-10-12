@@ -86,7 +86,6 @@ body {
 
 .app-shell {
   height: 100%;
-  height: 100dvh;
 }
 
 /* iOS Safari zooms the page when a focused field is under 16px. Use px so rem
