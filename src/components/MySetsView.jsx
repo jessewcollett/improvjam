@@ -139,6 +139,7 @@ export default function MySetsView() {
   const removeSetItem = useAppStore((s) => s.removeSetItem);
   const addSetMessage = useAppStore((s) => s.addSetMessage);
   const updateSetMessage = useAppStore((s) => s.updateSetMessage);
+  const flushUserProfile = useAppStore((s) => s.flushUserProfile);
   const focusCustomSetId = useAppStore((s) => s.focusCustomSetId);
   const sharedSetNotice = useAppStore((s) => s.sharedSetNotice);
   const clearFocusCustomSet = useAppStore((s) => s.clearFocusCustomSet);
@@ -344,7 +345,10 @@ export default function MySetsView() {
                 {lists.customSets.length > 0 ? (
                   <button
                     type="button"
-                    onClick={() => setEditing((v) => !v)}
+                    onClick={() => {
+                      if (editing) flushUserProfile();
+                      setEditing((v) => !v);
+                    }}
                     className={`px-3 py-2 rounded-lg text-xs font-bold border min-h-10 ${
                       editing
                         ? 'bg-indigo-600 text-white border-indigo-400'
@@ -559,6 +563,7 @@ export default function MySetsView() {
                     setActiveCustomSetId(null);
                     setEditing(false);
                     closeSheets();
+                    flushUserProfile();
                   }}
                   className="flex items-center text-sm text-gray-400"
                 >
@@ -572,6 +577,7 @@ export default function MySetsView() {
                 <button
                   type="button"
                   onClick={() => {
+                    if (editing) flushUserProfile();
                     setEditing((v) => !v);
                     closeSheets();
                     setConfirmClear(false);

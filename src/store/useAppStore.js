@@ -389,7 +389,7 @@ async function publishStageNow() {
 function applyProfileToState(current, payload, syncedAt) {
   const incoming = payload && typeof payload === 'object' ? payload : {};
   const merged = mergePersisted(incoming, current);
-  return {
+  return withPushedSignature({
     ...merged,
     data: current.data,
     lastSynced: current.lastSynced,
@@ -405,11 +405,26 @@ function applyProfileToState(current, payload, syncedAt) {
     userSyncedAt: typeof syncedAt === 'string' && syncedAt ? syncedAt : current.userSyncedAt,
     userSyncError: null,
     userSyncing: false,
-  };
+  });
+}
+
+function localProfileDirty(state) {
+  const pushed = String(state?.userPushedSignature || '');
+  if (!pushed) return false;
+  const next = profileSignature(state);
+  return Boolean(next) && next !== pushed && profileHasData(buildProfilePayload(state));
+}
+
+function withPushedSignature(state) {
+  return { ...state, userPushedSignature: profileSignature(state) };
 }
 
 function queueProfilePush() {
-  if (typeof window === 'undefined' || profilePullInflight) return;
+  if (typeof window === 'undefined') return;
+  if (profilePullInflight) {
+    profilePushQueued = true;
+    return;
+  }
   if (profilePushTimer) window.clearTimeout(profilePushTimer);
   profilePushTimer = window.setTimeout(() => {
     profilePushTimer = null;
@@ -443,6 +458,8 @@ function mergePersisted(persisted, current) {
       typeof persisted?.dismissedTipDate === 'string' ? persisted.dismissedTipDate : current.dismissedTipDate,
     userSyncedAt:
       typeof persisted?.userSyncedAt === 'string' ? persisted.userSyncedAt : current.userSyncedAt,
+    userPushedSignature:
+      typeof persisted?.userPushedSignature === 'string' ? persisted.userPushedSignature : current.userPushedSignature,
     generatorBanks: Array.isArray(persisted?.generatorBanks)
       ? persisted.generatorBanks
       : current.generatorBanks,
@@ -555,6 +572,7 @@ export const useAppStore = create(
       stagePublishError: null,
       stagePlay: null,
       userSyncedAt: null,
+      userPushedSignature: '',
       userSyncError: null,
       userSyncing: false,
       stageFolds: {
@@ -1830,7 +1848,12 @@ export const useAppStore = create(
           const localPayload = buildProfilePayload(state);
           const remoteAt = Date.parse(remote.updatedAt) || 0;
           const localAt = Date.parse(state.userSyncedAt) || 0;
-          if (incomingWouldWipe(localPayload, remote.payload)) {
+          const dirty = localProfileDirty(state);
+          if (dirty && profileHasData(localPayload)) {
+            lastProfileSignature = profileSignature(state);
+            set({ userSyncing: false });
+            profilePushQueued = true;
+          } else if (incomingWouldWipe(localPayload, remote.payload)) {
             lastProfileSignature = profileSignature(state);
             set({ userSyncing: false, userSyncedAt: state.userSyncedAt || remote.updatedAt || null });
             if (profileHasData(localPayload)) profilePushQueued = true;
@@ -1853,7 +1876,7 @@ export const useAppStore = create(
           profilePullInflight = false;
           if (profilePushQueued) {
             profilePushQueued = false;
-            queueProfilePush();
+            useAppStore.getState().pushUserProfile().catch(() => {});
           }
         }
       },
@@ -1895,9 +1918,15 @@ export const useAppStore = create(
           const result = await postProfile(id, payload);
           if (result.kept) {
             set((current) => applyProfileToState(current, result.payload, result.updatedAt));
+            lastProfileSignature = profileSignature(get());
           } else {
             lastProfileSignature = profileSignature(get());
-            set({ userSyncedAt: result.updatedAt, userSyncing: false, userSyncError: null });
+            set({
+              userSyncedAt: result.updatedAt,
+              userPushedSignature: lastProfileSignature,
+              userSyncing: false,
+              userSyncError: null,
+            });
           }
         } catch (error) {
           set({ userSyncing: false, userSyncError: error.message || 'Profile save failed.' });
@@ -1908,6 +1937,16 @@ export const useAppStore = create(
             queueProfilePush();
           }
         }
+      },
+
+      flushUserProfile: () => {
+        const pending = Boolean(profilePushTimer) || profilePushQueued || localProfileDirty(get());
+        if (typeof window !== 'undefined' && profilePushTimer) {
+          window.clearTimeout(profilePushTimer);
+          profilePushTimer = null;
+        }
+        if (!pending) return Promise.resolve();
+        return get().pushUserProfile();
       },
     }),
     {
@@ -1926,6 +1965,7 @@ export const useAppStore = create(
         lastSynced: state.lastSynced,
         dismissedTipDate: state.dismissedTipDate,
         userSyncedAt: state.userSyncedAt,
+        userPushedSignature: state.userPushedSignature,
         sfxHidden: state.sfxHidden,
         sfxOrder: state.sfxOrder,
         sfxSlots: state.sfxSlots,

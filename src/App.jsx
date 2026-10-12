@@ -76,6 +76,21 @@ export default function App() {
   }, [importSharedSet, updateSettings]);
 
   useEffect(() => {
+    const flush = () => {
+      useAppStore.getState().flushUserProfile();
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') flush();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pagehide', flush);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pagehide', flush);
+    };
+  }, []);
+
+  useEffect(() => {
     requestPersistentStorage();
     const start = () => {
       const params = new URLSearchParams(window.location.search);
