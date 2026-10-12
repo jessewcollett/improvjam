@@ -66,27 +66,73 @@ export function preloadPadSamples(pads = []) {
 
 const STYLE_IDS = new Set(BELL_STYLES.map((s) => s.id));
 
+let needsRebuild = false;
+
+function makeAudioCtx() {
+  return new (window.AudioContext || window.webkitAudioContext)();
+}
+
+function markAudioRebuild(reason) {
+  needsRebuild = true;
+  // #region agent log
+  debugSessionLog({ hypothesisId: 'F', location: 'audio.js:markRebuild', message: 'mark rebuild', data: { reason, ctxState: sharedCtx?.state || 'none', vis: document.visibilityState } });
+  // #endregion
+}
+
+function bindSharedCtx(audio) {
+  audio.addEventListener('statechange', () => {
+    // #region agent log
+    debugSessionLog({ hypothesisId: 'D-E', location: 'audio.js:statechange', message: 'ctx statechange', data: { state: sharedCtx?.state, vis: document.visibilityState } });
+    // #endregion
+    if (audio.state === 'interrupted' || audio.state === 'closed') markAudioRebuild(audio.state);
+  });
+}
+
+function rebuildCtx(reason) {
+  const oldState = sharedCtx?.state || 'none';
+  [...activeVoices].forEach(cutNow);
+  sampleDecoded.clear();
+  noiseBuffer = null;
+  if (sharedCtx) {
+    try {
+      sharedCtx.close();
+    } catch {
+      /* ignore */
+    }
+  }
+  sharedCtx = makeAudioCtx();
+  bindSharedCtx(sharedCtx);
+  needsRebuild = false;
+  // #region agent log
+  debugSessionLog({ hypothesisId: 'F', location: 'audio.js:rebuildCtx', message: 'rebuild ctx', data: { reason, oldState, after: sharedCtx.state, vis: document.visibilityState } });
+  // #endregion
+}
+
 function ctx() {
   const before = sharedCtx?.state || 'none';
-  if (!sharedCtx) {
-    sharedCtx = new (window.AudioContext || window.webkitAudioContext)();
-    // #region agent log
-    sharedCtx.addEventListener('statechange', () => {
-      debugSessionLog({ hypothesisId: 'D-E', location: 'audio.js:statechange', message: 'ctx statechange', data: { state: sharedCtx?.state, vis: document.visibilityState } });
-    });
-    document.addEventListener('visibilitychange', () => {
-      debugSessionLog({ hypothesisId: 'D-E', location: 'audio.js:visibility', message: 'visibility', data: { vis: document.visibilityState, ctxState: sharedCtx?.state || 'none' } });
-    });
-    // #endregion
+  const shouldRebuild = !sharedCtx || sharedCtx.state === 'closed' || sharedCtx.state === 'interrupted' || needsRebuild;
+  if (shouldRebuild) {
+    rebuildCtx(!sharedCtx ? 'create' : (needsRebuild ? 'dirty' : sharedCtx.state));
   }
-  const willResume = sharedCtx.state === 'suspended';
+  const willResume = sharedCtx.state === 'suspended' || sharedCtx.state === 'interrupted';
   if (willResume) {
     sharedCtx.resume();
   }
   // #region agent log
-  debugSessionLog({ hypothesisId: 'D-E', location: 'audio.js:ctx', message: 'audio ctx', data: { before, after: sharedCtx.state, willResume, vis: document.visibilityState } });
+  debugSessionLog({ hypothesisId: 'D-E', location: 'audio.js:ctx', message: 'audio ctx', data: { before, after: sharedCtx.state, willResume, rebuilt: shouldRebuild, vis: document.visibilityState, t: Math.round(sharedCtx.currentTime * 1000) / 1000, destCh: sharedCtx.destination?.channelCount } });
   // #endregion
   return sharedCtx;
+}
+
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    // #region agent log
+    debugSessionLog({ hypothesisId: 'D-E', location: 'audio.js:visibility', message: 'visibility', data: { vis: document.visibilityState, ctxState: sharedCtx?.state || 'none', dirty: needsRebuild } });
+    // #endregion
+    if (document.visibilityState === 'hidden') markAudioRebuild('hidden');
+  });
+  window.addEventListener('pagehide', () => markAudioRebuild('pagehide'));
+  navigator.mediaDevices?.addEventListener?.('devicechange', () => markAudioRebuild('devicechange'));
 }
 
 function clampVolume(volume) {
@@ -312,6 +358,9 @@ function buildSampleVoice(spec, volume) {
     if (voice.released) return;
     attachBuffer(voice, buffer, vol, spec);
   }).catch((error) => {
+    // #region agent log
+    debugSessionLog({ hypothesisId: 'G', location: 'audio.js:loadSample', message: 'sample fail', data: { url: spec.url, err: String(error?.message || error) } });
+    // #endregion
     console.warn('SFX sample failed', spec.url, error);
   });
   return voice;
@@ -518,12 +567,13 @@ export function playDing(style = 'bell', volume = 0.8) {
 }
 
 export function playPad(pad, volume = 0.8) {
+  const bundledUrl = pad?.styleId ? SAMPLE_STYLES[pad.styleId]?.url : '';
+  const useUrl = Boolean(pad?.playUrl && (!pad.bundled || pad.playUrl !== bundledUrl));
+  const path = !pad ? 'default' : useUrl ? 'url' : pad.styleId ? 'style' : 'id';
   // #region agent log
-  debugSessionLog({ hypothesisId: 'D-E', location: 'audio.js:playPad', message: 'playPad', data: { id: pad?.id || pad?.styleId || 'none', ctxState: sharedCtx?.state || 'none', vis: document.visibilityState } });
+  debugSessionLog({ hypothesisId: 'D-E', location: 'audio.js:playPad', message: 'playPad', data: { id: pad?.id || pad?.styleId || 'none', path, ctxState: sharedCtx?.state || 'none', vis: document.visibilityState, dirty: needsRebuild } });
   // #endregion
   if (!pad) return playDing('bell', volume);
-  const bundledUrl = pad.styleId ? SAMPLE_STYLES[pad.styleId]?.url : '';
-  const useUrl = pad.playUrl && (!pad.bundled || pad.playUrl !== bundledUrl);
   if (useUrl) {
     maybeHaptic();
     const loopHold = Boolean(SAMPLE_STYLES[pad.styleId]?.playThroughOnHold);

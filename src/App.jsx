@@ -76,6 +76,33 @@ export default function App() {
   }, [importSharedSet, updateSettings]);
 
   useEffect(() => {
+    const root = document.documentElement;
+    const syncViewport = () => {
+      const vv = window.visualViewport;
+      const height = Math.round(vv?.height ?? window.innerHeight);
+      const top = Math.round(vv?.offsetTop ?? 0);
+      root.style.setProperty('--app-height', `${height}px`);
+      root.style.setProperty('--app-top', `${top}px`);
+      if (window.scrollY !== 0 || root.scrollTop !== 0) {
+        window.scrollTo(0, 0);
+      }
+    };
+    syncViewport();
+    window.addEventListener('resize', syncViewport);
+    window.addEventListener('scroll', syncViewport, { capture: true, passive: true });
+    window.visualViewport?.addEventListener('resize', syncViewport);
+    window.visualViewport?.addEventListener('scroll', syncViewport);
+    return () => {
+      window.removeEventListener('resize', syncViewport);
+      window.removeEventListener('scroll', syncViewport, { capture: true });
+      window.visualViewport?.removeEventListener('resize', syncViewport);
+      window.visualViewport?.removeEventListener('scroll', syncViewport);
+      root.style.removeProperty('--app-height');
+      root.style.removeProperty('--app-top');
+    };
+  }, []);
+
+  useEffect(() => {
     const flush = () => {
       useAppStore.getState().flushUserProfile();
     };
@@ -119,7 +146,7 @@ export default function App() {
 
   return (
     <MotionConfig reducedMotion={settings.reducedMotion ? 'always' : 'user'}>
-      <div className="app-shell flex flex-col w-full max-w-md md:max-w-none mx-auto bg-stage font-body text-gray-100 overflow-hidden relative selection:bg-blue-500/30">
+      <div className="app-shell flex flex-col w-full max-w-md md:max-w-none mx-auto bg-stage font-body text-gray-100 overflow-hidden selection:bg-blue-500/30">
         <main className="flex-1 min-h-0 overflow-hidden relative">
           {views.map(({ id, View }) => {
             const active = activeRoute === id;

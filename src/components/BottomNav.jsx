@@ -30,7 +30,10 @@ export default function BottomNav({ activeRoute, onChange }) {
       const vv = window.visualViewport;
       const navRect = nav?.getBoundingClientRect();
       const shellRect = shell?.getBoundingClientRect();
-      debugSessionLog({ hypothesisId: 'A-B-C', location: 'BottomNav.jsx:reportNav', message: 'nav geometry', data: { reason, scrollY: window.scrollY, docScroll: document.documentElement.scrollTop, bodyScroll: document.body.scrollTop, innerH: window.innerHeight, vvH: vv?.height, vvOff: vv?.offsetTop, navTop: navRect?.top, navBottom: navRect?.bottom, navH: navRect?.height, shellH: shellRect?.height, shellBottom: shellRect?.bottom, gapInner: (window.innerHeight || 0) - (navRect?.bottom || 0), gapVv: (vv?.height || 0) - (navRect?.bottom || 0) } });
+      const padB = nav ? getComputedStyle(nav).paddingBottom : '';
+      const appH = document.documentElement.style.getPropertyValue('--app-height');
+      const appTop = document.documentElement.style.getPropertyValue('--app-top');
+      debugSessionLog({ hypothesisId: 'A-B-C', location: 'BottomNav.jsx:reportNav', message: 'nav geometry', data: { runId: 'post-fix', reason, scrollY: window.scrollY, docScroll: document.documentElement.scrollTop, bodyScroll: document.body.scrollTop, innerH: window.innerHeight, vvH: vv?.height, vvOff: vv?.offsetTop, navTop: navRect?.top, navBottom: navRect?.bottom, navH: navRect?.height, shellH: shellRect?.height, shellBottom: shellRect?.bottom, gapInner: (window.innerHeight || 0) - (navRect?.bottom || 0), gapVv: (vv?.offsetTop || 0) + (vv?.height || 0) - (navRect?.bottom || 0), padB, screenH: window.screen?.height, appH, appTop } });
     };
     reportNav('mount');
     const onWinScroll = () => reportNav('win-scroll');
