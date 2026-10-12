@@ -444,6 +444,7 @@ export default function MySetsView() {
                   setActiveCustomSetId(item.id);
                   setEditing(true);
                 }}
+                onDelete={(item) => setConfirmDeleteSet(item.id)}
                 renderAfter={(item) => {
                   const set = lists.customSets.find((entry) => entry.id === item.id);
                   if (!set) return null;
@@ -829,6 +830,10 @@ export default function MySetsView() {
                     if (row.itemType !== 'message' || !row.messageId) return;
                     const item = customItems.find((entry) => entry.type === 'message' && entry.id === row.messageId);
                     openMessageEditor(item);
+                  }}
+                  onDelete={(row) => {
+                    if (row.itemType === 'game') toggleInCustomSet(activeCustomSet.id, row.gameId);
+                    else removeSetItem(activeCustomSet.id, row.id);
                   }}
                   renderAfter={(row) => (
                     <>
