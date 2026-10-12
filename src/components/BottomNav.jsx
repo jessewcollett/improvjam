@@ -31,7 +31,7 @@ export default function BottomNav({ activeRoute, onChange }) {
   return (
     <nav
       ref={navRef}
-      className="shrink-0 w-full bg-[#1A1A1A] border-t border-gray-800 pb-[10px] z-50"
+      className="shrink-0 w-full bg-[#1A1A1A] border-t border-gray-800 z-50"
     >
       <div className="flex justify-around items-stretch px-1 pt-1 max-w-md md:max-w-none mx-auto">
         {items.map((item) => {

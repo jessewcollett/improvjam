@@ -9,7 +9,7 @@ export const RELEASE_NOTES = {
     'Version shown at the top of Settings; PWA reloads when a new build is ready',
   ],
   fixed: [
-    'PWA tab labels sitting 34px above the home indicator',
+    'PWA tab labels sitting above a black pad at the home indicator',
     'SFX going silent over Bluetooth after the app backgrounds',
   ],
 };

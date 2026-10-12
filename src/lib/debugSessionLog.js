@@ -110,6 +110,7 @@ export function captureAppLayout(reason = 'copy') {
     gapScreen: round((window.screen?.height || 0) - (nav?.getBoundingClientRect().bottom || 0)),
     gapInner: round((window.innerHeight || 0) - (nav?.getBoundingClientRect().bottom || 0)),
     gapVv: round((vv?.offsetTop || 0) + (vv?.height || 0) - (nav?.getBoundingClientRect().bottom || 0)),
+    underLabels: round((nav?.getBoundingClientRect().bottom || 0) - (inner?.getBoundingClientRect().bottom || 0)),
   };
   // #region agent log
   debugSessionLog({
