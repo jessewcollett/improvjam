@@ -1,8 +1,30 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowUpDown, Check, ListFilter, Music, Pause, Play, Repeat, Shuffle, Square, Volume2, X } from 'lucide-react';
-import { clampFadeSeconds } from '../lib/audio.js';
+import {
+  ArrowUpDown,
+  Check,
+  ListFilter,
+  Music,
+  Pause,
+  Play,
+  Repeat,
+  Shuffle,
+  SkipBack,
+  SkipForward,
+  Square,
+  Volume2,
+  X,
+} from 'lucide-react';
+import {
+  clampFadeSeconds,
+  connectMediaElement,
+  fadeGainExponential,
+  onAudioCtxRebuild,
+  setGainLevel,
+} from '../lib/audio.js';
 import { UNTAGGED_FILTER, tagsForTrack, uniqueTags } from '../lib/music.js';
 import { useAppStore } from '../store/useAppStore.js';
+
+const GO_DEBOUNCE_MS = 400;
 
 function formatTime(seconds) {
   if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
@@ -179,12 +201,21 @@ export default function MusicPlayer({ tracks, randomRef, controlsRef, fadeSecond
   const musicTags = useAppStore((s) => s.musicTags);
   const toggleMusicTag = useAppStore((s) => s.toggleMusicTag);
   const audioRef = useRef(null);
-  const autoplayRef = useRef(false);
+  const graphRef = useRef(null);
   const fadeTokenRef = useRef(0);
   const volumeRef = useRef(0.85);
+  const loopRef = useRef(false);
+  const shuffleRef = useRef(false);
+  const playRandomRef = useRef(() => {});
+  const goAtRef = useRef(0);
+  const restoreRef = useRef(null);
+  const loadedUrlRef = useRef('');
+  const [audioGen, setAudioGen] = useState(0);
   const [activeId, setActiveId] = useState(tracks[0]?.id || '');
+  const [loadedId, setLoadedId] = useState(tracks[0]?.id || '');
   const [playing, setPlaying] = useState(false);
   const [loop, setLoop] = useState(false);
+  const [shuffle, setShuffle] = useState(false);
   const [volume, setVolume] = useState(0.85);
   const [current, setCurrent] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -196,6 +227,8 @@ export default function MusicPlayer({ tracks, randomRef, controlsRef, fadeSecond
   const [sortOpen, setSortOpen] = useState(false);
   const [volumeOpen, setVolumeOpen] = useState(false);
   volumeRef.current = volume;
+  loopRef.current = loop;
+  shuffleRef.current = shuffle;
 
   const taggedTracks = useMemo(
     () => tracks.map((track) => ({ ...track, displayTags: tagsForTrack(track, musicTags) })),
@@ -228,51 +261,131 @@ export default function MusicPlayer({ tracks, randomRef, controlsRef, fadeSecond
   }, [taggedTracks, tagFilters, sortBy]);
 
   const active = taggedTracks.find((track) => track.id === activeId) || visibleTracks[0] || taggedTracks[0] || null;
+  const loaded = taggedTracks.find((track) => track.id === loadedId) || active;
+  const display = playing ? loaded : active;
+  const remaining = Math.max(0, (duration || 0) - (current || 0));
+  const activeIndex = visibleTracks.findIndex((track) => track.id === active?.id);
+  const showPause = playing && loadedId === activeId;
+  loadedUrlRef.current = loaded?.playUrl || '';
+
+  const ensureGraph = useCallback(() => {
+    const el = audioRef.current;
+    if (!el) return null;
+    if (graphRef.current?.el === el) return graphRef.current;
+    try {
+      el.volume = 1;
+      const graph = connectMediaElement(el, volumeRef.current);
+      graphRef.current = { ...graph, el };
+      return graphRef.current;
+    } catch {
+      return graphRef.current;
+    }
+  }, []);
 
   useEffect(() => {
     if (activeId && taggedTracks.some((track) => track.id === activeId)) return;
-    setActiveId(visibleTracks[0]?.id || taggedTracks[0]?.id || '');
+    const fallback = visibleTracks[0]?.id || taggedTracks[0]?.id || '';
+    setActiveId(fallback);
+    setLoadedId((id) => (id && taggedTracks.some((track) => track.id === id) ? id : fallback));
   }, [taggedTracks, visibleTracks, activeId]);
 
-  useEffect(() => {
-    const node = audioRef.current;
-    if (!node) return undefined;
-    node.loop = loop;
-    node.volume = volume;
-    fadeTokenRef.current += 1;
-    const onTime = () => setCurrent(node.currentTime || 0);
-    const onMeta = () => setDuration(node.duration || 0);
-    const onEnd = () => setPlaying(false);
-    node.addEventListener('timeupdate', onTime);
-    node.addEventListener('loadedmetadata', onMeta);
-    node.addEventListener('ended', onEnd);
-    return () => {
-      node.removeEventListener('timeupdate', onTime);
-      node.removeEventListener('loadedmetadata', onMeta);
-      node.removeEventListener('ended', onEnd);
+  useEffect(() => onAudioCtxRebuild(() => {
+    const el = audioRef.current;
+    restoreRef.current = {
+      src: loadedUrlRef.current || el?.currentSrc || '',
+      time: el?.currentTime || 0,
     };
-  }, [loop, volume, active?.playUrl]);
+    graphRef.current = null;
+    setAudioGen((n) => n + 1);
+  }), []);
 
   useEffect(() => {
     const node = audioRef.current;
-    if (!node || !active?.playUrl) return;
-    fadeTokenRef.current += 1;
-    const shouldPlay = autoplayRef.current;
-    autoplayRef.current = false;
-    node.pause();
-    node.volume = volumeRef.current;
-    node.src = active.playUrl;
-    node.load();
-    setCurrent(0);
-    if (!shouldPlay) {
-      setPlaying(false);
+    if (node) {
+      node.volume = 1;
+      node.loop = loop;
+    }
+  }, [loop, audioGen]);
+
+  const onAudioTime = (event) => {
+    setCurrent(event.currentTarget.currentTime || 0);
+  };
+
+  const onAudioMeta = (event) => {
+    const next = event.currentTarget.duration;
+    setDuration(Number.isFinite(next) ? next : 0);
+  };
+
+  const onAudioEnded = () => {
+    if (loopRef.current) return;
+    if (shuffleRef.current) {
+      playRandomRef.current();
       return;
     }
-    node
-      .play()
-      .then(() => setPlaying(true))
-      .catch(() => setPlaying(false));
-  }, [active?.playUrl]);
+    setPlaying(false);
+  };
+
+  useEffect(() => {
+    setGainLevel(graphRef.current?.gain, volume);
+  }, [volume]);
+
+  const srcMatches = (node, url) => {
+    if (!node || !url) return false;
+    if (node.getAttribute('src') === url) return true;
+    try {
+      return node.currentSrc === new URL(url, window.location.href).href;
+    } catch {
+      return false;
+    }
+  };
+
+  const playTrack = useCallback(async (track) => {
+    const node = audioRef.current;
+    if (!node || !track?.playUrl) return;
+    fadeTokenRef.current += 1;
+    if (loadedId !== track.id) setLoadedId(track.id);
+    if (activeId !== track.id) setActiveId(track.id);
+    if (!srcMatches(node, track.playUrl)) {
+      node.src = track.playUrl;
+      node.load();
+    }
+    node.volume = 1;
+    ensureGraph();
+    setGainLevel(graphRef.current?.gain, volumeRef.current);
+    try {
+      await node.play();
+      setPlaying(true);
+    } catch {
+      setPlaying(false);
+    }
+  }, [activeId, ensureGraph, loadedId]);
+
+  useEffect(() => {
+    const node = audioRef.current;
+    const pending = restoreRef.current;
+    restoreRef.current = null;
+    const url = pending?.src || loaded?.playUrl;
+    if (!node || !url) return;
+    if (!pending && srcMatches(node, url)) return;
+    fadeTokenRef.current += 1;
+    node.pause();
+    node.volume = 1;
+    node.src = url;
+    node.load();
+    setPlaying(false);
+    setCurrent(pending?.time || 0);
+    if (pending?.time) {
+      const seek = () => {
+        try {
+          node.currentTime = pending.time;
+        } catch {
+          /* ignore */
+        }
+      };
+      if (node.readyState >= 1) seek();
+      else node.addEventListener('loadedmetadata', seek, { once: true });
+    }
+  }, [loaded?.playUrl, audioGen]);
 
   const stopNow = useCallback(() => {
     fadeTokenRef.current += 1;
@@ -284,82 +397,76 @@ export default function MusicPlayer({ tracks, randomRef, controlsRef, fadeSecond
     } catch {
       /* ignore */
     }
-    node.volume = volumeRef.current;
+    setGainLevel(graphRef.current?.gain, volumeRef.current);
     setPlaying(false);
     setCurrent(0);
   }, []);
 
   const fadeOut = useCallback(() => {
     const node = audioRef.current;
-    if (!node) return;
+    if (!node || node.paused) return;
+    const graph = ensureGraph();
     const token = fadeTokenRef.current + 1;
     fadeTokenRef.current = token;
-    const startVol = Math.max(node.volume || volumeRef.current || 0, 0.0001);
-    const start = performance.now();
-    const durationMs = clampFadeSeconds(fadeSeconds) * 1000;
-    const tick = (now) => {
+    const fadeSec = fadeGainExponential(graph?.gain, fadeSeconds) || clampFadeSeconds(fadeSeconds);
+    window.setTimeout(() => {
       if (token !== fadeTokenRef.current) return;
-      const t = Math.min(1, (now - start) / durationMs);
-      node.volume = startVol * (1 - t);
-      if (t < 1) {
-        requestAnimationFrame(tick);
-        return;
-      }
       node.pause();
       try {
         node.currentTime = 0;
       } catch {
         /* ignore */
       }
-      node.volume = volumeRef.current;
+      setGainLevel(graph?.gain, volumeRef.current);
       setPlaying(false);
       setCurrent(0);
-    };
-    requestAnimationFrame(tick);
-  }, [fadeSeconds]);
+    }, fadeSec * 1000 + 40);
+  }, [ensureGraph, fadeSeconds]);
 
-  const toggle = async () => {
+  const toggle = useCallback(async () => {
     const node = audioRef.current;
-    if (!node || !active?.playUrl) return;
-    fadeTokenRef.current += 1;
-    node.volume = volumeRef.current;
-    if (playing) {
-      node.pause();
+    if (!active?.playUrl) return;
+    if (playing && loadedId === activeId) {
+      fadeTokenRef.current += 1;
+      node?.pause();
       setPlaying(false);
       return;
     }
-    try {
-      await node.play();
-      setPlaying(true);
-    } catch {
-      setPlaying(false);
-    }
-  };
+    const now = Date.now();
+    if (now - goAtRef.current < GO_DEBOUNCE_MS) return;
+    goAtRef.current = now;
+    await playTrack(active);
+  }, [active, activeId, loadedId, playTrack, playing]);
 
   const playRandom = useCallback(() => {
-    const pool = visibleTracks.filter((track) => track.id !== active?.id);
-    const source = pool.length ? pool : visibleTracks;
+    const pool = visibleTracks.filter((track) => track.id !== loadedId && track.playUrl);
+    const source = pool.length ? pool : visibleTracks.filter((track) => track.playUrl);
     if (!source.length) return;
     const next = source[Math.floor(Math.random() * source.length)];
-    autoplayRef.current = true;
-    setActiveId(next.id);
-    if (next.playUrl === active?.playUrl) {
-      audioRef.current
-        ?.play()
-        .then(() => setPlaying(true))
-        .catch(() => setPlaying(false));
-    }
-  }, [visibleTracks, active]);
+    playTrack(next);
+  }, [visibleTracks, loadedId, playTrack]);
+  playRandomRef.current = playRandom;
+
+  const stepStandby = (dir) => {
+    if (!visibleTracks.length) return;
+    const index = activeIndex < 0 ? 0 : (activeIndex + dir + visibleTracks.length) % visibleTracks.length;
+    setActiveId(visibleTracks[index].id);
+  };
+
+  const toggleShuffle = () => {
+    if (!shuffle) playRandom();
+    setShuffle((on) => !on);
+  };
 
   useEffect(() => {
-    const controls = { random: playRandom, fade: fadeOut, stop: stopNow };
+    const controls = { random: playRandom, fade: fadeOut, stop: stopNow, toggle };
     if (randomRef) randomRef.current = playRandom;
     if (controlsRef) controlsRef.current = controls;
     return () => {
       if (randomRef) randomRef.current = null;
       if (controlsRef) controlsRef.current = null;
     };
-  }, [randomRef, controlsRef, playRandom, fadeOut, stopNow]);
+  }, [randomRef, controlsRef, playRandom, fadeOut, stopNow, toggle]);
 
   const toggleFilter = (tag) => {
     setTagFilters((current) =>
@@ -396,7 +503,16 @@ export default function MusicPlayer({ tracks, randomRef, controlsRef, fadeSecond
         <Music className="w-4 h-4 mr-2" />
         Music
       </h2>
-      <audio ref={audioRef} preload="metadata" />
+      <audio
+        key={audioGen}
+        ref={audioRef}
+        preload="metadata"
+        playsInline
+        onTimeUpdate={onAudioTime}
+        onDurationChange={onAudioMeta}
+        onLoadedMetadata={onAudioMeta}
+        onEnded={onAudioEnded}
+      />
 
       <div className="flex-1 min-h-0 flex flex-col md:flex-row md:gap-4 overflow-hidden">
         <div className="flex-1 min-h-0 min-w-0 flex flex-col">
@@ -423,6 +539,8 @@ export default function MusicPlayer({ tracks, randomRef, controlsRef, fadeSecond
             {visibleTracks.length ? (
               visibleTracks.map((track) => {
                 const selected = active?.id === track.id;
+                const live = loaded?.id === track.id && playing;
+                const missing = !track.playUrl;
                 const tagsLabel = track.displayTags.length ? track.displayTags.join(', ') : 'No tags';
                 return (
                   <button
@@ -430,7 +548,13 @@ export default function MusicPlayer({ tracks, randomRef, controlsRef, fadeSecond
                     type="button"
                     onClick={() => setActiveId(track.id)}
                     className={`w-full text-left rounded-lg border px-3 min-h-11 flex items-center ${
-                      selected ? 'bg-fuchsia-700/30 border-fuchsia-500 text-white' : 'bg-[#1A1A1A] border-gray-800 text-gray-200'
+                      missing
+                        ? 'bg-red-950/50 border-red-600 text-red-100'
+                        : live
+                          ? 'bg-emerald-800/40 border-emerald-400 text-white'
+                          : selected
+                            ? 'bg-amber-800/40 border-amber-400 text-white'
+                            : 'bg-[#1A1A1A] border-gray-800 text-gray-200'
                     }`}
                   >
                     <span className="block w-full min-w-0 text-sm leading-tight truncate">
@@ -452,16 +576,27 @@ export default function MusicPlayer({ tracks, randomRef, controlsRef, fadeSecond
 
         <div className="shrink-0 border-t border-gray-800 pt-2 bg-card md:border-t-0 md:border-l md:pl-3 md:pt-0 md:w-64 lg:w-72 md:overflow-y-auto scrollbar-hide">
         <p className="text-sm font-black font-display text-white leading-tight truncate">
-          {active?.name}
-          {active?.credit ? (
+          {display?.name}
+          {display?.credit ? (
             <span className="font-sans font-medium">
               {' '}
-              — <Credit track={active} />
+              — <Credit track={display} />
             </span>
           ) : null}
         </p>
+        {playing && active?.id && active.id !== loaded?.id ? (
+          <p className="text-xs font-bold text-amber-300 mt-1">Standby · {active.name}</p>
+        ) : null}
+        {!active?.playUrl ? (
+          <p className="text-xs font-bold text-red-300 mt-1">Missing audio file</p>
+        ) : null}
 
-        <div className="flex items-center gap-2 mt-1">
+        <p className="text-4xl font-black font-display tabular-nums text-white leading-none mt-2 mb-1">
+          {formatTime(remaining)}
+          <span className="text-xs font-bold text-gray-500 ml-2 align-middle">{formatTime(current)} / {formatTime(duration)}</span>
+        </p>
+
+        <div className="flex items-center gap-2">
           <input
             type="range"
             min="0"
@@ -476,28 +611,48 @@ export default function MusicPlayer({ tracks, randomRef, controlsRef, fadeSecond
             className="flex-1 accent-fuchsia-500 min-h-11"
             aria-label="Seek"
           />
-          <span className="text-2xs text-gray-500 tabular-nums shrink-0">
-            {formatTime(current)}/{formatTime(duration)}
-          </span>
         </div>
+
+        <button
+          type="button"
+          onClick={toggle}
+          disabled={!active?.playUrl}
+          className="w-full min-h-14 mb-1.5 rounded-2xl bg-fuchsia-600 text-white font-black text-xl tracking-wide inline-flex items-center justify-center gap-2 disabled:opacity-40"
+        >
+          {showPause ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6" />}
+          {showPause ? 'Pause' : 'GO'}
+        </button>
 
         <div className="flex gap-1.5 mb-1">
           <button
             type="button"
-            onClick={toggle}
-            className="flex-1 min-h-11 rounded-xl bg-fuchsia-700 text-white font-black inline-flex items-center justify-center gap-1.5"
+            onClick={() => stepStandby(-1)}
+            disabled={visibleTracks.length < 2}
+            className="min-w-11 min-h-11 rounded-xl border bg-gray-800 text-gray-100 border-gray-700 inline-flex items-center justify-center disabled:text-gray-600"
+            aria-label="Previous standby track"
           >
-            {playing ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-            {playing ? 'Pause' : 'Play'}
+            <SkipBack className="w-4 h-4" />
           </button>
           <button
             type="button"
-            onClick={playRandom}
-            className="min-w-11 min-h-11 px-2.5 rounded-xl border bg-gray-800 text-gray-100 border-gray-700 inline-flex items-center justify-center gap-1 font-bold md:min-w-12 md:px-3"
-            aria-label="Play a random track"
+            onClick={() => stepStandby(1)}
+            disabled={visibleTracks.length < 2}
+            className="min-w-11 min-h-11 rounded-xl border bg-gray-800 text-gray-100 border-gray-700 inline-flex items-center justify-center disabled:text-gray-600"
+            aria-label="Next standby track"
+          >
+            <SkipForward className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={toggleShuffle}
+            className={`flex-1 min-h-11 px-2.5 rounded-xl border inline-flex items-center justify-center gap-1 font-bold ${
+              shuffle ? 'bg-fuchsia-600 text-white border-fuchsia-400' : 'bg-gray-800 text-gray-100 border-gray-700'
+            }`}
+            aria-pressed={shuffle}
+            aria-label="Shuffle within filtered tracks"
           >
             <Shuffle className="w-4 h-4" />
-            <span className="text-xs hidden md:inline">Random</span>
+            <span className="text-xs hidden md:inline">Shuffle</span>
           </button>
           <button
             type="button"

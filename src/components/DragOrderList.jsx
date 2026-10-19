@@ -4,7 +4,7 @@ import { ChevronDown, ChevronUp, GripVertical, Trash2 } from 'lucide-react';
 import { moveId } from '../lib/nav.js';
 
 const SWIPE_MAX = 96;
-const SWIPE_COMMIT = 72;
+const SWIPE_COMMIT = 48;
 const SCROLL_EDGE = 48;
 const SCROLL_MIN = 4;
 const SCROLL_MAX = 18;
@@ -242,6 +242,11 @@ export default function DragOrderList({ items, onOrder, renderAfter, onActivate,
   const startSwipe = (event, item) => {
     if (!onDelete || dragFrom != null) return;
     if (event.pointerType === 'mouse' && event.button !== 0) return;
+    try {
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+    } catch {
+      /* capture is optional */
+    }
     swipeRef.current = {
       id: item.id,
       pointerId: event.pointerId,

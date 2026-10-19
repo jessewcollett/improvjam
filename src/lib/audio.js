@@ -33,6 +33,7 @@ const SAMPLE_STYLES = {
 
 const sampleRaw = new Map();
 const sampleDecoded = new Map();
+const ctxRebuildListeners = new Set();
 
 function ensureSampleFetch(url) {
   const href = String(url || '').trim();
@@ -98,6 +99,7 @@ function bindSharedCtx(audio) {
 
 function rebuildCtx(reason) {
   const oldState = sharedCtx?.state || 'none';
+  const replacing = Boolean(sharedCtx);
   [...activeVoices].forEach(cutNow);
   sampleDecoded.clear();
   noiseBuffer = null;
@@ -111,9 +113,61 @@ function rebuildCtx(reason) {
   sharedCtx = makeAudioCtx();
   bindSharedCtx(sharedCtx);
   needsRebuild = false;
+  if (replacing) {
+    ctxRebuildListeners.forEach((fn) => {
+      try {
+        fn();
+      } catch {
+        /* ignore */
+      }
+    });
+  }
   // #region agent log
   debugSessionLog({ hypothesisId: 'F', location: 'audio.js:rebuildCtx', message: 'rebuild ctx', data: { reason, oldState, after: sharedCtx.state, vis: document.visibilityState } });
   // #endregion
+}
+
+export function onAudioCtxRebuild(listener) {
+  if (typeof listener !== 'function') return () => {};
+  ctxRebuildListeners.add(listener);
+  return () => ctxRebuildListeners.delete(listener);
+}
+
+export function setGainLevel(gainNode, level) {
+  if (!gainNode) return;
+  const now = gainNode.context.currentTime;
+  const to = clampVolume(level);
+  try {
+    gainNode.gain.cancelScheduledValues(now);
+    gainNode.gain.setValueAtTime(to, now);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function fadeGainExponential(gainNode, seconds) {
+  if (!gainNode) return 0;
+  const fadeSec = clampFadeSeconds(seconds);
+  const now = gainNode.context.currentTime;
+  try {
+    gainNode.gain.cancelScheduledValues(now);
+    gainNode.gain.setValueAtTime(Math.max(gainNode.gain.value, 0.0001), now);
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, now + fadeSec);
+  } catch {
+    /* ignore */
+  }
+  return fadeSec;
+}
+
+export function connectMediaElement(element, volume = 1) {
+  if (!element) return null;
+  const audio = ctx();
+  const source = audio.createMediaElementSource(element);
+  const gain = audio.createGain();
+  source.connect(gain);
+  gain.connect(audio.destination);
+  setGainLevel(gain, volume);
+  return { source, gain, ctx: audio };
 }
 
 function ctx() {
@@ -124,7 +178,7 @@ function ctx() {
   }
   const willResume = sharedCtx.state === 'suspended' || sharedCtx.state === 'interrupted';
   if (willResume) {
-    sharedCtx.resume();
+    sharedCtx.resume().catch(() => {});
   }
   // #region agent log
   debugSessionLog({ hypothesisId: 'D-E', location: 'audio.js:ctx', message: 'audio ctx', data: { before, after: sharedCtx.state, willResume, rebuilt: shouldRebuild, vis: document.visibilityState, t: Math.round(sharedCtx.currentTime * 1000) / 1000, destCh: sharedCtx.destination?.channelCount } });

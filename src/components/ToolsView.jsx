@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Bell, Timer, Users, Shuffle, Lightbulb, Coins, Minus, Plus, Square } from 'lucide-react';
 import { TOOL_TABS, tabsInOrder, clampToolId } from '../lib/nav.js';
-import { playCountIn, playPad } from '../lib/audio.js';
+import { fadeAllPads, playCountIn, playPad } from '../lib/audio.js';
 import { mergeSfxPads, resolveDefaultPad, sheetTracks } from '../lib/sfxPad.js';
 import { useHoldDing } from '../lib/useHoldDing.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -109,6 +109,26 @@ export default function ToolsView({ active = true }) {
   const setStageSlot = useAppStore((s) => s.setStageSlot);
   const toggleStagePin = useAppStore((s) => s.toggleStagePin);
   const publishStageTimer = useAppStore((s) => s.publishStageTimer);
+
+  useEffect(() => {
+    if (!active) return undefined;
+    const onKey = (event) => {
+      const tag = event.target?.tagName;
+      const typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || event.target?.isContentEditable;
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        fadeAllPads(settings.fadeSeconds);
+        musicControlsRef.current?.fade?.();
+        return;
+      }
+      if ((event.key === ' ' || event.code === 'Space') && !typing && activeTool === 'music') {
+        event.preventDefault();
+        musicControlsRef.current?.toggle?.();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [active, activeTool, settings.fadeSeconds]);
 
   const halfSequence = [60, 30, 15, 7];
   const pads = useMemo(() => mergeSfxPads(audioRows), [audioRows]);
@@ -306,11 +326,9 @@ export default function ToolsView({ active = true }) {
           />
         )}
 
-        {activeTool === 'music' && (
-          <div className="flex-1 min-h-0">
-            <MusicPlayer tracks={tracks} controlsRef={musicControlsRef} fadeSeconds={settings.fadeSeconds} />
-          </div>
-        )}
+        <div className={activeTool === 'music' ? 'flex-1 min-h-0' : 'hidden'}>
+          <MusicPlayer tracks={tracks} controlsRef={musicControlsRef} fadeSeconds={settings.fadeSeconds} />
+        </div>
 
         {activeTool === 'timer' && (
           <section className="bg-card border border-gray-800 rounded-2xl p-4">
