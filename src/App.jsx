@@ -10,6 +10,7 @@ import SettingsView from './components/SettingsView.jsx';
 import { applyTheme } from './lib/theme.js';
 import { requestPersistentStorage } from './lib/appStorage.js';
 import { STAGE_MANAGER_ID, clampNavId } from './lib/nav.js';
+import { normalizeStageCode, postStage, STAGE_HEARTBEAT_MS } from './lib/stage.js';
 import { resolveSharedSet } from './lib/setShare.js';
 import { useAppStore } from './store/useAppStore.js';
 
@@ -89,6 +90,18 @@ export default function App() {
       window.removeEventListener('pagehide', flush);
     };
   }, []);
+
+  useEffect(() => {
+    if (!stageOn) return undefined;
+    const beat = () => {
+      const code = normalizeStageCode(useAppStore.getState().settings.stageCode);
+      if (!code) return;
+      postStage(code, undefined, { hostOn: true }).catch(() => {});
+    };
+    beat();
+    const id = window.setInterval(beat, STAGE_HEARTBEAT_MS);
+    return () => window.clearInterval(id);
+  }, [stageOn]);
 
   useEffect(() => {
     requestPersistentStorage();

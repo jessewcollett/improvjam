@@ -1231,9 +1231,26 @@ export const STAGE_TIMER_TICK_MS = 50;
 /** How often the TV GETs /api/stage. Pin/start latency only — not the digit refresh. */
 export const STAGE_BOARD_POLL_MS = 750;
 export const STAGE_IDEAS_POLL_MS = 1000;
+/** Parked TV/Ideas tabs stop polling after this with no host activity. */
+export const STAGE_IDLE_MS = 15 * 60 * 1000;
+/** Host keepalive while Stage is On so a static board does not look idle. */
+export const STAGE_HEARTBEAT_MS = 2 * 60 * 1000;
 /** Debounce for bursty UI (zoom, layout). Pins, slots, and timer POST immediately. */
 export const STAGE_PUBLISH_DEBOUNCE_MS = 80;
 export const STAGE_FETCH_TIMEOUT_MS = 8000;
+
+export function stageUpdatedAtMs(updatedAt) {
+  const ms = Date.parse(String(updatedAt || ''));
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+/** Stop leftover polls: host turned off, or no activity for 15 minutes. */
+export function stagePollShouldStop(data, startedAt, now = Date.now()) {
+  if (data && data.miss !== true && data.hostOn === false) return true;
+  const at = stageUpdatedAtMs(data?.updatedAt);
+  if (at) return now - at >= STAGE_IDLE_MS;
+  return now - Number(startedAt || now) >= STAGE_IDLE_MS;
+}
 
 export function stageTypeScale(count) {
   if (count <= 1) {

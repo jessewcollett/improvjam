@@ -1,10 +1,14 @@
-import { reconcileHostIdeas } from '../src/lib/stage.js';
+import { reconcileHostIdeas, STAGE_IDLE_MS } from '../src/lib/stage.js';
 
 const UPSTREAM = process.env.VITE_SHEETS_URL || '';
 const STAGE_TTL_SEC = 60 * 60 * 24;
 
 const memory = globalThis.__improvStageMemory || new Map();
 globalThis.__improvStageMemory = memory;
+const upstreamInflight = globalThis.__improvStageUpstream || new Map();
+globalThis.__improvStageUpstream = upstreamInflight;
+
+/** Live POSTs stay in memory. Sheet backup is only the first cold miss per isolate. */
 
 function stageCode(req) {
   return String(req.query?.s || req.query?.stage || '').trim();
@@ -173,22 +177,84 @@ async function kvSet(code, record) {
   }
 }
 
-function remember(code, record) {
-  memory.set(code, record);
+function remember(code, record, source) {
+  const next = normalizeRecord(code, record);
+  if (record && record.miss === true) next.miss = true;
+  next._source = source || record?._source || 'local';
+  next._at = Date.now();
+  memory.set(code, next);
+  return next;
+}
+
+function toClient(record) {
+  if (!record) return record;
+  const { _source, _at, ...rest } = record;
+  return rest;
+}
+
+function stageActivityMs(record) {
+  const ms = Date.parse(String(record?.updatedAt || ''));
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function withIdle(record) {
+  const client = toClient(record);
+  if (!client) return client;
+  const at = stageActivityMs(record);
+  const idle = at ? Date.now() - at >= STAGE_IDLE_MS : client.miss === true;
+  if (!idle) return client;
+  return { ...client, hostOn: false, ideasOpen: false };
+}
+
+function usableScript() {
+  return Boolean(UPSTREAM && !UPSTREAM.includes('/api/catalog') && !UPSTREAM.includes('/api/stage'));
 }
 
 async function readLocal(code) {
   if (memory.has(code)) return memory.get(code);
   const fromKv = await kvGet(code);
-  if (fromKv) {
-    remember(code, fromKv);
-    return fromKv;
-  }
+  if (fromKv) return remember(code, fromKv, 'local');
   return null;
 }
 
+async function loadScript(code) {
+  const latest = await readLocal(code);
+  if (latest) return latest;
+  const upstream = await fetch(execUrl(code), { redirect: 'follow', cache: 'no-store' });
+  const after = await readLocal(code);
+  if (after && after._source === 'local') return after;
+  const text = await upstream.text();
+  if (loginPage(text)) {
+    return remember(code, { ...emptyRecord(code), miss: true }, 'script');
+  }
+  try {
+    const raw = JSON.parse(text);
+    const parsed = normalizeRecord(code, raw);
+    const hostFlags = raw && Object.prototype.hasOwnProperty.call(raw, 'ideasOpen');
+    parsed.ideaFlags = hostFlags === true;
+    if (!hostFlags) parsed.ideasOpen = false;
+    if (!parsed.updatedAt && !Object.keys(parsed.payload || {}).length) parsed.miss = true;
+    return remember(code, parsed, 'script');
+  } catch {
+    return remember(code, { ...emptyRecord(code), miss: true }, 'script');
+  }
+}
+
+function fetchScript(code) {
+  const pending = upstreamInflight.get(code);
+  if (pending) return pending;
+  let job;
+  job = Promise.resolve()
+    .then(() => loadScript(code))
+    .finally(() => {
+      if (upstreamInflight.get(code) === job) upstreamInflight.delete(code);
+    });
+  upstreamInflight.set(code, job);
+  return job;
+}
+
 function persistScript(method, url, body) {
-  if (!UPSTREAM || UPSTREAM.includes('/api/catalog') || UPSTREAM.includes('/api/stage')) return;
+  if (!usableScript()) return;
   fetch(url, {
     method,
     redirect: 'follow',
@@ -221,41 +287,15 @@ export default async function handler(req, res) {
       }
       const local = await readLocal(code);
       if (local) {
-        res.status(200).json(local);
+        res.status(200).json(withIdle(local));
         return;
       }
-      if (UPSTREAM && !UPSTREAM.includes('/api/catalog') && !UPSTREAM.includes('/api/stage')) {
-        const upstream = await fetch(execUrl(code), { redirect: 'follow', cache: 'no-store' });
-        const text = await upstream.text();
-        const latest = await readLocal(code);
-        if (latest) {
-          res.status(200).json(latest);
-          return;
-        }
-        if (loginPage(text)) {
-          res.status(200).json({ ...emptyRecord(code), miss: true });
-          return;
-        }
-        let raw = null;
-        let parsed = emptyRecord(code);
-        try {
-          raw = JSON.parse(text);
-          parsed = normalizeRecord(code, raw);
-        } catch {
-          res.status(200).json({ ...emptyRecord(code), miss: true });
-          return;
-        }
-        const hostFlags = raw && Object.prototype.hasOwnProperty.call(raw, 'ideasOpen');
-        parsed.ideaFlags = hostFlags === true;
-        if (!hostFlags) parsed.ideasOpen = false;
-        const payload = parsed.payload || {};
-        if (hostFlags && (Array.isArray(payload.order) || Object.keys(payload).length > 0)) {
-          remember(code, parsed);
-        }
-        res.status(upstream.ok ? 200 : upstream.status).json(parsed);
+      if (usableScript()) {
+        const record = await fetchScript(code);
+        res.status(200).json(withIdle(record));
         return;
       }
-      res.status(200).json({ ...emptyRecord(code), miss: true });
+      res.status(200).json(withIdle(remember(code, { ...emptyRecord(code), miss: true }, 'script')));
       return;
     }
 
@@ -318,10 +358,11 @@ export default async function handler(req, res) {
           record[target] = mergeIdeas(prev[target], body.ideas);
         }
       }
-      remember(code, record);
-      await kvSet(code, record);
-      res.status(200).json(record);
-      persistScript('POST', UPSTREAM, JSON.stringify({ code, payload: record.payload }));
+      const stored = remember(code, record, 'local');
+      const client = toClient(stored);
+      await kvSet(code, client);
+      res.status(200).json(client);
+      if (hostWrite) persistScript('POST', UPSTREAM, JSON.stringify({ code, payload: client.payload }));
       return;
     }
 

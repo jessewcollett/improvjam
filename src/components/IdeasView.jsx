@@ -9,6 +9,7 @@ import {
   sanitizeStageCodeInput,
   STAGE_IDEAS_POLL_MS,
   stageIdeasPath,
+  stagePollShouldStop,
 } from '../lib/stage.js';
 import { applyTheme } from '../lib/theme.js';
 
@@ -69,23 +70,62 @@ function IdeasForm({ code }) {
 
   useEffect(() => {
     let cancelled = false;
-    let seq = 0;
+    let interval = null;
+    let inflight = false;
+    let ended = false;
+    const startedAt = Date.now();
+    const stop = () => {
+      if (!interval) return;
+      window.clearInterval(interval);
+      interval = null;
+    };
+    const stopForever = () => {
+      ended = true;
+      stop();
+    };
     const load = async () => {
-      const my = ++seq;
+      if (cancelled || ended || document.hidden || inflight) return;
+      inflight = true;
       try {
         const data = await fetchStage(code);
-        if (cancelled || my !== seq) return;
+        if (cancelled || ended) return;
+        if (stagePollShouldStop(data, startedAt)) {
+          setSession((prev) => ({
+            ...(prev || data),
+            ...data,
+            hostOn: false,
+            miss: false,
+            ideasOpen: false,
+            ideaFlags: true,
+          }));
+          setError('');
+          stopForever();
+          return;
+        }
         setSession((prev) => coalesceStageSession(prev, data));
         setError('');
       } catch (err) {
         if (!cancelled) setError(err.message || 'Couldn’t reach this session.');
+      } finally {
+        inflight = false;
       }
     };
-    load();
-    const id = window.setInterval(load, STAGE_IDEAS_POLL_MS);
+    const start = () => {
+      if (ended || interval) return;
+      load();
+      interval = window.setInterval(load, STAGE_IDEAS_POLL_MS);
+    };
+    const onVis = () => {
+      if (ended) return;
+      if (document.hidden) stop();
+      else start();
+    };
+    if (!document.hidden) start();
+    document.addEventListener('visibilitychange', onVis);
     return () => {
       cancelled = true;
-      window.clearInterval(id);
+      stop();
+      document.removeEventListener('visibilitychange', onVis);
     };
   }, [code]);
 

@@ -11,6 +11,7 @@ import {
   stagePayloadSyncKey,
   STAGE_BOARD_POLL_MS,
   stageBoardPath,
+  stagePollShouldStop,
 } from '../lib/stage.js';
 import { applyTheme, readStageTheme, writeStageTheme } from '../lib/theme.js';
 
@@ -134,13 +135,33 @@ function StageBoard({ code }) {
     let cancelled = false;
     let interval = null;
     let inflight = false;
+    let ended = false;
+    const startedAt = Date.now();
+
+    const stop = () => {
+      if (!interval) return;
+      window.clearInterval(interval);
+      interval = null;
+    };
+
+    const stopForever = () => {
+      ended = true;
+      stop();
+    };
 
     const tick = async () => {
-      if (cancelled || document.hidden || inflight) return;
+      if (cancelled || ended || document.hidden || inflight) return;
       inflight = true;
       try {
         const data = await fetchStage(code);
-        if (cancelled) return;
+        if (cancelled || ended) return;
+        if (stagePollShouldStop(data, startedAt)) {
+          setHostOn(false);
+          setReady(true);
+          setHardError((prev) => (prev ? '' : prev));
+          stopForever();
+          return;
+        }
         setHostOn(data.miss === true || data.hostOn !== false);
         const incoming = data.payload && typeof data.payload === 'object' ? data.payload : {};
         setPayload((prev) => {
@@ -168,18 +189,13 @@ function StageBoard({ code }) {
     };
 
     const start = () => {
-      if (interval) return;
+      if (ended || interval) return;
       tick();
       interval = window.setInterval(tick, STAGE_BOARD_POLL_MS);
     };
 
-    const stop = () => {
-      if (!interval) return;
-      window.clearInterval(interval);
-      interval = null;
-    };
-
     const onVis = () => {
+      if (ended) return;
       if (document.hidden) stop();
       else start();
     };
