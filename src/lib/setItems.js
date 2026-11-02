@@ -80,17 +80,51 @@ export function withSetItems(set, items) {
   };
 }
 
-export function normalizeCustomSet(raw) {
+export function setFolderId(set) {
+  return String(set?.folderId || '').trim();
+}
+
+export function normalizeSetFolder(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const id = String(raw.id || '').trim();
   const name = String(raw.name || '').trim();
   if (!id || !name) return null;
-  return withSetItems({ id, name }, normalizeSetItems(raw));
+  return { id, name };
 }
 
-export function normalizeCustomSets(raw) {
+export function normalizeSetFolders(raw) {
   if (!Array.isArray(raw)) return [];
-  return raw.map(normalizeCustomSet).filter(Boolean);
+  const seen = new Set();
+  const out = [];
+  raw.forEach((row) => {
+    const folder = normalizeSetFolder(row);
+    if (!folder || seen.has(folder.id)) return;
+    seen.add(folder.id);
+    out.push(folder);
+  });
+  return out;
+}
+
+export function normalizeCustomSet(raw, folderIds) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const id = String(raw.id || '').trim();
+  const name = String(raw.name || '').trim();
+  if (!id || !name) return null;
+  const folderId = String(raw.folderId || '').trim();
+  const keepFolder = folderId && (!folderIds || folderIds.has(folderId));
+  return withSetItems({ id, name, ...(keepFolder ? { folderId } : {}) }, normalizeSetItems(raw));
+}
+
+export function normalizeCustomSets(raw, folderIds) {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((row) => normalizeCustomSet(row, folderIds)).filter(Boolean);
+}
+
+export function setsInFolder(sets, folderId) {
+  const list = Array.isArray(sets) ? sets : [];
+  const key = String(folderId || '').trim();
+  if (!key) return list.filter((set) => !setFolderId(set));
+  return list.filter((set) => setFolderId(set) === key);
 }
 
 function idList(raw) {
@@ -99,12 +133,15 @@ function idList(raw) {
 
 export function normalizeLists(raw) {
   const lists = raw && typeof raw === 'object' ? raw : {};
+  const setFolders = normalizeSetFolders(lists.setFolders);
+  const folderIds = new Set(setFolders.map((folder) => folder.id));
   return {
     favorites: idList(lists.favorites),
     toPlay: idList(lists.toPlay),
     played: idList(lists.played),
     learned: idList(lists.learned),
-    customSets: normalizeCustomSets(lists.customSets),
+    customSets: normalizeCustomSets(lists.customSets, folderIds),
+    setFolders,
   };
 }
 
@@ -155,7 +192,11 @@ function mergeCustomSet(left, right) {
   const b = normalizeCustomSet(right);
   if (!a) return b;
   if (!b) return a;
-  return withSetItems({ id: a.id, name: a.name || b.name }, mergeSetItems(a.items, b.items));
+  const folderId = setFolderId(b) || setFolderId(a);
+  return withSetItems(
+    { id: a.id, name: a.name || b.name, ...(folderId ? { folderId } : {}) },
+    mergeSetItems(a.items, b.items),
+  );
 }
 
 export function mergeLists(a, b) {
@@ -174,12 +215,27 @@ export function mergeLists(a, b) {
     seen.add(set.id);
     customSets.push(byId.get(set.id));
   });
+  const folderById = new Map();
+  left.setFolders.forEach((folder) => folderById.set(folder.id, folder));
+  right.setFolders.forEach((folder) => {
+    const prev = folderById.get(folder.id);
+    folderById.set(folder.id, prev ? { id: prev.id, name: folder.name || prev.name } : folder);
+  });
+  const seenFolders = new Set();
+  const setFolders = [];
+  [...left.setFolders, ...right.setFolders].forEach((folder) => {
+    if (seenFolders.has(folder.id)) return;
+    seenFolders.add(folder.id);
+    setFolders.push(folderById.get(folder.id));
+  });
+  const folderIds = new Set(setFolders.map((folder) => folder.id));
   return {
     favorites: idList([...left.favorites, ...right.favorites]),
     toPlay: idList([...left.toPlay, ...right.toPlay]),
     played: idList([...left.played, ...right.played]),
     learned: idList([...left.learned, ...right.learned]),
-    customSets,
+    customSets: customSets.map((set) => normalizeCustomSet(set, folderIds)).filter(Boolean),
+    setFolders,
   };
 }
 

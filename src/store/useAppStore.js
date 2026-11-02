@@ -94,6 +94,7 @@ import {
   normalizeSetItem,
   normalizeSetItems,
   reorderSetItems,
+  setFolderId,
   setItemKey,
   termBoardMessage,
   withSetItems,
@@ -115,6 +116,7 @@ const emptyLists = {
   played: [],
   learned: [],
   customSets: [],
+  setFolders: [],
 };
 
 export const defaultSettings = {
@@ -1538,17 +1540,107 @@ export const useAppStore = create(
         set((state) => ({ lists: { ...state.lists, [listName]: [] } }));
       },
 
-      createCustomSet: (name) => {
+      createCustomSet: (name, folderId) => {
         const trimmed = String(name || '').trim();
         if (!trimmed) return '';
         const id = `set_${Date.now()}`;
+        const folder = String(folderId || '').trim();
+        set((state) => {
+          const known = (state.lists.setFolders || []).some((item) => item.id === folder);
+          return {
+            lists: {
+              ...state.lists,
+              customSets: [
+                ...state.lists.customSets,
+                withSetItems({ id, name: trimmed, ...(known ? { folderId: folder } : {}) }, []),
+              ],
+            },
+          };
+        });
+        return id;
+      },
+
+      createSetFolder: (name) => {
+        const trimmed = String(name || '').trim();
+        if (!trimmed) return '';
+        const id = `folder_${Date.now()}`;
         set((state) => ({
           lists: {
             ...state.lists,
-            customSets: [...state.lists.customSets, withSetItems({ id, name: trimmed }, [])],
+            setFolders: [...(state.lists.setFolders || []), { id, name: trimmed }],
           },
         }));
         return id;
+      },
+
+      renameSetFolder: (folderId, name) => {
+        const id = String(folderId || '').trim();
+        const trimmed = String(name || '').trim();
+        if (!id || !trimmed) return;
+        set((state) => ({
+          lists: {
+            ...state.lists,
+            setFolders: (state.lists.setFolders || []).map((folder) => (
+              folder.id === id ? { ...folder, name: trimmed } : folder
+            )),
+          },
+        }));
+      },
+
+      deleteSetFolder: (folderId) => {
+        const id = String(folderId || '').trim();
+        if (!id) return;
+        set((state) => ({
+          lists: {
+            ...state.lists,
+            setFolders: (state.lists.setFolders || []).filter((folder) => folder.id !== id),
+            customSets: state.lists.customSets.map((entry) => {
+              if (setFolderId(entry) !== id) return entry;
+              return withSetItems({ id: entry.id, name: entry.name }, normalizeSetItems(entry));
+            }),
+          },
+        }));
+      },
+
+      reorderSetFolders: (ids) => {
+        const next = Array.isArray(ids) ? ids.map((id) => String(id || '').trim()).filter(Boolean) : [];
+        if (!next.length) return;
+        set((state) => {
+          const folders = state.lists.setFolders || [];
+          const byId = new Map(folders.map((item) => [item.id, item]));
+          const remaining = next.filter((id) => byId.has(id));
+          const idSet = new Set(remaining);
+          return {
+            lists: {
+              ...state.lists,
+              setFolders: folders.map((item) => {
+                if (!idSet.has(item.id)) return item;
+                return byId.get(remaining.shift());
+              }),
+            },
+          };
+        });
+      },
+
+      moveSetToFolder: (setId, folderId) => {
+        const id = String(setId || '').trim();
+        const folder = String(folderId || '').trim();
+        if (!id) return;
+        set((state) => {
+          const known = (state.lists.setFolders || []).some((item) => item.id === folder);
+          return {
+            lists: {
+              ...state.lists,
+              customSets: state.lists.customSets.map((entry) => {
+                if (entry.id !== id) return entry;
+                return withSetItems(
+                  { id: entry.id, name: entry.name, ...(folder && known ? { folderId: folder } : {}) },
+                  normalizeSetItems(entry),
+                );
+              }),
+            },
+          };
+        });
       },
 
       renameCustomSet: (setId, name) => {
@@ -1676,9 +1768,17 @@ export const useAppStore = create(
         if (!next.length) return;
         set((state) => {
           const byId = new Map(state.lists.customSets.map((item) => [item.id, item]));
-          const ordered = next.map((id) => byId.get(id)).filter(Boolean);
-          const leftover = state.lists.customSets.filter((item) => !next.includes(item.id));
-          return { lists: { ...state.lists, customSets: [...ordered, ...leftover] } };
+          const remaining = next.filter((id) => byId.has(id));
+          const idSet = new Set(remaining);
+          return {
+            lists: {
+              ...state.lists,
+              customSets: state.lists.customSets.map((item) => {
+                if (!idSet.has(item.id)) return item;
+                return byId.get(remaining.shift());
+              }),
+            },
+          };
         });
       },
 

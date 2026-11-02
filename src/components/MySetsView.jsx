@@ -6,6 +6,8 @@ import {
   CheckCircle,
   Star,
   Folder,
+  FolderInput,
+  FolderPlus,
   Pencil,
   Plus,
   Trash2,
@@ -25,7 +27,9 @@ import {
   messageItemLabel,
   normalizeSetItems,
   setCountLabel,
+  setFolderId,
   setItemKey,
+  setsInFolder,
 } from '../lib/setItems.js';
 import { MESSAGE_MAX, sanitizeStageMessageHtml, stageMessageHtml, stageMessageText } from '../lib/stageMessage.js';
 import GameCard from './GameCard.jsx';
@@ -49,6 +53,11 @@ function setSlotFromIds(id, name, ids, games) {
     name,
     games: gamesInIds(games, ids).map((game) => game.name),
   };
+}
+
+function folderSetLabel(count) {
+  const n = Number(count) || 0;
+  return `${n} ${n === 1 ? 'set' : 'sets'}`;
 }
 
 function setSlotFromSet(set, games, terms) {
@@ -130,6 +139,11 @@ export default function MySetsView() {
   const showStats = useAppStore((s) => s.settings.showStats) !== false;
   const clearList = useAppStore((s) => s.clearList);
   const createCustomSet = useAppStore((s) => s.createCustomSet);
+  const createSetFolder = useAppStore((s) => s.createSetFolder);
+  const renameSetFolder = useAppStore((s) => s.renameSetFolder);
+  const deleteSetFolder = useAppStore((s) => s.deleteSetFolder);
+  const reorderSetFolders = useAppStore((s) => s.reorderSetFolders);
+  const moveSetToFolder = useAppStore((s) => s.moveSetToFolder);
   const renameCustomSet = useAppStore((s) => s.renameCustomSet);
   const deleteCustomSet = useAppStore((s) => s.deleteCustomSet);
   const clearCustomSet = useAppStore((s) => s.clearCustomSet);
@@ -158,11 +172,16 @@ export default function MySetsView() {
   const [activeTab, setActiveTab] = useState('toPlay');
   const [confirmClear, setConfirmClear] = useState(false);
   const [activeCustomSetId, setActiveCustomSetId] = useState(null);
+  const [activeFolderId, setActiveFolderId] = useState(null);
   const [newSetName, setNewSetName] = useState('');
+  const [newFolderName, setNewFolderName] = useState('');
   const [isCreatingSet, setIsCreatingSet] = useState(false);
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [importDraft, setImportDraft] = useState('');
   const [confirmDeleteSet, setConfirmDeleteSet] = useState(null);
+  const [confirmDeleteFolder, setConfirmDeleteFolder] = useState(null);
+  const [movingSetId, setMovingSetId] = useState(null);
   const [renamingId, setRenamingId] = useState(null);
   const [renameDraft, setRenameDraft] = useState('');
   const [editing, setEditing] = useState(false);
@@ -189,12 +208,16 @@ export default function MySetsView() {
   useEffect(() => {
     setConfirmClear(false);
     setIsCreatingSet(false);
+    setIsCreatingFolder(false);
     setIsImporting(false);
     setImportDraft('');
     setConfirmDeleteSet(null);
+    setConfirmDeleteFolder(null);
+    setMovingSetId(null);
     setRenamingId(null);
     setRenameDraft('');
     setEditing(false);
+    setActiveFolderId(null);
     closeSheets();
     setShareNote('');
   }, [activeTab]);
@@ -214,7 +237,16 @@ export default function MySetsView() {
   };
 
   const commitRename = () => {
-    if (renamingId) renameCustomSet(renamingId, renameDraft);
+    if (!renamingId) {
+      setRenamingId(null);
+      setRenameDraft('');
+      return;
+    }
+    if ((lists.setFolders || []).some((folder) => folder.id === renamingId)) {
+      renameSetFolder(renamingId, renameDraft);
+    } else {
+      renameCustomSet(renamingId, renameDraft);
+    }
     setRenamingId(null);
     setRenameDraft('');
   };
@@ -247,6 +279,11 @@ export default function MySetsView() {
   };
 
   const activeCustomSet = lists.customSets.find((s) => s.id === activeCustomSetId);
+  const setFolders = lists.setFolders || [];
+  const activeFolder = setFolders.find((folder) => folder.id === activeFolderId) || null;
+  const visibleSets = activeFolder
+    ? setsInFolder(lists.customSets, activeFolder.id)
+    : setsInFolder(lists.customSets, '');
   const customItems = useMemo(() => normalizeSetItems(activeCustomSet), [activeCustomSet]);
   const currentListGames =
     activeTab !== 'custom'
@@ -340,14 +377,29 @@ export default function MySetsView() {
         {activeTab === 'custom' && !activeCustomSetId && (
           <div className="space-y-4">
             <div className="flex justify-between items-center gap-2">
-              <h2 className="text-gray-300 font-bold">Your custom sets</h2>
-              <div className="flex items-center gap-2">
-                {lists.customSets.length > 0 ? (
+              {activeFolder ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveFolderId(null);
+                    setEditing(false);
+                    flushUserProfile();
+                  }}
+                  className="flex items-center text-sm text-gray-400 min-h-11"
+                >
+                  <ChevronLeft className="w-4 h-4 mr-1" /> Back to sets
+                </button>
+              ) : (
+                <h2 className="text-gray-300 font-bold">Your custom sets</h2>
+              )}
+              <div className="flex items-center gap-2 flex-wrap justify-end">
+                {lists.customSets.length > 0 || setFolders.length > 0 ? (
                   <button
                     type="button"
                     onClick={() => {
                       if (editing) flushUserProfile();
                       setEditing((v) => !v);
+                      setMovingSetId(null);
                     }}
                     className={`px-3 py-2 rounded-lg text-xs font-bold border min-h-10 ${
                       editing
@@ -358,20 +410,37 @@ export default function MySetsView() {
                     {editing ? 'Done' : 'Edit'}
                   </button>
                 ) : null}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsImporting((v) => !v);
-                    setIsCreatingSet(false);
-                  }}
-                  className="bg-indigo-600/20 text-indigo-400 px-3 py-2 rounded-lg text-xs font-bold border border-indigo-500/30 flex items-center min-h-10"
-                >
-                  <Link2 className="w-3 h-3 mr-1" /> Import
-                </button>
+                {!activeFolder ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsImporting((v) => !v);
+                      setIsCreatingSet(false);
+                      setIsCreatingFolder(false);
+                    }}
+                    className="bg-indigo-600/20 text-indigo-400 px-3 py-2 rounded-lg text-xs font-bold border border-indigo-500/30 flex items-center min-h-10"
+                  >
+                    <Link2 className="w-3 h-3 mr-1" /> Import
+                  </button>
+                ) : null}
+                {!activeFolder ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsCreatingFolder((v) => !v);
+                      setIsCreatingSet(false);
+                      setIsImporting(false);
+                    }}
+                    className="bg-indigo-600/20 text-indigo-400 px-3 py-2 rounded-lg text-xs font-bold border border-indigo-500/30 flex items-center min-h-10"
+                  >
+                    <FolderPlus className="w-3 h-3 mr-1" /> New folder
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={() => {
                     setIsCreatingSet((v) => !v);
+                    setIsCreatingFolder(false);
                     setIsImporting(false);
                   }}
                   className="bg-indigo-600/20 text-indigo-400 px-3 py-2 rounded-lg text-xs font-bold border border-indigo-500/30 flex items-center min-h-10"
@@ -380,7 +449,35 @@ export default function MySetsView() {
                 </button>
               </div>
             </div>
-            {isImporting && (
+            {activeFolder ? (
+              renamingId === activeFolder.id ? (
+                <form
+                  className="flex gap-2"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    commitRename();
+                  }}
+                >
+                  <input
+                    type="text"
+                    value={renameDraft}
+                    onChange={(e) => setRenameDraft(e.target.value)}
+                    className="flex-1 bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-sm min-h-11"
+                    aria-label="Folder name"
+                    autoFocus
+                  />
+                  <button type="submit" className="bg-indigo-600 text-white px-3 py-2 rounded-lg text-sm font-bold min-h-11">
+                    Save
+                  </button>
+                </form>
+              ) : (
+                <h2 className="text-xl font-bold text-white flex items-center gap-1">
+                  <Folder className="w-5 h-5 mr-2 text-indigo-400 shrink-0" />
+                  <span className="min-w-0 truncate">{activeFolder.name}</span>
+                </h2>
+              )
+            ) : null}
+            {isImporting && !activeFolder && (
               <div className="bg-gray-800 p-3 rounded-xl border border-gray-700 flex gap-2">
                 <input
                   type="text"
@@ -409,6 +506,28 @@ export default function MySetsView() {
                 </button>
               </div>
             )}
+            {isCreatingFolder && !activeFolder && (
+              <div className="bg-gray-800 p-3 rounded-xl border border-gray-700 flex gap-2">
+                <input
+                  type="text"
+                  value={newFolderName}
+                  onChange={(e) => setNewFolderName(e.target.value)}
+                  placeholder="e.g. Workshops"
+                  className="flex-1 bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    createSetFolder(newFolderName);
+                    setNewFolderName('');
+                    setIsCreatingFolder(false);
+                  }}
+                  className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-bold"
+                >
+                  Save
+                </button>
+              </div>
+            )}
             {isCreatingSet && (
               <div className="bg-gray-800 p-3 rounded-xl border border-gray-700 flex gap-2">
                 <input
@@ -421,7 +540,7 @@ export default function MySetsView() {
                 <button
                   type="button"
                   onClick={() => {
-                    createCustomSet(newSetName);
+                    createCustomSet(newSetName, activeFolder?.id);
                     setNewSetName('');
                     setIsCreatingSet(false);
                   }}
@@ -431,103 +550,242 @@ export default function MySetsView() {
                 </button>
               </div>
             )}
-            {lists.customSets.length === 0 && !isCreatingSet ? (
+            {lists.customSets.length === 0 && setFolders.length === 0 && !isCreatingSet && !isCreatingFolder ? (
               <div className="text-center mt-12 opacity-60">
                 <Folder className="w-12 h-12 mx-auto mb-3 text-indigo-400" />
                 <p className="text-sm">No custom sets yet.</p>
               </div>
-            ) : editing ? (
-              <DragOrderList
-                items={lists.customSets.map((set) => ({
-                  id: set.id,
-                  label: set.name,
-                  detail: showStats ? setCountLabel(set) : '',
-                }))}
-                onOrder={reorderCustomSets}
-                onActivate={(item) => {
-                  setActiveCustomSetId(item.id);
-                  setEditing(true);
-                }}
-                onDelete={(item) => setConfirmDeleteSet(item.id)}
-                renderAfter={(item) => {
-                  const set = lists.customSets.find((entry) => entry.id === item.id);
-                  if (!set) return null;
-                  if (renamingId === set.id) {
-                    return (
-                      <form
-                        className="flex gap-1 shrink-0"
-                        onSubmit={(event) => {
-                          event.preventDefault();
-                          commitRename();
-                        }}
-                      >
-                        <button type="submit" className="min-h-11 px-2 rounded-lg bg-indigo-600 text-white text-xs font-bold">
-                          Save
-                        </button>
-                      </form>
-                    );
-                  }
-                  return (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => beginRename(set)}
-                        className="min-w-11 min-h-11 flex items-center justify-center text-gray-500 hover:text-indigo-300"
-                        aria-label={`Rename ${set.name}`}
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </button>
-                      {confirmDeleteSet === set.id ? (
-                        <div className="flex items-center gap-1">
-                          <button type="button" onClick={() => deleteCustomSet(set.id)} className="text-xs bg-red-900/50 text-red-300 border border-red-800 px-2 py-1.5 rounded min-h-11">
-                            Yes
-                          </button>
-                          <button type="button" onClick={() => setConfirmDeleteSet(null)} className="text-xs bg-gray-800 text-gray-300 border border-gray-700 px-2 py-1.5 rounded min-h-11">
-                            No
-                          </button>
-                        </div>
-                      ) : (
-                        <button type="button" onClick={() => setConfirmDeleteSet(set.id)} className="min-w-11 min-h-11 flex items-center justify-center text-gray-600 hover:text-red-400">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-                    </>
-                  );
-                }}
-              />
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 lg:gap-3">
-                {lists.customSets.map((set) => (
-                  <div key={set.id} className="bg-[#1A1A1A] border border-gray-800 rounded-xl p-4 flex justify-between items-center gap-1">
-                    {renamingId === set.id ? (
-                      <form
-                        className="flex-1 flex gap-2 min-w-0"
-                        onSubmit={(event) => {
-                          event.preventDefault();
-                          commitRename();
-                        }}
-                      >
-                        <input
-                          type="text"
-                          value={renameDraft}
-                          onChange={(e) => setRenameDraft(e.target.value)}
-                          className="flex-1 bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-sm min-h-11"
-                          aria-label="Set name"
-                          autoFocus
-                        />
-                        <button type="submit" className="bg-indigo-600 text-white px-3 py-2 rounded-lg text-sm font-bold min-h-11">
-                          Save
+              <>
+                {!activeFolder && setFolders.length > 0 ? (
+                  editing ? (
+                    <DragOrderList
+                      items={setFolders.map((folder) => ({
+                        id: folder.id,
+                        label: folder.name,
+                        detail: folderSetLabel(setsInFolder(lists.customSets, folder.id).length),
+                      }))}
+                      onOrder={reorderSetFolders}
+                      onActivate={(item) => {
+                        setActiveFolderId(item.id);
+                        setEditing(false);
+                      }}
+                      onDelete={(item) => setConfirmDeleteFolder(item.id)}
+                      renderAfter={(item) => {
+                        const folder = setFolders.find((entry) => entry.id === item.id);
+                        if (!folder) return null;
+                        if (renamingId === folder.id) {
+                          return (
+                            <form
+                              className="flex gap-1 shrink-0"
+                              onSubmit={(event) => {
+                                event.preventDefault();
+                                commitRename();
+                              }}
+                            >
+                              <button type="submit" className="min-h-11 px-2 rounded-lg bg-indigo-600 text-white text-xs font-bold">
+                                Save
+                              </button>
+                            </form>
+                          );
+                        }
+                        return (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => beginRename(folder)}
+                              className="min-w-11 min-h-11 flex items-center justify-center text-gray-500 hover:text-indigo-300"
+                              aria-label={`Rename ${folder.name}`}
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                            {confirmDeleteFolder === folder.id ? (
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    deleteSetFolder(folder.id);
+                                    setConfirmDeleteFolder(null);
+                                  }}
+                                  className="text-xs bg-red-900/50 text-red-300 border border-red-800 px-2 py-1.5 rounded min-h-11"
+                                >
+                                  Yes
+                                </button>
+                                <button type="button" onClick={() => setConfirmDeleteFolder(null)} className="text-xs bg-gray-800 text-gray-300 border border-gray-700 px-2 py-1.5 rounded min-h-11">
+                                  No
+                                </button>
+                              </div>
+                            ) : (
+                              <button type="button" onClick={() => setConfirmDeleteFolder(folder.id)} className="min-w-11 min-h-11 flex items-center justify-center text-gray-600 hover:text-red-400">
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </>
+                        );
+                      }}
+                    />
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 lg:gap-3">
+                      {setFolders.map((folder) => (
+                        <button
+                          key={folder.id}
+                          type="button"
+                          onClick={() => setActiveFolderId(folder.id)}
+                          className="bg-[#1A1A1A] border border-gray-800 rounded-xl p-4 flex items-center gap-3 text-left min-h-11"
+                        >
+                          <Folder className="w-6 h-6 text-indigo-400 shrink-0" />
+                          <span className="min-w-0">
+                            <h3 className="font-bold text-gray-200 text-lg">{folder.name}</h3>
+                            <p className="text-xs text-gray-500">
+                              {folderSetLabel(setsInFolder(lists.customSets, folder.id).length)}
+                            </p>
+                          </span>
                         </button>
-                      </form>
-                    ) : (
-                      <button type="button" onClick={() => setActiveCustomSetId(set.id)} className="flex-1 text-left min-h-11">
-                        <h3 className="font-bold text-gray-200 text-lg">{set.name}</h3>
-                        {showStats ? <p className="text-xs text-gray-500">{setCountLabel(set)}</p> : null}
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
+                      ))}
+                    </div>
+                  )
+                ) : null}
+                {editing ? (
+                    <DragOrderList
+                      items={visibleSets.map((set) => ({
+                        id: set.id,
+                        label: set.name,
+                        detail: showStats ? setCountLabel(set) : '',
+                      }))}
+                      onOrder={reorderCustomSets}
+                      onActivate={(item) => {
+                        setActiveCustomSetId(item.id);
+                        setEditing(true);
+                      }}
+                      onDelete={(item) => setConfirmDeleteSet(item.id)}
+                      renderAfter={(item) => {
+                        const set = lists.customSets.find((entry) => entry.id === item.id);
+                        if (!set) return null;
+                        if (renamingId === set.id) {
+                          return (
+                            <form
+                              className="flex gap-1 shrink-0"
+                              onSubmit={(event) => {
+                                event.preventDefault();
+                                commitRename();
+                              }}
+                            >
+                              <button type="submit" className="min-h-11 px-2 rounded-lg bg-indigo-600 text-white text-xs font-bold">
+                                Save
+                              </button>
+                            </form>
+                          );
+                        }
+                        return (
+                          <>
+                            {setFolders.length ? (
+                              movingSetId === set.id ? (
+                                <div className="flex flex-wrap items-center gap-1">
+                                  {setFolderId(set) ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        moveSetToFolder(set.id, '');
+                                        setMovingSetId(null);
+                                      }}
+                                      className="text-xs bg-gray-800 text-gray-200 border border-gray-700 px-2 py-1.5 rounded min-h-11"
+                                    >
+                                      Unfiled
+                                    </button>
+                                  ) : null}
+                                  {setFolders.filter((folder) => folder.id !== setFolderId(set)).map((folder) => (
+                                    <button
+                                      key={folder.id}
+                                      type="button"
+                                      onClick={() => {
+                                        moveSetToFolder(set.id, folder.id);
+                                        setMovingSetId(null);
+                                      }}
+                                      className="text-xs bg-gray-800 text-gray-200 border border-gray-700 px-2 py-1.5 rounded min-h-11"
+                                    >
+                                      {folder.name}
+                                    </button>
+                                  ))}
+                                  <button type="button" onClick={() => setMovingSetId(null)} className="text-xs text-gray-500 min-h-11 px-2">
+                                    Cancel
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setMovingSetId(set.id)}
+                                  className="min-w-11 min-h-11 flex items-center justify-center text-gray-500 hover:text-indigo-300"
+                                  aria-label={`Move ${set.name}`}
+                                >
+                                  <FolderInput className="w-4 h-4" />
+                                </button>
+                              )
+                            ) : null}
+                            <button
+                              type="button"
+                              onClick={() => beginRename(set)}
+                              className="min-w-11 min-h-11 flex items-center justify-center text-gray-500 hover:text-indigo-300"
+                              aria-label={`Rename ${set.name}`}
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                            {confirmDeleteSet === set.id ? (
+                              <div className="flex items-center gap-1">
+                                <button type="button" onClick={() => deleteCustomSet(set.id)} className="text-xs bg-red-900/50 text-red-300 border border-red-800 px-2 py-1.5 rounded min-h-11">
+                                  Yes
+                                </button>
+                                <button type="button" onClick={() => setConfirmDeleteSet(null)} className="text-xs bg-gray-800 text-gray-300 border border-gray-700 px-2 py-1.5 rounded min-h-11">
+                                  No
+                                </button>
+                              </div>
+                            ) : (
+                              <button type="button" onClick={() => setConfirmDeleteSet(set.id)} className="min-w-11 min-h-11 flex items-center justify-center text-gray-600 hover:text-red-400">
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </>
+                        );
+                      }}
+                    />
+                  ) : visibleSets.length ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 lg:gap-3">
+                      {visibleSets.map((set) => (
+                        <div key={set.id} className="bg-[#1A1A1A] border border-gray-800 rounded-xl p-4 flex justify-between items-center gap-1">
+                          {renamingId === set.id ? (
+                            <form
+                              className="flex-1 flex gap-2 min-w-0"
+                              onSubmit={(event) => {
+                                event.preventDefault();
+                                commitRename();
+                              }}
+                            >
+                              <input
+                                type="text"
+                                value={renameDraft}
+                                onChange={(e) => setRenameDraft(e.target.value)}
+                                className="flex-1 bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-sm min-h-11"
+                                aria-label="Set name"
+                                autoFocus
+                              />
+                              <button type="submit" className="bg-indigo-600 text-white px-3 py-2 rounded-lg text-sm font-bold min-h-11">
+                                Save
+                              </button>
+                            </form>
+                          ) : (
+                            <button type="button" onClick={() => setActiveCustomSetId(set.id)} className="flex-1 text-left min-h-11">
+                              <h3 className="font-bold text-gray-200 text-lg">{set.name}</h3>
+                              {showStats ? <p className="text-xs text-gray-500">{setCountLabel(set)}</p> : null}
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : activeFolder && !isCreatingSet ? (
+                    <div className="text-center mt-8 opacity-60">
+                      <p className="text-sm">No sets in this folder yet.</p>
+                    </div>
+                  ) : null}
+              </>
             )}
             {editing && renamingId ? (
               <form
@@ -542,7 +800,7 @@ export default function MySetsView() {
                   value={renameDraft}
                   onChange={(e) => setRenameDraft(e.target.value)}
                   className="flex-1 bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-sm min-h-11"
-                  aria-label="Set name"
+                  aria-label="Name"
                   autoFocus
                 />
                 <button type="submit" className="bg-indigo-600 text-white px-3 py-2 rounded-lg text-sm font-bold min-h-11">
@@ -561,6 +819,7 @@ export default function MySetsView() {
                   type="button"
                   onClick={() => {
                     setActiveCustomSetId(null);
+                    setActiveFolderId(setFolderId(activeCustomSet) || null);
                     setEditing(false);
                     closeSheets();
                     flushUserProfile();

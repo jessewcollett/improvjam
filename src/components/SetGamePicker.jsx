@@ -86,7 +86,7 @@ export default function SetGamePicker({ setId }) {
     const listIdSet = new Set(listFilters);
     const catSet = new Set(categoryFilters);
     const tagSet = new Set(tagFilters);
-    return games.filter((game) => {
+    const filtered = games.filter((game) => {
       const cats = itemCategories(game);
       const gameTags = splitList(game.tags);
       const skills = splitList(game.lifeSkills);
@@ -96,7 +96,22 @@ export default function SetGamePicker({ setId }) {
       if (catSet.size && !cats.some((cat) => catSet.has(cat))) return false;
       if (tagSet.size && !gameTags.some((tag) => tagSet.has(tag))) return false;
       return true;
-    }).sort(byName);
+    });
+    if (listFilters.length !== 1) return filtered.sort(byName);
+    const byId = new Map(filtered.map((game) => [game.id, game]));
+    const ordered = [];
+    const seen = new Set();
+    idsInList(lists, listFilters[0]).forEach((id) => {
+      const game = byId.get(id);
+      if (!game || seen.has(id)) return;
+      seen.add(id);
+      ordered.push(game);
+    });
+    filtered.forEach((game) => {
+      if (seen.has(game.id)) return;
+      ordered.push(game);
+    });
+    return ordered;
   }, [games, query, listFilters, categoryFilters, tagFilters, lists]);
 
   const clearFilters = () => {
