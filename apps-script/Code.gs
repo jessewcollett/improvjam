@@ -1239,6 +1239,8 @@ function profileToCache_(id, payload, updatedAt, row) {
     var text = JSON.stringify({ payload: payload, updatedAt: updatedAt || '' });
     if (text.length <= PROFILE_CACHE_MAX) {
       cache.put(profileCacheKey_(id), text, PROFILE_CACHE_TTL);
+    } else {
+      cache.remove(profileCacheKey_(id));
     }
     if (row >= 2) cache.put(profileRowKey_(id), String(row), PROFILE_CACHE_TTL);
   } catch (err) {}
@@ -1248,15 +1250,13 @@ function readProfile_(id) {
   var key = String(id || '').trim();
   var empty = emptyProfile_(key);
   if (!key) return empty;
-  var cached = profileFromCache_(key);
-  if (cached) return cached;
   var sheet = profileSheet_(SpreadsheetApp.getActive(), false);
-  if (!sheet || sheet.getLastRow() < 2) return empty;
+  if (!sheet || sheet.getLastRow() < 2) return profileFromCache_(key) || empty;
   var last = Math.max(sheet.getLastColumn(), 1);
   var headers = sheet.getRange(1, 1, 1, last).getValues()[0];
   var idCol = headerIndex_(headers, 'id');
   var updatedCol = headerIndex_(headers, 'updatedAt');
-  if (idCol < 0) return empty;
+  if (idCol < 0) return profileFromCache_(key) || empty;
   var values = sheet.getDataRange().getValues();
   var r;
   for (r = 1; r < values.length; r++) {
@@ -1269,7 +1269,7 @@ function readProfile_(id) {
     profileToCache_(key, found.payload, found.updatedAt, r + 1);
     return found;
   }
-  return empty;
+  return profileFromCache_(key) || empty;
 }
 
 var PROFILE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';

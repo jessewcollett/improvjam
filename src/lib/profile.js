@@ -80,6 +80,7 @@ export function profileHasData(payload) {
     if ((lists.played || []).length) return true;
     if ((lists.learned || []).length) return true;
     if ((lists.customSets || []).length) return true;
+    if ((lists.setFolders || []).length) return true;
   }
   if (Array.isArray(payload.generatorBankFavorites) && payload.generatorBankFavorites.length) return true;
   if (payload.gameGeneratorLinks && Object.keys(payload.gameGeneratorLinks).length) return true;
@@ -89,24 +90,75 @@ export function profileHasData(payload) {
   return false;
 }
 
-function listCounts(payload) {
-  const lists = payload?.lists && typeof payload.lists === 'object' ? payload.lists : {};
-  const customSets = Array.isArray(lists.customSets) ? lists.customSets : [];
+export function listsSignature(payload) {
+  try {
+    return JSON.stringify(normalizeLists(payload?.lists));
+  } catch {
+    return '';
+  }
+}
+
+export function listRichness(payload) {
+  const lists = normalizeLists(payload?.lists);
   return {
-    sets: customSets.length,
-    flags: (lists.favorites || []).length
-      + (lists.toPlay || []).length
-      + (lists.played || []).length
-      + (lists.learned || []).length,
+    sets: lists.customSets.length,
+    folders: lists.setFolders.length,
+    items: lists.customSets.reduce((n, set) => n + (Array.isArray(set.items) ? set.items.length : 0), 0),
+    flags: lists.favorites.length + lists.toPlay.length + lists.played.length + lists.learned.length,
   };
+}
+
+export function listsArePoorer(existing, incoming) {
+  const a = listRichness(existing);
+  const b = listRichness(incoming);
+  if (a.sets > b.sets) return true;
+  if (a.folders > b.folders) return true;
+  if (a.items > b.items) return true;
+  return false;
 }
 
 export function incomingWouldWipe(existing, incoming) {
   if (!profileHasData(existing)) return false;
   if (!profileHasData(incoming)) return true;
-  const a = listCounts(existing);
-  const b = listCounts(incoming);
+  const a = listRichness(existing);
+  const b = listRichness(incoming);
   return a.sets > 0 && b.sets === 0;
+}
+
+export function profileSyncPlan({
+  force = false,
+  localPayload,
+  remotePayload,
+  localAt = 0,
+  remoteAt = 0,
+  listsDirty = false,
+  profileDirty = false,
+} = {}) {
+  const remoteHas = profileHasData(remotePayload);
+  const localHas = profileHasData(localPayload);
+  const remoteNewer = remoteAt > localAt;
+  const remoteNotOlder = remoteAt >= localAt;
+  const remoteWouldWipe = incomingWouldWipe(localPayload, remotePayload);
+  const localWouldWipe = incomingWouldWipe(remotePayload, localPayload);
+  const localPoorer = remoteHas && listsArePoorer(remotePayload, localPayload);
+
+  if (force) {
+    if (remoteHas && !remoteWouldWipe && !listsArePoorer(localPayload, remotePayload)) return 'apply-remote';
+    return 'keep-local';
+  }
+
+  if (remoteHas && remoteNewer && !remoteWouldWipe) return 'apply-remote';
+  if (localWouldWipe && remoteHas) return 'apply-remote';
+  if (localPoorer && remoteNotOlder) return 'apply-remote';
+
+  if (localHas && !remoteNewer && !localWouldWipe) {
+    if (listsDirty || profileDirty) return 'push-local';
+    if (!remoteHas) return 'push-local';
+  }
+
+  if (remoteHas && remoteNotOlder && !remoteWouldWipe) return 'apply-remote';
+  if (localHas && !remoteHas) return 'push-local';
+  return 'keep-local';
 }
 
 function isEmptyField(value) {
@@ -182,7 +234,7 @@ export async function postProfile(id, payload) {
   const res = await fetch('/api/profile', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ kind: 'profile', id: code, payload }),
+    body: JSON.stringify({ kind: 'profile', id: code, payload, rewrite: true }),
   });
   const data = await res.json().catch(() => null);
   if (!res.ok) throw new Error(data?.error || 'Profile save failed.');

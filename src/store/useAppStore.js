@@ -4,7 +4,7 @@ import { buildDeviceBackup, parseDeviceBackup, persistStorage, STORE_KEY } from 
 import {
   buildProfilePayload,
   fetchProfile,
-  incomingWouldWipe,
+  listsSignature,
   mintProfileId,
   mintUserId,
   normalizeUserId,
@@ -12,6 +12,7 @@ import {
   PROFILE_PUSH_MS,
   profileHasData,
   profileSignature,
+  profileSyncPlan,
 } from '../lib/profile.js';
 import fallback from '../data/mockData.json';
 import { fetchSheetData, normalizePayload } from '../lib/sheets.js';
@@ -200,6 +201,7 @@ let profilePushQueued = false;
 let lastProfileSignature = '';
 let profileWatchStarted = false;
 let profilePullInflight = false;
+let profilePullForceQueued = false;
 
 function tombstoneIdea(kind, cat, text) {
   const key = `${kind}:${String(cat || '').trim()}:${String(text || '').trim().toLowerCase()}`;
@@ -415,6 +417,35 @@ function localProfileDirty(state) {
   if (!pushed) return false;
   const next = profileSignature(state);
   return Boolean(next) && next !== pushed && profileHasData(buildProfilePayload(state));
+}
+
+function localListsDirty(state) {
+  const pushed = String(state?.userPushedSignature || '');
+  if (!pushed) return false;
+  let pushedPayload = null;
+  try {
+    pushedPayload = JSON.parse(pushed);
+  } catch {
+    return true;
+  }
+  const next = listsSignature(buildProfilePayload(state));
+  const prev = listsSignature(pushedPayload);
+  return Boolean(next) && next !== prev;
+}
+
+function cancelQueuedProfilePush() {
+  profilePushQueued = false;
+  if (typeof window !== 'undefined' && profilePushTimer) {
+    window.clearTimeout(profilePushTimer);
+    profilePushTimer = null;
+  }
+}
+
+function applyRemoteProfile(current, payload, updatedAt) {
+  const next = applyProfileToState(current, payload, updatedAt);
+  lastProfileSignature = profileSignature(next);
+  cancelQueuedProfilePush();
+  return next;
 }
 
 function withPushedSignature(state) {
@@ -1894,6 +1925,7 @@ export const useAppStore = create(
         const parsed = parseDeviceBackup(raw);
         if (!parsed) return { ok: false, error: 'Not an Improv Jam backup.' };
         set((current) => mergePersisted(parsed, current));
+        lastProfileSignature = '';
         return { ok: true };
       },
 
@@ -1911,17 +1943,25 @@ export const useAppStore = create(
         const next = normalizeUserId(raw);
         if (!next) return '';
         const current = normalizeUserId(get().settings.userId);
-        if (next === current && get().settings.profileNamed) {
-          await get().pullUserProfile();
-          return next;
+        let remoteExists = true;
+        try {
+          const remote = await fetchProfile(next);
+          remoteExists = remote.miss !== true && profileHasData(remote.payload);
+        } catch {
+          remoteExists = true;
         }
-        set((state) => ({
-          settings: { ...state.settings, userId: next, profileNamed: true },
-          userSyncedAt: next === current ? state.userSyncedAt : null,
-          userSyncError: null,
-        }));
-        lastProfileSignature = '';
-        await get().pullUserProfile();
+        if (next !== current || !get().settings.profileNamed) {
+          set((state) => ({
+            settings: { ...state.settings, userId: next, profileNamed: true },
+            userSyncedAt: null,
+            userSyncError: null,
+          }));
+          lastProfileSignature = '';
+        }
+        await get().pullUserProfile({ force: true });
+        if (!remoteExists && profileHasData(buildProfilePayload(get()))) {
+          await get().pushUserProfile();
+        }
         return next;
       },
 
@@ -1937,8 +1977,12 @@ export const useAppStore = create(
         return id;
       },
 
-      pullUserProfile: async () => {
-        if (profilePullInflight) return get().settings.userId;
+      pullUserProfile: async (opts = {}) => {
+        const force = opts?.force === true;
+        if (profilePullInflight) {
+          if (force) profilePullForceQueued = true;
+          return get().settings.userId;
+        }
         profilePullInflight = true;
         set({ userSyncing: true, userSyncError: null });
         try {
@@ -1946,24 +1990,23 @@ export const useAppStore = create(
           const remote = await fetchProfile(id);
           const state = get();
           const localPayload = buildProfilePayload(state);
-          const remoteAt = Date.parse(remote.updatedAt) || 0;
-          const localAt = Date.parse(state.userSyncedAt) || 0;
-          const dirty = localProfileDirty(state);
-          if (dirty && profileHasData(localPayload)) {
+          const plan = profileSyncPlan({
+            force,
+            localPayload,
+            remotePayload: remote.payload,
+            localAt: Date.parse(state.userSyncedAt) || 0,
+            remoteAt: Date.parse(remote.updatedAt) || 0,
+            listsDirty: localListsDirty(state),
+            profileDirty: localProfileDirty(state),
+          });
+          if (plan === 'apply-remote') {
+            set((current) => applyRemoteProfile(current, remote.payload, remote.updatedAt || current.userSyncedAt));
+          } else if (plan === 'push-local' && !force) {
             lastProfileSignature = profileSignature(state);
-            set({ userSyncing: false });
-            profilePushQueued = true;
-          } else if (incomingWouldWipe(localPayload, remote.payload)) {
-            lastProfileSignature = profileSignature(state);
-            set({ userSyncing: false, userSyncedAt: state.userSyncedAt || remote.updatedAt || null });
-            if (profileHasData(localPayload)) profilePushQueued = true;
-          } else if (profileHasData(remote.payload) && (remoteAt >= localAt || !profileHasData(localPayload))) {
-            set((current) => applyProfileToState(current, remote.payload, remote.updatedAt || current.userSyncedAt));
-            lastProfileSignature = profileSignature(get());
-          } else if (profileHasData(localPayload)) {
             set({ userSyncing: false });
             profilePushQueued = true;
           } else {
+            lastProfileSignature = profileSignature(state);
             set({ userSyncing: false });
           }
           startProfileWatch();
@@ -1974,7 +2017,11 @@ export const useAppStore = create(
           return get().settings.userId;
         } finally {
           profilePullInflight = false;
-          if (profilePushQueued) {
+          if (profilePullForceQueued) {
+            profilePullForceQueued = false;
+            cancelQueuedProfilePush();
+            useAppStore.getState().pullUserProfile({ force: true }).catch(() => {});
+          } else if (profilePushQueued) {
             profilePushQueued = false;
             useAppStore.getState().pushUserProfile().catch(() => {});
           }
@@ -1999,11 +2046,22 @@ export const useAppStore = create(
           let payload = localPayload;
           try {
             const remote = await fetchProfile(id);
-            if (incomingWouldWipe(remote.payload, localPayload)) {
-              if (profileHasData(remote.payload)) {
-                set((current) => applyProfileToState(current, remote.payload, remote.updatedAt));
-                lastProfileSignature = profileSignature(get());
-              }
+            const state = get();
+            const plan = profileSyncPlan({
+              force: false,
+              localPayload,
+              remotePayload: remote.payload,
+              localAt: Date.parse(state.userSyncedAt) || 0,
+              remoteAt: Date.parse(remote.updatedAt) || 0,
+              listsDirty: localListsDirty(state),
+              profileDirty: localProfileDirty(state),
+            });
+            if (plan === 'apply-remote' && profileHasData(remote.payload)) {
+              set((current) => applyRemoteProfile(current, remote.payload, remote.updatedAt));
+              return;
+            }
+            if (plan !== 'push-local') {
+              lastProfileSignature = profileSignature(state);
               set({ userSyncing: false });
               return;
             }
@@ -2017,8 +2075,7 @@ export const useAppStore = create(
           }
           const result = await postProfile(id, payload);
           if (result.kept) {
-            set((current) => applyProfileToState(current, result.payload, result.updatedAt));
-            lastProfileSignature = profileSignature(get());
+            set((current) => applyRemoteProfile(current, result.payload, result.updatedAt));
           } else {
             lastProfileSignature = profileSignature(get());
             set({

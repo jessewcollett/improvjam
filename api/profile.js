@@ -32,6 +32,7 @@ function profileHasLists(payload) {
   const lists = payload?.lists;
   if (!lists || typeof lists !== 'object') return false;
   if (lists.customSets?.length) return true;
+  if (lists.setFolders?.length) return true;
   if (lists.favorites?.length) return true;
   if (lists.toPlay?.length) return true;
   if (lists.played?.length) return true;
@@ -39,12 +40,34 @@ function profileHasLists(payload) {
   return false;
 }
 
-function incomingWouldWipe(existing, incoming) {
+function listRichness(payload) {
+  const lists = payload?.lists && typeof payload.lists === 'object' ? payload.lists : {};
+  const sets = Array.isArray(lists.customSets) ? lists.customSets : [];
+  const folders = Array.isArray(lists.setFolders) ? lists.setFolders : [];
+  const items = sets.reduce((n, set) => {
+    if (Array.isArray(set?.items)) return n + set.items.length;
+    if (Array.isArray(set?.games)) return n + set.games.length;
+    return n;
+  }, 0);
+  return { sets: sets.length, folders: folders.length, items };
+}
+
+function listsArePoorer(existing, incoming) {
+  const a = listRichness(existing);
+  const b = listRichness(incoming);
+  if (a.sets > b.sets) return true;
+  if (a.folders > b.folders) return true;
+  if (a.items > b.items) return true;
+  return false;
+}
+
+function incomingWouldWipe(existing, incoming, rewrite) {
   if (!profileHasLists(existing)) return false;
   if (!profileHasLists(incoming)) return true;
   const aSets = existing?.lists?.customSets?.length || 0;
   const bSets = incoming?.lists?.customSets?.length || 0;
-  return aSets > 0 && bSets === 0;
+  if (aSets > 0 && bSets === 0) return true;
+  return rewrite !== true && listsArePoorer(existing, incoming);
 }
 
 function normalizeRecord(id, raw) {
@@ -175,7 +198,7 @@ export default async function handler(req, res) {
         ? body.payload
         : {};
       const existing = memory.get(id) || await fetchUpstream(id);
-      if (existing && incomingWouldWipe(existing.payload, payload)) {
+      if (existing && incomingWouldWipe(existing.payload, payload, body.rewrite === true)) {
         res.status(200).json({ ...existing, kept: true, miss: false });
         return;
       }

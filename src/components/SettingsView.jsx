@@ -168,6 +168,8 @@ function DeviceBackupSection() {
   const userSyncing = useAppStore((s) => s.userSyncing);
   const setUserId = useAppStore((s) => s.setUserId);
   const pullUserProfile = useAppStore((s) => s.pullUserProfile);
+  const restoreDeviceBackup = useAppStore((s) => s.restoreDeviceBackup);
+  const flushUserProfile = useAppStore((s) => s.flushUserProfile);
   const [draft, setDraft] = useState(named ? (userId || '') : '');
   const [note, setNote] = useState('');
   const [copied, setCopied] = useState(false);
@@ -209,7 +211,7 @@ function DeviceBackupSection() {
       defaultOpen
     >
       <p className="text-sm text-gray-400 mb-2">
-        This is your jam name, not a device code. Same name on another phone pulls this profile. Saving from a phone overwrites that profile (sets, order, and deletes). An empty phone will not wipe a set list.
+        This is your jam name, not a device code. Same name on another phone pulls this profile. A newer save on the sheet wins, including folders and set lists. Sync now loads the sheet onto this phone. An empty phone will not wipe a set list.
       </p>
       <div className="flex items-center gap-1.5 min-w-0 mb-2">
         <input
@@ -252,12 +254,34 @@ function DeviceBackupSection() {
       {named ? (
         <button
           type="button"
-          onClick={() => pullUserProfile().then(() => flash('Pulled from the sheet.'))}
+          onClick={() => pullUserProfile({ force: true }).then(() => flash('Loaded from the sheet.'))}
           className="text-xs font-bold text-teal-400 min-h-11"
         >
           Sync now
         </button>
       ) : null}
+      <button
+        type="button"
+        onClick={async () => {
+          let text = '';
+          try {
+            text = await navigator.clipboard.readText();
+          } catch {
+            flash('Clipboard permission denied.');
+            return;
+          }
+          const result = restoreDeviceBackup(text);
+          if (!result.ok) {
+            flash(result.error || 'Not a profile JSON.');
+            return;
+          }
+          flash('Restored on this phone.');
+          await flushUserProfile();
+        }}
+        className="block text-xs font-bold text-teal-400 min-h-11"
+      >
+        Paste profile JSON
+      </button>
       <button
         type="button"
         onClick={async () => {
